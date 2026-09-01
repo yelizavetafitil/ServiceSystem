@@ -1,0 +1,21 @@
+{% extends "base.html" %}
+{% block title %}Видеоинструкции{% endblock %}
+{% block content %}
+<div class="container">
+  <div class="page-header">
+    <div>
+      <h1>Видеоинструкции</h1>
+      <p class="page-subtitle">Потоковый просмотр обучающих материалов без скачивания</p>
+    </div>
+  </div>
+  <div class="video-grid">
+    {% for v in videos %}
+    <a href="{{ url_for('cabinet.video_detail', slug=v.slug) }}" class="video-card">
+      <div class="video-thumb"></div>
+      <h3>{{ v.title }}</h3>
+      <span class="muted">{{ v.category }}{% if v.duration_sec %} · {{ (v.duration_sec // 60) }} мин{% endif %}</span>
+    </a>
+    {% endfor %}
+  </div>
+</div>
+{% endblock %}

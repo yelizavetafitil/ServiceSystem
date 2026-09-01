@@ -1,0 +1,56 @@
+{% extends "base.html" %}
+{% block title %}Личный кабинет{% endblock %}
+{% block content %}
+<div class="container">
+  <div class="page-header">
+    <div>
+      <h1>Личный кабинет</h1>
+      {% if contract %}
+      <p class="page-subtitle">Договор {{ contract.number }} — {{ CONTRACT_STATUSES.get(contract.status, contract.status) }}</p>
+      {% endif %}
+    </div>
+    {% if contract %}
+    <div class="contract-badge status-{{ contract.status }}">
+      {% if contract.service_end_date %}Обслуживание до {{ contract.service_end_date.strftime('%d.%m.%Y') }}{% endif %}
+    </div>
+    {% endif %}
+  </div>
+
+  <div class="stats-grid">
+    <div class="stat-card"><span class="stat-num">{{ stats.open }}</span><span class="stat-label">Открытых заявок</span></div>
+    <div class="stat-card"><span class="stat-num">{{ stats.resolved }}</span><span class="stat-label">Решённых заявок</span></div>
+    <div class="stat-card primary"><a href="{{ url_for('tickets.create') }}" class="stat-action">Создать заявку</a></div>
+  </div>
+
+  <div class="grid-2">
+    <div class="card">
+      <h3 class="section-title">Быстрый доступ</h3>
+      <div class="quick-links">
+        <a href="{{ url_for('cabinet.plugins') }}" class="quick-link">Плагины и обновления</a>
+        <a href="{{ url_for('cabinet.tutorials') }}" class="quick-link">База знаний</a>
+        <a href="{{ url_for('cabinet.videos') }}" class="quick-link">Видеоинструкции</a>
+        <a href="{{ url_for('tickets.create') }}" class="quick-link">Подать заявку</a>
+      </div>
+    </div>
+    <div class="card">
+      <h3 class="section-title">Последние заявки</h3>
+      {% if recent_tickets %}
+      <table class="table-compact">
+        <thead><tr><th>Номер</th><th>Тема</th><th>Статус</th></tr></thead>
+        <tbody>
+        {% for t in recent_tickets %}
+        <tr>
+          <td><a href="{{ url_for('tickets.detail', tid=t.id) }}">{{ t.number }}</a></td>
+          <td>{{ t.subject }}</td>
+          <td><span class="badge status-{{ t.status }}">{{ TICKET_STATUSES.get(t.status, t.status) }}</span></td>
+        </tr>
+        {% endfor %}
+        </tbody>
+      </table>
+      {% else %}
+      <p class="muted">Заявок пока нет.</p>
+      {% endif %}
+    </div>
+  </div>
+</div>
+{% endblock %}

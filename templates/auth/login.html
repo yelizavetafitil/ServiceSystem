@@ -1,0 +1,47 @@
+{% extends "base.html" %}
+{% block title %}Вход — {{ APP_NAME }}{% endblock %}
+{% block content %}
+<div class="auth-page">
+  <div class="auth-card">
+    <div class="auth-header">
+      {% from 'macros/logo.html' import belnipi_logo %}
+      {{ belnipi_logo('auth-logo-img') }}
+      <div class="auth-org">{{ ORG_NAME }}</div>
+      <h1>{{ APP_NAME }}</h1>
+      <p>Гарантийное и постгарантийное обслуживание электронных моделей систем теплоснабжения производственного назначения</p>
+    </div>
+
+    <div class="tabs">
+      <button type="button" class="tab active" data-tab="personal">Персональный вход</button>
+      <button type="button" class="tab" data-tab="master">Мастер-ключ</button>
+    </div>
+
+    <form method="post" id="form-personal" class="tab-panel active">
+      <input type="hidden" name="login_type" value="personal">
+      <div class="form-group">
+        <label>Рабочий email</label>
+        <input type="email" name="email" class="form-control" required placeholder="user@energo.by">
+      </div>
+      <div class="form-group">
+        <label>Пароль</label>
+        <input type="password" name="password" class="form-control" required>
+      </div>
+      <button type="submit" class="btn btn-primary btn-block">Войти в личный кабинет</button>
+    </form>
+
+    <form method="post" id="form-master" class="tab-panel">
+      <input type="hidden" name="login_type" value="master">
+      <p class="hint">Первичный вход по временному ключу организации для обязательной персональной регистрации сотрудника.</p>
+      <div class="form-group">
+        <label>Логин организации</label>
+        <input type="text" name="master_login" class="form-control" placeholder="master_brest">
+      </div>
+      <div class="form-group">
+        <label>Мастер-пароль</label>
+        <input type="password" name="master_password" class="form-control">
+      </div>
+      <button type="submit" class="btn btn-primary btn-block">Продолжить регистрацию</button>
+    </form>
+  </div>
+</div>
+{% endblock %}

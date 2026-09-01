@@ -1,0 +1,12 @@
+{% extends "base.html" %}
+{% block title %}{{ tutorial.title }}{% endblock %}
+{% block content %}
+<div class="container prose">
+  <a href="{{ url_for('cabinet.tutorials') }}" class="back-link">← К базе знаний</a>
+  <div class="card">
+    <span class="kb-cat">{{ tutorial.category }}</span>
+    <h1>{{ tutorial.title }}</h1>
+    <div class="markdown-body">{{ content_html|safe }}</div>
+  </div>
+</div>
+{% endblock %}

@@ -1,0 +1,24 @@
+{% extends "base.html" %}
+{% block title %}Категории{% endblock %}
+{% block content %}
+<div class="container">
+  <div class="card">
+    <h2>Категории объектов и инцидентов</h2>
+    {% for o in objects %}
+    <div style="margin-bottom:16px;padding:12px;background:var(--bg);border-radius:10px">
+      <strong>{{ o.name }}</strong>
+      <ul>{% for i in o.incidents %}<li>{{ i.name }}</li>{% endfor %}</ul>
+    </div>
+    {% endfor %}
+    <form method="post" action="{{ url_for('admin.object_category_create') }}" style="display:flex;gap:10px;margin-top:12px">
+      <input name="name" class="form-control" placeholder="Новая категория объекта" required>
+      <button class="btn btn-primary">Добавить объект</button>
+    </form>
+    <form method="post" action="{{ url_for('admin.incident_category_create') }}" style="display:flex;gap:10px;margin-top:10px">
+      <select name="object_category_id" class="form-control">{% for o in objects %}<option value="{{ o.id }}">{{ o.name }}</option>{% endfor %}</select>
+      <input name="name" class="form-control" placeholder="Категория инцидента" required>
+      <button class="btn btn-outline">Добавить инцидент</button>
+    </form>
+  </div>
+</div>
+{% endblock %}

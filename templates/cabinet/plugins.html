@@ -1,0 +1,25 @@
+{% extends "base.html" %}
+{% block title %}Плагины{% endblock %}
+{% block content %}
+<div class="container">
+  <div class="page-header"><h1>Репозиторий плагинов</h1></div>
+  <div class="plugin-grid">
+    {% for p in plugins %}
+    <div class="plugin-card">
+      <div class="plugin-header">
+        <h3>{{ p.name }}</h3>
+        <span class="version-badge">v{{ p.current_version or '—' }}</span>
+      </div>
+      <p class="muted">Ядро: {{ p.min_core_version }} — {{ p.max_core_version }}</p>
+      {% set ver = p.versions.filter_by(is_current=True).first() %}
+      {% if ver and ver.changelog_md %}
+      <div class="changelog markdown-body">{{ ver.changelog_md|markdown|safe }}</div>
+      {% endif %}
+      <a href="{{ url_for('cabinet.plugin_download', pid=p.id) }}" class="btn btn-primary">Скачать</a>
+    </div>
+    {% else %}
+    <p class="muted">Плагины недоступны для вашего договора.</p>
+    {% endfor %}
+  </div>
+</div>
+{% endblock %}

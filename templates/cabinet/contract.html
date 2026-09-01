@@ -1,0 +1,17 @@
+{% extends "base.html" %}
+{% block title %}Договор {{ contract.number }}{% endblock %}
+{% block content %}
+<div class="container">
+  <div class="card">
+    <h1>Договор {{ contract.number }}</h1>
+    <p><strong>Организация:</strong> {{ contract.organization.name }}</p>
+    <p><strong>Дата подписания:</strong> {{ contract.signed_at.strftime('%d.%m.%Y') if contract.signed_at else '—' }}</p>
+    <p><strong>Окончание обслуживания:</strong> {{ contract.service_end_date.strftime('%d.%m.%Y') if contract.service_end_date else '—' }}</p>
+    <p><strong>Статус:</strong> {{ CONTRACT_STATUSES.get(contract.status, contract.status) }}</p>
+    {% if contract.notes %}<p><strong>Примечания:</strong> {{ contract.notes }}</p>{% endif %}
+    {% if contract.document_url %}
+    <p><a href="{{ contract.document_url }}" target="_blank" class="btn btn-primary">Открыть документ договора</a></p>
+    {% endif %}
+  </div>
+</div>
+{% endblock %}

@@ -1,0 +1,24 @@
+{% extends "base.html" %}
+{% block title %}Видео{% endblock %}
+{% block content %}
+<div class="container">
+  <div class="page-header"><h1>Видеоуроки</h1></div>
+  {% for v in videos %}
+  <div class="card" style="margin-bottom:10px"><strong>{{ v.title }}</strong> — {{ v.chapters.count() }} глав</div>
+  {% endfor %}
+  <div class="card">
+    <form method="post" action="{{ url_for('admin.video_create') }}">
+      <div class="form-row">
+        <input name="title" class="form-control" placeholder="Заголовок" required>
+        <input name="slug" class="form-control" placeholder="slug" required>
+        <input name="category" class="form-control" placeholder="Категория">
+        <input name="video_url" class="form-control" placeholder="URL видео (embed)" required>
+        <input name="duration_sec" class="form-control" placeholder="Длительность (сек)" type="number">
+      </div>
+      <textarea name="description" class="form-control" rows="2" placeholder="Описание" style="margin-top:10px"></textarea>
+      <textarea name="chapters" class="form-control" rows="4" placeholder="Тайм-коды: 0|Введение&#10;60|Глава 2" style="margin-top:10px"></textarea>
+      <button class="btn btn-primary" style="margin-top:10px">Добавить</button>
+    </form>
+  </div>
+</div>
+{% endblock %}

@@ -1,0 +1,80 @@
+{% extends "base.html" %}
+{% block title %}Новая заявка{% endblock %}
+{% block content %}
+<div class="container" style="max-width:760px">
+  <div class="page-header"><h1>Новая заявка</h1></div>
+  <div class="card">
+    <p>Договор: <a href="{{ url_for('cabinet.contract') }}" target="_blank"><strong>{{ contract.number }}</strong></a>
+      от {{ contract.signed_at.strftime('%d.%m.%Y') if contract.signed_at else '—' }}</p>
+    <form method="post" id="ticket-form">
+      <div class="form-group">
+        <label>Категория объекта *</label>
+        <select name="object_category_id" id="object_category" class="form-control" required>
+          <option value="">— выберите —</option>
+          {% for o in objects %}<option value="{{ o.id }}">{{ o.name }}</option>{% endfor %}
+        </select>
+      </div>
+      <div class="form-group">
+        <label>Категория инцидента *</label>
+        <select name="incident_category_id" id="incident_category" class="form-control" required disabled>
+          <option value="">— сначала выберите объект —</option>
+        </select>
+      </div>
+      <div class="form-group">
+        <label>Уровень критичности *</label>
+        <div class="priority-radios">
+          {% for lvl, cfg in SLA_PRIORITIES.items() %}
+          <label class="priority-option" style="--pc:{{ cfg.color }}">
+            <input type="radio" name="priority" value="{{ lvl }}" {% if lvl == 2 %}checked{% endif %} required>
+            <span>{{ cfg.name }}</span>
+          </label>
+          {% endfor %}
+        </div>
+      </div>
+      <div class="form-group">
+        <label>Тема обращения *</label>
+        <input type="text" name="subject" class="form-control" maxlength="120" required placeholder="Кратко укажите суть проблемы">
+      </div>
+      <div class="form-group">
+        <label>Подробное описание *</label>
+        <textarea name="description" class="form-control" rows="8" required placeholder="Markdown поддерживается"></textarea>
+      </div>
+      <div class="form-group">
+        <label>Вложения</label>
+        <div class="dropzone" id="dropzone">
+          <p>Перетащите файлы или <button type="button" class="btn-link" id="browse-btn">Обзор</button></p>
+          <input type="file" id="file-input" multiple hidden>
+          <div id="upload-list"></div>
+        </div>
+        <input type="hidden" name="attachment_ids" id="attachment_ids">
+      </div>
+      <button type="submit" class="btn btn-primary" id="submit-btn" disabled>Отправить заявку</button>
+    </form>
+  </div>
+</div>
+{% endblock %}
+{% block scripts %}
+<script src="{{ url_for('static', filename='js/upload.js') }}"></script>
+<script>
+document.getElementById('object_category').addEventListener('change', async function() {
+  const sel = document.getElementById('incident_category');
+  sel.disabled = true;
+  sel.innerHTML = '<option>Загрузка...</option>';
+  const r = await fetch('/tickets/api/incidents/' + this.value);
+  const data = await r.json();
+  sel.innerHTML = '<option value="">— выберите —</option>';
+  data.forEach(i => { const o = document.createElement('option'); o.value = i.id; o.textContent = i.name; sel.appendChild(o); });
+  sel.disabled = false;
+  validateForm();
+});
+document.getElementById('ticket-form').addEventListener('input', validateForm);
+document.getElementById('ticket-form').addEventListener('change', validateForm);
+function validateForm() {
+  const form = document.getElementById('ticket-form');
+  const btn = document.getElementById('submit-btn');
+  const uploadsDone = !window.__uploadsPending;
+  btn.disabled = !(form.checkValidity() && uploadsDone);
+}
+validateForm();
+</script>
+{% endblock %}

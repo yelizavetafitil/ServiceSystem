@@ -1,0 +1,63 @@
+# Система гарантийного и постгарантийного обслуживания ЭМСТПН
+# http://localhost:8095
+
+services:
+  db:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: servicesystem
+      POSTGRES_PASSWORD: servicesystem
+      POSTGRES_DB: servicesystem
+    volumes:
+      - pg_data:/var/lib/postgresql/data
+    networks:
+      - ssnet
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U servicesystem -d servicesystem"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  web:
+    build: .
+    restart: unless-stopped
+    ports:
+      - "${WEB_PORT:-8095}:5000"
+    environment:
+      DATABASE_URL: postgresql://servicesystem:servicesystem@db:5432/servicesystem
+      SECRET_KEY: ${SECRET_KEY:-change-me-in-production-servicesystem}
+      UPLOAD_FOLDER: /app/data/uploads
+      APP_NAME: "Сервис ЭМСТПН"
+      ORG_NAME: 'РУП «Белнипиэнергопром»'
+    volumes:
+      - upload_data:/app/data/uploads
+    depends_on:
+      db:
+        condition: service_healthy
+    networks:
+      - ssnet
+
+  seed:
+    build: .
+    profiles: ["seed"]
+    environment:
+      DATABASE_URL: postgresql://servicesystem:servicesystem@db:5432/servicesystem
+      SECRET_KEY: ${SECRET_KEY:-change-me-in-production-servicesystem}
+      UPLOAD_FOLDER: /app/data/uploads
+    volumes:
+      - upload_data:/app/data/uploads
+    depends_on:
+      db:
+        condition: service_healthy
+    networks:
+      - ssnet
+    command: ["python", "seed.py"]
+
+networks:
+  ssnet:
+    driver: bridge
+
+volumes:
+  pg_data:
+  upload_data:

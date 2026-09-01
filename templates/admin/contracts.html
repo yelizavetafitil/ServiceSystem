@@ -1,0 +1,46 @@
+{% extends "base.html" %}
+{% block title %}Договоры{% endblock %}
+{% block content %}
+<div class="container">
+  <div class="page-header"><h1>Договоры</h1></div>
+  <div class="card table-wrap">
+    <table>
+      <thead><tr><th>№</th><th>Организация</th><th>Статус</th><th>Окончание</th><th>Мастер-ключ</th><th></th></tr></thead>
+      <tbody>
+      {% for c in contracts %}
+      <tr>
+        <td>{{ c.number }}</td>
+        <td>{{ c.organization.name }}</td>
+        <td><span class="badge status-{{ c.status }}">{{ CONTRACT_STATUSES.get(c.status, c.status) }}</span></td>
+        <td>{{ c.service_end_date.strftime('%d.%m.%Y') if c.service_end_date else '—' }}</td>
+        <td><code>{{ c.master_login }}</code></td>
+        <td><a href="{{ url_for('admin.contract_edit', cid=c.id) }}">SLA</a></td>
+      </tr>
+      {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  <div class="card" style="margin-top:16px">
+    <h3>Новый договор</h3>
+    <form method="post" action="{{ url_for('admin.contract_create') }}">
+      <div class="form-row">
+        <select name="organization_id" class="form-control" required>{% for o in orgs %}<option value="{{ o.id }}">{{ o.name }}</option>{% endfor %}</select>
+        <input name="number" class="form-control" placeholder="№ договора" required>
+        <input name="signed_at" type="date" class="form-control">
+        <input name="service_end_date" type="date" class="form-control">
+        <select name="status" class="form-control">{% for k,v in CONTRACT_STATUSES.items() %}<option value="{{ k }}">{{ v }}</option>{% endfor %}</select>
+        <input name="master_login" class="form-control" placeholder="master_login" required>
+        <input name="master_password" class="form-control" placeholder="master_password" required>
+      </div>
+      <button class="btn btn-primary" style="margin-top:10px">Создать</button>
+    </form>
+    <form method="post" action="{{ url_for('admin.org_create') }}" style="margin-top:16px">
+      <div class="form-row">
+        <input name="name" class="form-control" placeholder="Новая организация" required>
+        <input name="short_name" class="form-control" placeholder="short_name">
+        <button class="btn btn-outline">+ Организация</button>
+      </div>
+    </form>
+  </div>
+</div>
+{% endblock %}

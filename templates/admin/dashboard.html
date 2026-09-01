@@ -1,0 +1,40 @@
+{% extends "base.html" %}
+{% block title %}Админ-панель{% endblock %}
+{% block content %}
+<div class="container">
+  <div class="page-header">
+    <div>
+      <h1>Администрирование</h1>
+      <p class="page-subtitle">Управление договорами, контентом и пользователями</p>
+    </div>
+  </div>
+  <div class="stats-grid">
+    <div class="stat-card"><span class="stat-num">{{ stats.users }}</span><span class="stat-label">Пользователей</span></div>
+    <div class="stat-card"><span class="stat-num">{{ stats.contracts }}</span><span class="stat-label">Договоров</span></div>
+    <div class="stat-card"><span class="stat-num">{{ stats.tickets_open }}</span><span class="stat-label">Открытых заявок</span></div>
+    <div class="stat-card"><span class="stat-num">{{ stats.plugins }}</span><span class="stat-label">Плагинов</span></div>
+  </div>
+  <div class="admin-nav">
+    <a href="{{ url_for('admin.contracts') }}" class="admin-tile">Договоры и обслуживание</a>
+    <a href="{{ url_for('admin.users') }}" class="admin-tile">Пользователи и роли</a>
+    <a href="{{ url_for('admin.categories') }}" class="admin-tile">Категории инцидентов</a>
+    <a href="{{ url_for('admin.plugins') }}" class="admin-tile">Репозиторий плагинов</a>
+    <a href="{{ url_for('admin.tutorials') }}" class="admin-tile">Текстовые материалы</a>
+    <a href="{{ url_for('admin.videos') }}" class="admin-tile">Видеоинструкции</a>
+    <a href="{{ url_for('admin.audit') }}" class="admin-tile">Журнал аудита</a>
+  </div>
+  {% if expiring %}
+  <div class="card" style="margin-top:20px">
+    <h3 class="section-title">Договоры, требующие пролонгации</h3>
+    <table class="table-compact">
+      <thead><tr><th>Договор</th><th>Организация</th><th>Окончание</th><th>Дней</th></tr></thead>
+      <tbody>
+      {% for c in expiring %}
+      <tr><td><a href="{{ url_for('admin.contract_edit', cid=c.id) }}">{{ c.number }}</a></td><td>{{ c.organization.name }}</td><td>{{ c.service_end_date.strftime('%d.%m.%Y') }}</td><td>{{ c.days_until_expiry }}</td></tr>
+      {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  {% endif %}
+</div>
+{% endblock %}

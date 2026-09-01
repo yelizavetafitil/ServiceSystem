@@ -1,0 +1,22 @@
+{% extends "base.html" %}
+{% block title %}Туториалы{% endblock %}
+{% block content %}
+<div class="container">
+  <div class="page-header"><h1>Туториалы (CMS)</h1></div>
+  {% for t in tutorials %}
+  <div class="card" style="margin-bottom:10px"><strong>{{ t.title }}</strong> — {{ t.category }}</div>
+  {% endfor %}
+  <div class="card">
+    <form method="post" action="{{ url_for('admin.tutorial_create') }}">
+      <div class="form-row">
+        <input name="title" class="form-control" placeholder="Заголовок" required>
+        <input name="slug" class="form-control" placeholder="slug">
+        <input name="category" class="form-control" placeholder="Категория">
+        <input name="tags" class="form-control" placeholder="теги">
+      </div>
+      <textarea name="content_md" class="form-control" rows="8" placeholder="Markdown" required style="margin-top:10px"></textarea>
+      <button class="btn btn-primary" style="margin-top:10px">Добавить</button>
+    </form>
+  </div>
+</div>
+{% endblock %}

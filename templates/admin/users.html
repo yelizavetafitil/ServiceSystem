@@ -1,0 +1,23 @@
+{% extends "base.html" %}
+{% block title %}Пользователи{% endblock %}
+{% block content %}
+<div class="container">
+  <div class="card">
+    <h2>Пользователи</h2>
+    <div class="table-wrap"><table>
+      <thead><tr><th>ФИО</th><th>Email</th><th>Роль</th><th>Должность</th></tr></thead>
+      <tbody>{% for u in users %}<tr><td>{{ u.full_name }}</td><td>{{ u.email }}</td><td>{{ u.role }}</td><td>{{ u.position }}</td></tr>{% endfor %}</tbody>
+    </table></div>
+    <form method="post" action="{{ url_for('admin.user_create') }}" style="margin-top:16px">
+      <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:10px">
+        <input name="full_name" class="form-control" placeholder="ФИО" required>
+        <input name="email" class="form-control" placeholder="Email" required>
+        <input name="password" class="form-control" placeholder="Пароль" required>
+        <select name="role" class="form-control"><option value="executor">Исполнитель</option><option value="auditor">Аудитор</option><option value="admin">Админ</option></select>
+        <input name="position" class="form-control" placeholder="Должность">
+      </div>
+      <button class="btn btn-primary" style="margin-top:10px">Создать</button>
+    </form>
+  </div>
+</div>
+{% endblock %}

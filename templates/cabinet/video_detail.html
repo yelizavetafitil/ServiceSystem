@@ -1,0 +1,24 @@
+{% extends "base.html" %}
+{% block title %}{{ video.title }}{% endblock %}
+{% block content %}
+<div class="container">
+  <a href="{{ url_for('cabinet.videos') }}" class="back-link">← К видео</a>
+  <div class="grid-2 video-page">
+    <div class="card video-player-wrap">
+      <iframe src="{{ video.video_url }}" allowfullscreen></iframe>
+    </div>
+    <div class="card">
+      <h2>{{ video.title }}</h2>
+      <p>{{ video.description }}</p>
+      {% if chapters %}
+      <h3>Оглавление</h3>
+      <ul class="chapter-list">
+        {% for c in chapters %}
+        <li><button class="chapter-btn" data-seek="{{ c.start_sec }}">{{ '%d:%02d'|format(c.start_sec // 60, c.start_sec % 60) }} — {{ c.title }}</button></li>
+        {% endfor %}
+      </ul>
+      {% endif %}
+    </div>
+  </div>
+</div>
+{% endblock %}

@@ -1,0 +1,74 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>{% block title %}{{ APP_NAME }}{% endblock %}</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/main.css') }}">
+  {% block head %}{% endblock %}
+</head>
+<body class="{% if not current_user.is_authenticated %}auth-body{% endif %}">
+<div class="shell">
+  {% if current_user.is_authenticated %}
+  <header class="topbar">
+    <div class="topbar-left">
+      <a href="{{ url_for('auth.index') }}" class="brand">
+        {% from 'macros/logo.html' import belnipi_logo %}
+        {{ belnipi_logo('brand-logo') }}
+        <div class="brand-text">
+          <span class="brand-name">{{ APP_NAME }}</span>
+          <span class="brand-tag">{{ ORG_NAME }}</span>
+        </div>
+      </a>
+    </div>
+    <nav class="topbar-nav">
+      {% if current_user.is_customer %}
+        <a href="{{ url_for('cabinet.dashboard') }}">Кабинет</a>
+        <a href="{{ url_for('cabinet.plugins') }}">Плагины</a>
+        <a href="{{ url_for('cabinet.tutorials') }}">База знаний</a>
+        <a href="{{ url_for('cabinet.videos') }}">Видео</a>
+        <a href="{{ url_for('tickets.list_tickets') }}">Заявки</a>
+      {% elif current_user.is_staff %}
+        <a href="{{ url_for('tickets.staff_queue') }}">Очередь</a>
+        <a href="{{ url_for('tickets.list_tickets') }}">Все заявки</a>
+        {% if current_user.is_admin %}
+        <a href="{{ url_for('admin.dashboard') }}">Администрирование</a>
+        {% endif %}
+      {% endif %}
+    </nav>
+    <div class="topbar-right">
+      <span class="user-pill">{{ current_user.full_name }}</span>
+      <a href="{{ url_for('auth.logout') }}" class="btn btn-sm btn-outline">Выход</a>
+    </div>
+  </header>
+  {% if expiry_banner %}
+  <div class="banner-warning">{{ expiry_banner }}</div>
+  {% endif %}
+  {% if auditor_alerts %}
+  <div class="banner-info">
+    <strong>Уведомления аудитора:</strong>
+    {% for a in auditor_alerts %}<span>{{ a }}</span>{% if not loop.last %} · {% endif %}{% endfor %}
+  </div>
+  {% endif %}
+  {% if maintenance_banner %}
+  <div class="banner-maintenance">{{ maintenance_banner }}{% if MAINTENANCE_AT %} — {{ MAINTENANCE_AT }}{% endif %}</div>
+  {% endif %}
+  {% endif %}
+
+  <main class="main-content">
+    {% with messages = get_flashed_messages(with_categories=true) %}
+      {% if messages %}
+        {% for cat, msg in messages %}
+        <div class="alert alert-{{ cat }}">{{ msg }}</div>
+        {% endfor %}
+      {% endif %}
+    {% endwith %}
+    {% block content %}{% endblock %}
+  </main>
+</div>
+<script src="{{ url_for('static', filename='js/app.js') }}"></script>
+{% block scripts %}{% endblock %}
+</body>
+</html>

@@ -1,0 +1,26 @@
+{% extends "base.html" %}
+{% block title %}Очередь заявок{% endblock %}
+{% block content %}
+<div class="container">
+  <div class="page-header"><h1>Очередь обработки</h1></div>
+  <div class="card table-wrap">
+    <table>
+      <thead><tr><th>№</th><th>Тема</th><th>Приоритет</th><th>Статус</th><th>Реакция до</th><th>Автор</th></tr></thead>
+      <tbody>
+      {% for t in tickets %}
+      <tr class="sla-{{ sla_status(t.reaction_deadline) }}">
+        <td><a href="{{ url_for('tickets.detail', tid=t.id) }}">{{ t.number }}</a></td>
+        <td>{{ t.subject }}</td>
+        <td><span class="priority p{{ t.priority }}" style="--pc:{{ SLA_PRIORITIES[t.priority].color }}">{{ SLA_PRIORITIES[t.priority].name }}</span></td>
+        <td><span class="badge status-{{ t.status }}">{{ TICKET_STATUSES.get(t.status, t.status) }}</span></td>
+        <td>{{ t.reaction_deadline.strftime('%d.%m %H:%M') if t.reaction_deadline else '—' }}</td>
+        <td>{{ t.author.full_name if t.author else '—' }}</td>
+      </tr>
+      {% else %}
+      <tr><td colspan="6" class="muted">Очередь пуста</td></tr>
+      {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+{% endblock %}

@@ -1,0 +1,167 @@
+{% extends "base.html" %}
+{% block title %}{{ ticket.number }}{% endblock %}
+{% block content %}
+<div class="container ticket-detail">
+  <div class="page-header">
+    <h1>{{ ticket.number }} — {{ ticket.subject }}</h1>
+    <span class="priority p{{ ticket.priority }}" style="--pc:{{ SLA_PRIORITIES[ticket.priority].color }}">{{ SLA_PRIORITIES[ticket.priority].name }}</span>
+    {% if ticket.priority_changed %}
+    <div class="priority-notice">Приоритет изменён Аудитором. Причина: «{{ ticket.priority_change_reason }}»</div>
+    {% endif %}
+  </div>
+
+  <div class="ticket-meta">
+    <span class="badge status-{{ ticket.status }}">{{ TICKET_STATUSES.get(ticket.status, ticket.status) }}</span>
+    <span>Договор: <a href="{{ url_for('cabinet.contract') if current_user.is_customer else url_for('admin.contract_edit', cid=ticket.contract_id) }}">{{ ticket.contract.number }}</a></span>
+    <span>Реакция: {{ format_duration(ticket.timer1_total_seconds) }}</span>
+    <span>Исполнение: {{ format_duration(ticket.timer2_total_seconds) }}</span>
+  </div>
+
+  <div class="tabs ticket-tabs">
+    <button class="tab active" data-tab="problem">Суть проблемы</button>
+    <button class="tab" data-tab="history">История изменений</button>
+    {% if current_user.is_staff %}<button class="tab" data-tab="response">Ответ</button>{% endif %}
+  </div>
+
+  <div class="tab-panel active" id="panel-problem">
+    <div class="card author-card">
+      <h3>Данные автора заявки</h3>
+      <div class="author-grid">
+        <span><strong>ФИО:</strong> {{ ticket.author.full_name }}</span>
+        <span><strong>Должность:</strong> {{ ticket.author.position or '—' }}</span>
+        <span><strong>Организация:</strong> {{ ticket.author.organization.name if ticket.author.organization else '—' }}</span>
+        <span><strong>Email:</strong> {{ ticket.author.email }}</span>
+        <span><strong>Телефон:</strong> {{ ticket.author.phone or '—' }}</span>
+      </div>
+    </div>
+    <div class="card">
+      <h3>Описание</h3>
+      <div class="markdown-body">{{ desc_html|safe }}</div>
+      {% if ticket.attachments.count() %}
+      <h4>Вложения</h4>
+      <ul>{% for a in ticket.attachments %}<li><a href="{{ url_for('tickets.download_attachment', tid=ticket.id, aid=a.id) }}">{{ a.original_name }}</a></li>{% endfor %}</ul>
+      {% endif %}
+    </div>
+    {% if ticket.response_text_md and ticket.status == 'resolved' %}
+    <div class="card response-card">
+      <h3>Официальный ответ</h3>
+      <div class="markdown-body">{{ resp_html|safe }}</div>
+      {% if ticket.response_files.count() %}
+      <ul>{% for f in ticket.response_files %}<li><a href="{{ url_for('tickets.download_response_file', tid=ticket.id, fid=f.id) }}">{{ f.original_name }}</a></li>{% endfor %}</ul>
+      {% endif %}
+    </div>
+    {% endif %}
+  </div>
+
+  <div class="tab-panel" id="panel-history">
+    <div class="card">
+      <ul class="timeline">
+        {% for h in history %}
+        <li>
+          <time>{{ h.created_at.strftime('%d.%m.%Y %H:%M') if h.created_at else '' }}</time>
+          <strong>{{ h.action }}</strong>
+          {% if h.user %}<span>{{ h.user.full_name }}</span>{% endif %}
+          {% if h.details %}<p>{{ h.details }}</p>{% endif %}
+          {% if h.old_value and h.new_value %}<p class="muted">{{ h.old_value }} → {{ h.new_value }}</p>{% endif %}
+        </li>
+        {% endfor %}
+      </ul>
+    </div>
+  </div>
+
+  {% if current_user.is_staff %}
+  <div class="tab-panel" id="panel-response">
+    <div class="card arm-panel">
+      <form method="post" action="{{ url_for('tickets.respond', tid=ticket.id) }}" id="respond-form">
+        {% if current_user.is_auditor %}
+        <div class="form-group">
+          <label>Назначить исполнителя</label>
+          <input type="search" id="executor-search" class="form-control" placeholder="Поиск исполнителя...">
+          <select name="executor_id" id="executor-select" class="form-control" size="4">
+            <option value="">— выберите —</option>
+            {% for e in executors %}<option value="{{ e.id }}" data-name="{{ e.full_name|lower }}" {% if ticket.executor_id == e.id %}selected{% endif %}>{{ e.full_name }} — {{ e.position }}</option>{% endfor %}
+          </select>
+          <button name="auditor_action" value="assign" class="btn btn-outline btn-sm">Назначить и перевести «В работе»</button>
+        </div>
+        <div class="form-group">
+          <label>Управление статусом</label>
+          <select name="status_choice" class="form-control">
+            <option value="">— не менять —</option>
+            <option value="ready">Готов к выдаче</option>
+            <option value="rejected">Отклонено</option>
+          </select>
+        </div>
+        <div class="form-group">
+          <label>Изменить приоритет (только Аудитор)</label>
+          <button type="button" class="btn btn-outline btn-sm" onclick="document.getElementById('priority-modal').classList.add('open')">Изменить критичность</button>
+        </div>
+        {% endif %}
+        <div class="form-group">
+          <label>Официальный текст ответа (Markdown)</label>
+          <textarea name="response_text" class="form-control" rows="10">{{ ticket.response_text_md or '' }}</textarea>
+        </div>
+        <div class="form-group">
+          <label>Исправленные файлы для заказчика</label>
+          <div class="dropzone" id="response-dropzone">
+            <p>Перетащите файлы или <button type="button" class="btn-link" id="response-browse">Обзор</button></p>
+            <input type="file" id="response-file-input" multiple hidden>
+            <div id="response-upload-list"></div>
+          </div>
+          <input type="hidden" name="response_file_ids" id="response_file_ids">
+        </div>
+        {% if current_user.is_executor %}
+        <button name="auditor_action" value="submit" class="btn btn-primary">Передать на проверку Аудитору</button>
+        {% elif current_user.is_auditor %}
+        <button name="auditor_action" value="approve" class="btn btn-primary">Утвердить и отправить Заказчику</button>
+        <button name="auditor_action" value="reject" class="btn btn-outline">Отклонить</button>
+        {% endif %}
+      </form>
+    </div>
+  </div>
+  {% endif %}
+
+  <div class="ticket-footer">
+    <button type="button" class="btn btn-outline btn-sm" onclick="document.querySelector('[data-tab=history]').click()">Журнал изменений</button>
+  </div>
+</div>
+
+<div class="modal" id="priority-modal">
+  <div class="modal-content">
+    <h3>Изменение уровня критичности</h3>
+    <form method="post" action="{{ url_for('tickets.change_priority', tid=ticket.id) }}">
+      <div class="form-group">
+        <label>Новый уровень</label>
+        <select name="priority" class="form-control">
+          {% for lvl, cfg in SLA_PRIORITIES.items() %}
+          <option value="{{ lvl }}" {% if lvl == ticket.priority %}selected{% endif %}>{{ cfg.name }}</option>
+          {% endfor %}
+        </select>
+      </div>
+      <div class="form-group">
+        <label>Укажите причину изменения уровня критичности *</label>
+        <textarea name="reason" id="priority-reason" class="form-control" required rows="4"></textarea>
+      </div>
+      <button type="submit" class="btn btn-primary" id="priority-save" disabled>Сохранить</button>
+      <button type="button" class="btn btn-outline" onclick="document.getElementById('priority-modal').classList.remove('open')">Отмена</button>
+    </form>
+  </div>
+</div>
+{% endblock %}
+{% block scripts %}
+<script>
+document.getElementById('executor-search')?.addEventListener('input', function() {
+  const q = this.value.toLowerCase();
+  document.querySelectorAll('#executor-select option').forEach(o => {
+    if (!o.value) return;
+    o.hidden = !o.dataset.name.includes(q);
+  });
+});
+document.getElementById('priority-reason')?.addEventListener('input', function() {
+  document.getElementById('priority-save').disabled = !this.value.trim();
+});
+</script>
+<script src="{{ url_for('static', filename='js/upload.js') }}"></script>
+<script>
+initUploadZone({ zone: 'response-dropzone', input: 'response-file-input', browse: 'response-browse', list: 'response-upload-list', hidden: 'response_file_ids', context: 'response' });
+</script>
+{% endblock %}
