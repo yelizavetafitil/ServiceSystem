@@ -11,6 +11,18 @@ docker compose --profile seed run --rm seed
 
 Открыть: **http://localhost:8095**
 
+**Готовый дамп БД** (схема + демо-данные) лежит в `database/servicesystem_seed.sql`. Восстановление:
+
+```bash
+docker compose up -d db
+docker compose exec -T db psql -U servicesystem -d postgres -c "DROP DATABASE IF EXISTS servicesystem;"
+docker compose exec -T db psql -U servicesystem -d postgres -c "CREATE DATABASE servicesystem;"
+docker compose exec -T db psql -U servicesystem -d servicesystem < database/servicesystem_seed.sql
+docker compose up -d web
+```
+
+Подробнее: [database/README.md](database/README.md)
+
 Пересоздать БД с расширенными тестовыми данными:
 
 ```bash
