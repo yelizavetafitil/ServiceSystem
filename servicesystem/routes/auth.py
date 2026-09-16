@@ -10,6 +10,13 @@ from servicesystem.services.audit import log_audit
 bp = Blueprint("auth", __name__)
 
 
+@bp.after_request
+def auth_no_cache(response):
+    response.headers["Cache-Control"] = "no-store, no-cache, must-revalidate, max-age=0"
+    response.headers["Pragma"] = "no-cache"
+    return response
+
+
 @bp.route("/")
 def index():
     if current_user.is_authenticated:
@@ -43,9 +50,14 @@ def _master_login():
         flash("Неверный мастер-ключ организации.", "danger")
         return redirect(url_for("auth.login"))
     if contract.is_blocked:
-        flash("Договор расторгнут. Доступ заблокирован.", "danger")
+        flash("Договор расторгнут или срок обслуживания истёк. Обратитесь к администратору.", "danger")
+        return redirect(url_for("auth.login"))
+    if contract.is_master_key_expired:
+        flash("Срок действия мастер-ключа истёк. Обратитесь к администратору.", "danger")
         return redirect(url_for("auth.login"))
     session["master_contract_id"] = contract.id
+    log_audit(None, "master_login", "contract", contract.id, f"org={contract.organization.name}")
+    db.session.commit()
     return redirect(url_for("auth.register"))
 
 
@@ -57,7 +69,7 @@ def _personal_login():
         flash("Неверный email или пароль.", "danger")
         return redirect(url_for("auth.login"))
     if user.is_customer and user.contract and user.contract.is_blocked:
-        flash("Доступ организации заблокирован.", "danger")
+        flash("Доступ организации заблокирован или срок обслуживания истёк.", "danger")
         return redirect(url_for("auth.login"))
     login_user(user, remember=False)
     session.permanent = True
@@ -74,7 +86,7 @@ def register():
         flash("Сначала войдите по мастер-ключу организации.", "warning")
         return redirect(url_for("auth.login"))
     contract = db.session.get(Contract, contract_id)
-    if not contract or contract.is_blocked:
+    if not contract or contract.is_blocked or contract.is_master_key_expired:
         flash("Договор недоступен для регистрации.", "danger")
         return redirect(url_for("auth.login"))
 
@@ -86,12 +98,16 @@ def register():
         if not request.form.get("pd_consent"):
             flash("Необходимо согласие на обработку персональных данных.", "danger")
             return redirect(url_for("auth.register"))
+        phone = request.form.get("phone", "").strip()
+        if not phone:
+            flash("Укажите контактный телефон.", "danger")
+            return redirect(url_for("auth.register"))
 
         user = User(
             email=email,
             full_name=request.form.get("full_name", "").strip(),
             position=request.form.get("position", "").strip(),
-            phone=request.form.get("phone", "").strip(),
+            phone=phone,
             role="customer",
             contract_id=contract.id,
             organization_id=contract.organization_id,
@@ -99,7 +115,14 @@ def register():
         )
         user.set_password(request.form.get("password", ""))
         db.session.add(user)
-        log_audit(None, "register", "user", details=f"email={email}, contract={contract.number}")
+        db.session.flush()
+        log_audit(
+            user.id,
+            "register",
+            "user",
+            user.id,
+            f"contract={contract.number}, org={contract.organization.name}, email={email}",
+        )
         db.session.commit()
         session.pop("master_contract_id", None)
         flash("Регистрация успешна. Войдите по персональному логину.", "success")

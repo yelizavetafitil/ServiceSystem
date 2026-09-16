@@ -5,20 +5,51 @@
   <a href="{{ url_for('cabinet.videos') }}" class="back-link">← К видео</a>
   <div class="grid-2 video-page">
     <div class="card video-player-wrap">
-      <iframe src="{{ video.video_url }}" allowfullscreen></iframe>
+      {% if is_local_stream %}
+      <video controls controlsList="nodownload" disablePictureInPicture oncontextmenu="return false" playsinline class="video-stream">
+        <source src="{{ video.video_url }}" type="video/mp4">
+        Ваш браузер не поддерживает потоковое воспроизведение.
+      </video>
+      {% else %}
+      <iframe src="{{ video.video_url }}" allowfullscreen referrerpolicy="no-referrer"></iframe>
+      {% endif %}
     </div>
     <div class="card">
       <h2>{{ video.title }}</h2>
       <p>{{ video.description }}</p>
+      <p class="hint">Потоковый просмотр — скачивание файла недоступно.</p>
       {% if chapters %}
       <h3>Оглавление</h3>
       <ul class="chapter-list">
         {% for c in chapters %}
-        <li><button class="chapter-btn" data-seek="{{ c.start_sec }}">{{ '%d:%02d'|format(c.start_sec // 60, c.start_sec % 60) }} — {{ c.title }}</button></li>
+        <li>
+          <button type="button" class="chapter-btn" data-seek="{{ c.start_sec }}">
+            {{ '%d:%02d'|format(c.start_sec // 60, c.start_sec % 60) }} — {{ c.title }}
+          </button>
+          {% if c.description %}<p class="muted chapter-desc">{{ c.description }}</p>{% endif %}
+        </li>
         {% endfor %}
       </ul>
       {% endif %}
     </div>
   </div>
 </div>
+{% endblock %}
+{% block scripts %}
+<script>
+document.querySelectorAll('.chapter-btn').forEach(btn => {
+  btn.addEventListener('click', () => {
+    const video = document.querySelector('.video-stream');
+    const iframe = document.querySelector('.video-player-wrap iframe');
+    if (video) {
+      video.currentTime = parseInt(btn.dataset.seek, 10);
+      video.play();
+    } else if (iframe) {
+      const url = new URL(iframe.src.split('?')[0]);
+      url.searchParams.set('start', btn.dataset.seek);
+      iframe.src = url.toString();
+    }
+  });
+});
+</script>
 {% endblock %}

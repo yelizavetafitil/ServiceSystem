@@ -1,24 +1,58 @@
-{% extends "base.html" %}
-{% block title %}Видео{% endblock %}
-{% block content %}
-<div class="container">
-  <div class="page-header"><h1>Видеоуроки</h1></div>
-  {% for v in videos %}
-  <div class="card" style="margin-bottom:10px"><strong>{{ v.title }}</strong> — {{ v.chapters.count() }} глав</div>
-  {% endfor %}
-  <div class="card">
-    <form method="post" action="{{ url_for('admin.video_create') }}">
-      <div class="form-row">
-        <input name="title" class="form-control" placeholder="Заголовок" required>
-        <input name="slug" class="form-control" placeholder="slug" required>
-        <input name="category" class="form-control" placeholder="Категория">
-        <input name="video_url" class="form-control" placeholder="URL видео (embed)" required>
-        <input name="duration_sec" class="form-control" placeholder="Длительность (сек)" type="number">
-      </div>
-      <textarea name="description" class="form-control" rows="2" placeholder="Описание" style="margin-top:10px"></textarea>
-      <textarea name="chapters" class="form-control" rows="4" placeholder="Тайм-коды: 0|Введение&#10;60|Глава 2" style="margin-top:10px"></textarea>
-      <button class="btn btn-primary" style="margin-top:10px">Добавить</button>
-    </form>
-  </div>
-</div>
-{% endblock %}
+{% extends "base.html" %}
+{% from "macros/forms.html" import csrf_field %}
+{% block title %}Видео{% endblock %}
+{% block content %}
+<div class="container">
+  <div class="page-header">
+    <div class="page-header-main">
+      <h1>Видеоуроки (CMS)</h1>
+      <p class="page-subtitle">Потоковое видео с тайм-кодами и описаниями глав для заказчиков и API</p>
+    </div>
+  </div>
+  {% for v in videos %}
+  <div class="card mb-md">
+    <div class="list-row">
+      <div class="list-row-main">
+        <strong>{{ v.title }}</strong>
+        <span class="muted"> — {{ v.category or 'Без категории' }} · {{ v.chapters.count() }} тайм-кодов</span>
+      </div>
+      <a href="{{ url_for('admin.video_edit', vid=v.id) }}" class="btn btn-outline btn-sm">Изменить</a>
+    </div>
+  </div>
+  {% else %}
+  <p class="muted mb-md">Видео пока не добавлены.</p>
+  {% endfor %}
+  <div class="card">
+    <h3>Новое видео</h3>
+    <form method="post" action="{{ url_for('admin.video_create') }}" enctype="multipart/form-data">
+      {{ csrf_field() }}
+      <div class="form-row">
+        <input name="title" class="form-control" placeholder="Заголовок" required>
+        <input name="slug" class="form-control" placeholder="slug" required>
+        <input name="category" class="form-control" placeholder="Категория">
+        <input name="duration_sec" class="form-control" placeholder="Длительность (сек)" type="number">
+      </div>
+      <div class="form-group mt-sm">
+        <label>URL видео (embed / внутренний хостинг)</label>
+        <input name="video_url" class="form-control" placeholder="https://...">
+      </div>
+      <div class="form-group">
+        <label>Или загрузить видеофайл</label>
+        <input type="file" name="video_file" class="form-control" accept="video/*">
+      </div>
+      <div class="form-group">
+        <label>Описание</label>
+        <textarea name="description" class="form-control" rows="2" placeholder="Краткое описание ролика"></textarea>
+      </div>
+      <div class="form-group">
+        <label>Таблица тайм-кодов</label>
+        {% from "macros/chapters.html" import chapter_editor %}
+        {{ chapter_editor('new-video-chapters', '') }}
+      </div>
+      <div class="form-actions">
+        <button class="btn btn-primary">Добавить видео</button>
+      </div>
+    </form>
+  </div>
+</div>
+{% endblock %}

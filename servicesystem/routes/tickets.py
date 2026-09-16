@@ -1,10 +1,8 @@
-import os
 from datetime import datetime, timezone
 
-from flask import Blueprint, abort, current_app, flash, jsonify, redirect, render_template, request, send_file, url_for
+from flask import Blueprint, abort, flash, jsonify, redirect, render_template, request, send_file, url_for
 from flask_login import current_user, login_required
 
-from servicesystem.config import Config
 from servicesystem.decorators import contract_access_required, role_required, staff_required, write_access_required
 from servicesystem.extensions import db
 from servicesystem.models import (
@@ -18,14 +16,24 @@ from servicesystem.models import (
 )
 from servicesystem.services.audit import log_audit, log_ticket_history
 from servicesystem.services.notify import notify_submitted_for_review, notify_ticket_created, notify_ticket_resolved
+from servicesystem.services.routing import resolve_auditor, resolve_default_executor
+from servicesystem.services.storage import get_storage
+from servicesystem.services.ticket_workflow import (
+    on_assign_executor,
+    on_mark_ready,
+    on_reject,
+    on_resolve,
+    on_submit_for_review,
+    on_ticket_created,
+    timer_total_seconds,
+)
 from servicesystem.services.sla import (
     compute_deadlines,
+    format_deadline,
     format_duration,
+    format_priority_snapshot,
+    priority_label,
     sla_status,
-    start_timer1,
-    start_timer2,
-    stop_timer1,
-    stop_timer2,
 )
 
 bp = Blueprint("tickets", __name__, url_prefix="/tickets")
@@ -33,7 +41,7 @@ bp = Blueprint("tickets", __name__, url_prefix="/tickets")
 
 def _next_ticket_number():
     year = datetime.now().year
-    prefix = f"T-{year}-"
+    prefix = f"Т-{year}-"
     last = Ticket.query.filter(Ticket.number.like(f"{prefix}%")).order_by(Ticket.id.desc()).first()
     seq = 1
     if last:
@@ -93,15 +101,32 @@ def create():
         obj_id = int(request.form["object_category_id"])
         inc_id = int(request.form["incident_category_id"])
         priority = int(request.form["priority"])
-        subject = request.form["subject"][:120]
-        description = request.form["description"]
+        subject = request.form["subject"].strip()[:120]
+        description = request.form["description"].strip()
+
+        obj_cat = db.session.get(ObjectCategory, obj_id)
+        inc_cat = db.session.get(IncidentCategory, inc_id)
+        if not obj_cat or not obj_cat.is_active:
+            flash("Выберите корректную категорию объекта.", "danger")
+            return render_template("tickets/create.html", contract=contract, objects=objects)
+        if not inc_cat or not inc_cat.is_active or inc_cat.object_category_id != obj_id:
+            flash("Категория инцидента не соответствует выбранному объекту.", "danger")
+            return render_template("tickets/create.html", contract=contract, objects=objects)
+        if not subject or not description:
+            flash("Заполните тему и описание проблемы.", "danger")
+            return render_template("tickets/create.html", contract=contract, objects=objects)
+        if priority not in (1, 2, 3, 4):
+            flash("Выберите уровень критичности.", "danger")
+            return render_template("tickets/create.html", contract=contract, objects=objects)
         reaction, resolution = compute_deadlines(priority)
-        auditor = User.query.filter_by(role="auditor", is_active=True).first()
+        auditor = resolve_auditor(obj_id)
+        default_exec = resolve_default_executor(obj_id)
         ticket = Ticket(
             number=_next_ticket_number(),
             contract_id=contract.id,
             author_id=current_user.id,
             auditor_id=auditor.id if auditor else None,
+            executor_id=default_exec.id if default_exec else None,
             object_category_id=obj_id,
             incident_category_id=inc_id,
             priority=priority,
@@ -111,9 +136,9 @@ def create():
             reaction_deadline=reaction,
             resolution_deadline=resolution,
         )
-        start_timer1(ticket)
         db.session.add(ticket)
         db.session.flush()
+        wf_details = on_ticket_created(ticket)
         attachment_ids = request.form.get("attachment_ids", "")
         if attachment_ids:
             for aid in attachment_ids.split(","):
@@ -127,12 +152,12 @@ def create():
             f"Орг: {current_user.organization.name if current_user.organization else '—'}; "
             f"Email: {current_user.email}; Тел: {current_user.phone or '—'}"
         )
-        log_ticket_history(ticket.id, current_user.id, "created", details=f"priority={priority}; {meta}")
+        log_ticket_history(ticket.id, current_user.id, "created", details=f"priority={priority}; {wf_details}; {meta}")
         log_audit(current_user.id, "ticket_create", "ticket", ticket.id, meta)
         auditor = db.session.get(User, ticket.auditor_id) if ticket.auditor_id else None
         notify_ticket_created(ticket, current_user, auditor)
         db.session.commit()
-        flash(f"Заявка {ticket.number} создана.", "success")
+        flash(f"Заявка №{ticket.number} создана. Подтверждение отправлено на {current_user.email}.", "success")
         return redirect(url_for("tickets.detail", tid=ticket.id))
     return render_template("tickets/create.html", contract=contract, objects=objects)
 
@@ -164,6 +189,10 @@ def detail(tid):
         resp_html=resp_html,
         format_duration=format_duration,
         sla_status=sla_status,
+        format_deadline=format_deadline,
+        format_priority_snapshot=format_priority_snapshot,
+        priority_label=priority_label,
+        timer_total_seconds=timer_total_seconds,
     )
 
 
@@ -174,7 +203,8 @@ def respond(tid):
     ticket = db.session.get(Ticket, tid) or abort(404)
     if not _can_view(ticket):
         abort(403)
-    response_text = request.form.get("response_text", "")
+
+    response_text = request.form.get("response_text", "").strip()
     ticket.response_text_md = response_text
 
     response_file_ids = request.form.get("response_file_ids", "")
@@ -187,10 +217,20 @@ def respond(tid):
                     rf.ticket_id = ticket.id
 
     if current_user.is_executor:
-        ticket.status = "on_review"
-        stop_timer2(ticket)
-        start_timer1(ticket)
-        log_ticket_history(ticket.id, current_user.id, "submitted_for_review")
+        action = request.form.get("executor_action")
+        if action != "submit":
+            flash("Недопустимое действие.", "danger")
+            return redirect(url_for("tickets.detail", tid=tid))
+        if not response_text:
+            flash("Заполните официальный текст ответа перед передачей на проверку.", "danger")
+            return redirect(url_for("tickets.detail", tid=tid))
+        wf_details = on_submit_for_review(ticket)
+        log_ticket_history(
+            ticket.id,
+            current_user.id,
+            "submitted_for_review",
+            details=wf_details,
+        )
         if ticket.auditor:
             notify_submitted_for_review(ticket, ticket.auditor)
         flash("Ответ передан на проверку аудитору.", "success")
@@ -198,28 +238,58 @@ def respond(tid):
     elif current_user.is_auditor:
         action = request.form.get("auditor_action")
         status_choice = request.form.get("status_choice")
-        if action == "approve" or status_choice == "ready":
-            ticket.status = "resolved"
-            stop_timer1(ticket)
-            ticket.resolved_at = datetime.now(timezone.utc)
-            log_ticket_history(ticket.id, current_user.id, "approved", details="Ответ отправлен заказчику")
+
+        if action == "assign":
+            exec_id = int(request.form.get("executor_id", 0))
+            if exec_id:
+                executor = db.session.get(User, exec_id)
+                old = ticket.executor_id
+                ticket.executor_id = exec_id
+                wf_details = on_assign_executor(ticket)
+                log_ticket_history(
+                    ticket.id,
+                    current_user.id,
+                    "assign_executor",
+                    old_value=str(old or ""),
+                    new_value=str(exec_id),
+                    details=f"Назначен: {executor.full_name if executor else exec_id}. {wf_details}",
+                )
+                flash(f"Исполнитель {executor.full_name if executor else ''} назначен.", "success")
+            else:
+                flash("Выберите исполнителя.", "warning")
+        elif action == "apply_status" and status_choice in ("ready", "rejected"):
+            if status_choice == "ready":
+                wf_details = on_mark_ready(ticket)
+                log_ticket_history(ticket.id, current_user.id, "marked_ready", details=wf_details)
+                flash("Заявка отмечена «Готов к выдаче».", "success")
+            else:
+                wf_details = on_reject(ticket)
+                log_ticket_history(ticket.id, current_user.id, "rejected", details=wf_details)
+                flash("Заявка отклонена.", "warning")
+        elif action == "approve":
+            if not response_text:
+                flash("Заполните официальный текст ответа перед отправкой заказчику.", "danger")
+                return redirect(url_for("tickets.detail", tid=tid))
+            wf_details = on_resolve(ticket)
+            log_ticket_history(ticket.id, current_user.id, "approved", details=wf_details)
+            log_audit(
+                current_user.id,
+                "ticket_resolved",
+                "contract",
+                ticket.contract_id,
+                f"Заявка {ticket.number} решена аудитором {current_user.full_name}",
+            )
             if ticket.author:
                 notify_ticket_resolved(ticket, ticket.author)
             flash("Ответ утверждён и отправлен заказчику.", "success")
-        elif action == "reject" or status_choice == "rejected":
-            ticket.status = "rejected"
-            stop_timer1(ticket)
-            log_ticket_history(ticket.id, current_user.id, "rejected")
+        elif status_choice == "ready":
+            wf_details = on_mark_ready(ticket)
+            log_ticket_history(ticket.id, current_user.id, "marked_ready", details=wf_details)
+            flash("Заявка отмечена «Готов к выдаче».", "success")
+        elif status_choice == "rejected":
+            wf_details = on_reject(ticket)
+            log_ticket_history(ticket.id, current_user.id, "rejected", details=wf_details)
             flash("Заявка отклонена.", "warning")
-        elif action == "assign":
-            exec_id = int(request.form.get("executor_id", 0))
-            if exec_id:
-                old = ticket.executor_id
-                ticket.executor_id = exec_id
-                ticket.status = "in_progress"
-                stop_timer1(ticket)
-                start_timer2(ticket)
-                log_ticket_history(ticket.id, current_user.id, "assign_executor", str(old), str(exec_id))
 
     db.session.commit()
     return redirect(url_for("tickets.detail", tid=tid))
@@ -227,15 +297,23 @@ def respond(tid):
 
 @bp.route("/<int:tid>/priority", methods=["POST"])
 @login_required
-@role_required("auditor", "admin")
+@role_required("auditor")
 def change_priority(tid):
     ticket = db.session.get(Ticket, tid) or abort(404)
+    if not _can_view(ticket):
+        abort(403)
     reason = request.form.get("reason", "").strip()
     if not reason:
         flash("Укажите причину изменения уровня критичности.", "danger")
         return redirect(url_for("tickets.detail", tid=tid))
     new_priority = int(request.form["priority"])
+    if new_priority not in (1, 2, 3, 4):
+        flash("Некорректный уровень критичности.", "danger")
+        return redirect(url_for("tickets.detail", tid=tid))
     old_priority = ticket.priority
+    if new_priority == old_priority:
+        flash("Выберите новый уровень критичности, отличный от текущего.", "warning")
+        return redirect(url_for("tickets.detail", tid=tid))
     old_reaction = ticket.reaction_deadline.isoformat() if ticket.reaction_deadline else ""
     old_resolution = ticket.resolution_deadline.isoformat() if ticket.resolution_deadline else ""
     reaction, resolution = compute_deadlines(new_priority, ticket.created_at)
@@ -244,16 +322,24 @@ def change_priority(tid):
     ticket.priority_change_reason = reason
     ticket.reaction_deadline = reaction
     ticket.resolution_deadline = resolution
+    auditor_name = current_user.full_name
     log_ticket_history(
         ticket.id,
         current_user.id,
         "priority_change",
         old_value=f"{old_priority}|{old_reaction}|{old_resolution}",
         new_value=f"{new_priority}|{reaction.isoformat()}|{resolution.isoformat()}",
-        details=reason,
+        details=f"Аудитор: {auditor_name}. Причина: {reason}",
+    )
+    log_audit(
+        current_user.id,
+        "ticket_priority_change",
+        "ticket",
+        ticket.id,
+        f"{priority_label(old_priority)} → {priority_label(new_priority)}; {reason}",
     )
     db.session.commit()
-    flash("Приоритет изменён.", "success")
+    flash(f"Критичность изменена: {priority_label(old_priority)} → {priority_label(new_priority)}.", "success")
     return redirect(url_for("tickets.detail", tid=tid))
 
 
@@ -266,7 +352,7 @@ def download_attachment(tid, aid):
     att = db.session.get(TicketAttachment, aid)
     if not att or att.ticket_id != tid:
         abort(404)
-    path = os.path.join(current_app.config["UPLOAD_FOLDER"], "tickets", att.stored_name)
+    path = get_storage().read_path(f"tickets/{att.stored_name}")
     return send_file(path, as_attachment=True, download_name=att.original_name)
 
 
@@ -279,5 +365,5 @@ def download_response_file(tid, fid):
     f = db.session.get(TicketResponseFile, fid)
     if not f or f.ticket_id != tid:
         abort(404)
-    path = os.path.join(current_app.config["UPLOAD_FOLDER"], "responses", f.stored_name)
+    path = get_storage().read_path(f"responses/{f.stored_name}")
     return send_file(path, as_attachment=True, download_name=f.original_name)

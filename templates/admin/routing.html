@@ -1,0 +1,60 @@
+{% extends "base.html" %}
+{% from "macros/forms.html" import csrf_field %}
+{% block title %}Маршрутизация тикетов{% endblock %}
+{% block content %}
+<div class="container">
+  <a href="{{ url_for('admin.dashboard') }}" class="back-link">← Администрирование</a>
+  <div class="page-header">
+    <div class="page-header-main">
+      <h1>Конструктор маршрутизации тикетов</h1>
+      <p class="page-subtitle">Назначение ролей сотрудников предприятия для обработки входящих заявок (TZ 3.3.7)</p>
+    </div>
+  </div>
+
+  <div class="card mb-md">
+    <h3>Роли в процессе</h3>
+    <ul class="role-desc-list">
+      <li><strong>Аудитор</strong> — первичная модерация, проверка гарантийных условий, контроль SLA, утверждение ответа.</li>
+      <li><strong>Исполнитель</strong> — профильный специалист, устранение проблем, подготовка технического ответа.</li>
+    </ul>
+  </div>
+
+  <div class="card">
+    <form method="post">
+      {{ csrf_field() }}
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th>Категория объекта</th><th>Аудитор</th><th>Исполнитель по умолчанию</th></tr></thead>
+          <tbody>
+          {% for o in objects %}
+          {% set r = routes.get(o.id) %}
+          <tr>
+            <td>{{ o.name }}</td>
+            <td>
+              <select name="auditor_{{ o.id }}" class="form-control" required>
+                <option value="">— выберите —</option>
+                {% for a in auditors %}
+                <option value="{{ a.id }}" {% if r and r.auditor_id == a.id %}selected{% endif %}>{{ a.full_name }} — {{ a.position or 'Аудитор' }}</option>
+                {% endfor %}
+              </select>
+            </td>
+            <td>
+              <select name="executor_{{ o.id }}" class="form-control">
+                <option value="">— не назначать —</option>
+                {% for e in executors %}
+                <option value="{{ e.id }}" {% if r and r.default_executor_id == e.id %}selected{% endif %}>{{ e.full_name }} — {{ e.position or 'Исполнитель' }}</option>
+                {% endfor %}
+              </select>
+            </td>
+          </tr>
+          {% endfor %}
+          </tbody>
+        </table>
+      </div>
+      <div class="form-actions">
+        <button class="btn btn-primary">Сохранить маршрутизацию</button>
+      </div>
+    </form>
+  </div>
+</div>
+{% endblock %}

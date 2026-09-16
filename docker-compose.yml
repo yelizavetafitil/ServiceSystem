@@ -30,6 +30,9 @@ services:
       UPLOAD_FOLDER: /app/data/uploads
       APP_NAME: "Сервис ЭМСТПН"
       ORG_NAME: 'РУП «Белнипиэнергопром»'
+      FORCE_HTTPS: ${FORCE_HTTPS:-0}
+      MAIL_ENABLED: ${MAIL_ENABLED:-0}
+      STORAGE_BACKEND: ${STORAGE_BACKEND:-local}
     volumes:
       - upload_data:/app/data/uploads
     depends_on:
@@ -37,6 +40,27 @@ services:
         condition: service_healthy
     networks:
       - ssnet
+
+  backup:
+    image: postgres:16-alpine
+    profiles: ["backup"]
+    restart: unless-stopped
+    environment:
+      POSTGRES_HOST: db
+      POSTGRES_USER: servicesystem
+      POSTGRES_PASSWORD: servicesystem
+      POSTGRES_DB: servicesystem
+      BACKUP_DIR: /app/data/backups
+    volumes:
+      - upload_data:/app/data/uploads
+      - backup_data:/app/data/backups
+      - ./scripts/backup.sh:/backup.sh:ro
+    depends_on:
+      db:
+        condition: service_healthy
+    networks:
+      - ssnet
+    entrypoint: ["/bin/sh", "-c", "chmod +x /backup.sh && while true; do /backup.sh; sleep 2592000; done"]
 
   seed:
     build: .
@@ -61,3 +85,4 @@ networks:
 volumes:
   pg_data:
   upload_data:
+  backup_data:

@@ -97,3 +97,40 @@ def sla_status(deadline: datetime | None) -> str:
     if diff < 3600 * 4:
         return "warning"
     return "ok"
+
+
+def priority_label(priority: int) -> str:
+    cfg = Config.SLA_PRIORITIES.get(priority, Config.SLA_PRIORITIES[2])
+    return cfg["name"]
+
+
+def format_deadline(dt: datetime | None) -> str:
+    if not dt:
+        return "—"
+    if dt.tzinfo is None:
+        dt = dt.replace(tzinfo=timezone.utc)
+    return dt.strftime("%d.%m.%Y %H:%M")
+
+
+def format_priority_snapshot(value: str | None) -> str:
+    """Format stored priority|reaction|resolution snapshot for history display."""
+    if not value:
+        return "—"
+    parts = value.split("|", 2)
+    if len(parts) < 3:
+        return value
+    try:
+        prio = int(parts[0])
+    except ValueError:
+        return value
+    name = priority_label(prio)
+    reaction = format_deadline(datetime.fromisoformat(parts[1])) if parts[1] else "—"
+    resolution = format_deadline(datetime.fromisoformat(parts[2])) if parts[2] else "—"
+    return f"{name} — реакция до {reaction}, устранение до {resolution}"
+
+
+def sla_resolution_label(priority: int) -> str:
+    cfg = Config.SLA_PRIORITIES.get(priority, Config.SLA_PRIORITIES[2])
+    if "resolution_hours" in cfg:
+        return f"{cfg['resolution_hours']} раб. ч"
+    return f"{cfg['resolution_days']} раб. дн"

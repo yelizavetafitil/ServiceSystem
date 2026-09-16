@@ -16,9 +16,26 @@ document.querySelectorAll('.tabs').forEach(tabsEl => {
   });
 });
 
-document.querySelectorAll('.topbar-nav a').forEach(link => {
-  if (link.pathname === window.location.pathname) link.classList.add('active');
-});
+(function highlightNav() {
+  const path = window.location.pathname;
+  const links = [...document.querySelectorAll('.topbar-nav a')];
+  let best = null;
+  let bestLen = -1;
+  links.forEach(link => {
+    const href = new URL(link.href, window.location.origin).pathname;
+    const base = href.endsWith('/') && href.length > 1 ? href.slice(0, -1) : href;
+    const exact = path === href || path === base;
+    const nested = path.startsWith(base + '/');
+    if (exact || nested) {
+      const score = href.length;
+      if (score > bestLen) {
+        bestLen = score;
+        best = link;
+      }
+    }
+  });
+  if (best) best.classList.add('active');
+})();
 
 document.querySelectorAll('.chapter-btn').forEach(btn => {
   btn.addEventListener('click', () => {

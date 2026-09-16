@@ -3,9 +3,12 @@
 {% block content %}
 <div class="container">
   <div class="page-header">
-    <h1>База знаний</h1>
-    <form class="search-bar" method="get">
-      <input type="search" name="q" value="{{ search }}" placeholder="Полнотекстовый поиск..." class="form-control">
+    <div class="page-header-main">
+      <h1>База знаний</h1>
+      <p class="page-subtitle">Пошаговые инструкции и методические материалы по ЭМСТПН</p>
+    </div>
+    <form class="search-bar page-header-actions" method="get">
+      <input type="search" name="q" value="{{ search }}" placeholder="Поиск по статьям..." class="form-control">
       <button class="btn btn-primary">Найти</button>
     </form>
   </div>

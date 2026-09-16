@@ -3,7 +3,7 @@
 {% block content %}
 <div class="container">
   <div class="page-header">
-    <div>
+    <div class="page-header-main">
       <h1>Личный кабинет</h1>
       {% if contract %}
       <p class="page-subtitle">Договор {{ contract.number }} — {{ CONTRACT_STATUSES.get(contract.status, contract.status) }}</p>
@@ -19,7 +19,13 @@
   <div class="stats-grid">
     <div class="stat-card"><span class="stat-num">{{ stats.open }}</span><span class="stat-label">Открытых заявок</span></div>
     <div class="stat-card"><span class="stat-num">{{ stats.resolved }}</span><span class="stat-label">Решённых заявок</span></div>
-    <div class="stat-card primary"><a href="{{ url_for('tickets.create') }}" class="stat-action">Создать заявку</a></div>
+    <div class="stat-card primary">
+      {% if contract and contract.is_readonly %}
+      <span class="stat-action muted">Создание заявок недоступно (договор приостановлен)</span>
+      {% else %}
+      <a href="{{ url_for('tickets.create') }}" class="stat-action">Создать заявку</a>
+      {% endif %}
+    </div>
   </div>
 
   <div class="grid-2">
@@ -29,20 +35,23 @@
         <a href="{{ url_for('cabinet.plugins') }}" class="quick-link">Плагины и обновления</a>
         <a href="{{ url_for('cabinet.tutorials') }}" class="quick-link">База знаний</a>
         <a href="{{ url_for('cabinet.videos') }}" class="quick-link">Видеоинструкции</a>
+        {% if not contract or not contract.is_readonly %}
         <a href="{{ url_for('tickets.create') }}" class="quick-link">Подать заявку</a>
+        {% endif %}
       </div>
     </div>
     <div class="card">
       <h3 class="section-title">Последние заявки</h3>
       {% if recent_tickets %}
       <table class="table-compact">
-        <thead><tr><th>Номер</th><th>Тема</th><th>Статус</th></tr></thead>
+        <thead><tr><th>Номер</th><th>Тема</th><th>Статус</th><th>Срок обработки</th></tr></thead>
         <tbody>
         {% for t in recent_tickets %}
         <tr>
           <td><a href="{{ url_for('tickets.detail', tid=t.id) }}">{{ t.number }}</a></td>
-          <td>{{ t.subject }}</td>
+          <td class="cell-subject">{{ t.subject }}</td>
           <td><span class="badge status-{{ t.status }}">{{ TICKET_STATUSES.get(t.status, t.status) }}</span></td>
+          <td class="muted">{% if t.status == 'resolved' %}{{ format_duration(t.timer_total_seconds) }}{% else %}—{% endif %}</td>
         </tr>
         {% endfor %}
         </tbody>

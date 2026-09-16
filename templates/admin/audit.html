@@ -1,8 +1,22 @@
 {% extends "base.html" %}
+{% from "macros/forms.html" import csrf_field %}
 {% block title %}Журнал аудита{% endblock %}
 {% block content %}
 <div class="container">
   <div class="page-header"><h1>Журнал аудита</h1></div>
+  <div class="card" style="margin-bottom:16px">
+    <form method="get" class="form-row">
+      <select name="user_id" class="form-control">
+        <option value="">Все пользователи</option>
+        {% for u in users %}<option value="{{ u.id }}" {% if filter_user == u.id %}selected{% endif %}>{{ u.full_name }} ({{ u.email }})</option>{% endfor %}
+      </select>
+      <select name="action" class="form-control">
+        <option value="">Все действия</option>
+        {% for a in actions %}<option value="{{ a }}" {% if filter_action == a %}selected{% endif %}>{{ a }}</option>{% endfor %}
+      </select>
+      <button class="btn btn-primary">Фильтр</button>
+    </form>
+  </div>
   <div class="card table-wrap">
     <table>
       <thead><tr><th>Время</th><th>Пользователь</th><th>Действие</th><th>Ресурс</th><th>Детали</th><th>IP</th></tr></thead>

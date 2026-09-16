@@ -11,7 +11,7 @@ from servicesystem.models import (
     VideoTutorial,
 )
 from servicesystem.services.audit import log_audit
-import os
+from servicesystem.services.storage import get_storage
 
 bp = Blueprint("cabinet", __name__, url_prefix="/cabinet")
 
@@ -35,7 +35,7 @@ def dashboard():
     recent = tickets_q.order_by(Ticket.created_at.desc()).limit(5).all()
     contract = current_user.contract
     stats = {
-        "open": tickets_q.filter(Ticket.status.in_(["new", "in_progress", "on_review"])).count(),
+        "open": tickets_q.filter(Ticket.status.in_(["new", "in_progress", "on_review", "ready"])).count(),
         "resolved": tickets_q.filter_by(status="resolved").count(),
     }
     return render_template(
@@ -69,7 +69,12 @@ def plugins():
     items = q.all()
     if allowed is not None:
         items = [p for p in items if p.id in allowed]
-    return render_template("cabinet/plugins.html", plugins=items)
+    can_download = not (
+        current_user.is_customer
+        and current_user.contract
+        and current_user.contract.is_readonly
+    )
+    return render_template("cabinet/plugins.html", plugins=items, can_download=can_download)
 
 
 @bp.route("/plugins/<int:pid>/download")
@@ -85,14 +90,14 @@ def plugin_download(pid):
     version = PluginVersion.query.filter_by(plugin_id=pid, is_current=True).first()
     if not version:
         abort(404)
-    from flask import current_app
-    path = os.path.join(current_app.config["UPLOAD_FOLDER"], "plugins", version.stored_name)
-    if not os.path.isfile(path):
+    storage = get_storage()
+    rel = f"plugins/{version.stored_name}"
+    if not storage.exists(rel):
         flash("Файл не найден на сервере.", "danger")
         return redirect(url_for("cabinet.plugins"))
     log_audit(current_user.id, "download", "plugin", pid, f"version={version.version}")
     db.session.commit()
-    return send_file(path, as_attachment=True, download_name=version.original_name)
+    return send_file(storage.read_path(rel), as_attachment=True, download_name=version.original_name)
 
 
 @bp.route("/tutorials")
@@ -108,7 +113,14 @@ def tutorials():
         items = [t for t in items if t.id in allowed]
     search = request.args.get("q", "").strip()
     if search:
-        items = [t for t in items if search.lower() in t.title.lower() or search.lower() in (t.content_md or "").lower()]
+        q_lower = search.lower()
+        items = [
+            t for t in items
+            if q_lower in t.title.lower()
+            or q_lower in (t.content_md or "").lower()
+            or q_lower in (t.tags or "").lower()
+            or q_lower in (t.category or "").lower()
+        ]
     return render_template("cabinet/tutorials.html", tutorials=items, search=search)
 
 
@@ -153,4 +165,25 @@ def video_detail(slug):
     chapters = v.chapters.all()
     log_audit(current_user.id, "view", "video", v.id)
     db.session.commit()
-    return render_template("cabinet/video_detail.html", video=v, chapters=chapters)
+    is_local_stream = bool(v.video_file) or (v.video_url or "").startswith("/cabinet/media/")
+    return render_template(
+        "cabinet/video_detail.html",
+        video=v,
+        chapters=chapters,
+        is_local_stream=is_local_stream,
+    )
+
+
+@bp.route("/media/videos/<path:filename>")
+@login_required
+@contract_access_required
+def stream_video(filename):
+    """Stream uploaded video without download (TZ 3.2.2)."""
+    storage = get_storage()
+    rel = f"videos/{filename}"
+    if not storage.exists(rel):
+        abort(404)
+    response = send_file(storage.read_path(rel), mimetype="video/mp4", as_attachment=False)
+    response.headers["Content-Disposition"] = "inline"
+    response.headers["Cache-Control"] = "no-store"
+    return response

@@ -1,17 +1,37 @@
 {% extends "base.html" %}
+{% from "macros/forms.html" import csrf_field %}
 {% block title %}Договор {{ contract.number }}{% endblock %}
 {% block content %}
 <div class="container">
   <a href="{{ url_for('admin.contracts') }}" class="back-link">← К договорам</a>
-  <div class="page-header"><h1>Договор {{ contract.number }}</h1><p>{{ contract.organization.name }}</p></div>
+  <div class="page-header">
+    <div class="page-header-main">
+      <h1>Договор {{ contract.number }}</h1>
+      <p class="page-subtitle">{{ contract.organization.name }}</p>
+    </div>
+  </div>
 
   <div class="grid-2">
     <div class="card">
       <h3>Статус обслуживания и SLA</h3>
+      <p class="hint">Изменение даты окончания автоматически продлевает доступ всем сотрудникам, привязанным к договору (TZ 3.3.4).</p>
       <form method="post">
+        {{ csrf_field() }}
         <div class="form-group">
           <label>Дата окончания обслуживания</label>
           <input type="date" name="service_end_date" class="form-control" value="{{ contract.service_end_date.isoformat() if contract.service_end_date else '' }}">
+        </div>
+        <div class="form-group">
+          <label>Срок действия мастер-ключа</label>
+          <input type="date" name="master_key_expires_at" class="form-control" value="{{ contract.master_key_expires_at.isoformat() if contract.master_key_expires_at else '' }}">
+          <label class="check-row mt-sm">
+            <input type="checkbox" name="sync_master_key" value="1">
+            Синхронизировать срок мастер-ключа с датой окончания обслуживания
+          </label>
+        </div>
+        <div class="form-group">
+          <label>URL документа договора</label>
+          <input type="text" name="document_url" class="form-control" value="{{ contract.document_url or '' }}" placeholder="/cabinet/contract или https://...">
         </div>
         <div class="form-group">
           <label>Статус договора</label>
@@ -20,17 +40,58 @@
             <option value="{{ k }}" {% if contract.status == k %}selected{% endif %}>{{ v }}</option>
             {% endfor %}
           </select>
+          <p class="hint mt-sm">
+            {% if contract.status == 'active_warranty' %}Полный доступ ко всем ресурсам.{% endif %}
+            {% if contract.status == 'active_post_warranty' %}Доступ к плагинам, туториалам и тикетам в рамках SLA.{% endif %}
+            {% if contract.status == 'suspended' %}Только чтение: старые тикеты без скачивания и новых заявок.{% endif %}
+            {% if contract.status == 'terminated' %}Полная блокировка входа для всех сотрудников организации.{% endif %}
+          </p>
         </div>
         <div class="form-group">
           <label>Примечания</label>
           <textarea name="notes" class="form-control" rows="3">{{ contract.notes or '' }}</textarea>
         </div>
-        <button class="btn btn-primary">Сохранить</button>
+        <button class="btn btn-primary">Сохранить и продлить доступ</button>
       </form>
+
+      <h4 class="mt-lg">Персональные учётные записи ({{ contract_users|length }})</h4>
+      {% if contract_users %}
+      <div class="table-wrap">
+        <table class="table-compact">
+          <thead><tr><th>ФИО</th><th>Email</th><th>Должность</th><th></th></tr></thead>
+          <tbody>
+          {% for u in contract_users %}
+          <tr>
+            <td>{{ u.full_name }}</td>
+            <td>{{ u.email }}</td>
+            <td>{{ u.position or '—' }}</td>
+            <td><a href="{{ url_for('admin.user_audit', uid=u.id) }}">Журнал</a></td>
+          </tr>
+          {% endfor %}
+          </tbody>
+        </table>
+      </div>
+      {% else %}
+      <p class="muted">Сотрудники ещё не зарегистрировались по мастер-ключу.</p>
+      {% endif %}
     </div>
+
     <div class="card">
-      <h3>Видимость контента</h3>
-      <form method="post" action="{{ url_for('admin.contract_access', cid=contract.id) }}">
+      <h3>Видимость контента для договора</h3>
+      <p class="hint">Скрытый контент не отображается в личном кабинете заказчика (TZ 3.3.6).</p>
+      {% if org_contracts|length > 1 %}
+      <form method="post" action="{{ url_for('admin.contract_access_copy_org', cid=contract.id) }}" class="mb-md" onsubmit="return confirm('Скопировать настройки видимости на все договоры организации?')">
+        {{ csrf_field() }}
+        <button type="submit" class="btn btn-outline btn-sm">Применить ко всем договорам организации ({{ org_contracts|length }})</button>
+      </form>
+      {% endif %}
+      <form method="post" action="{{ url_for('admin.contract_access', cid=contract.id) }}" id="access-form">
+        {{ csrf_field() }}
+        <div class="btn-group mb-md">
+          <button type="button" class="btn btn-outline btn-sm" onclick="document.querySelectorAll('#access-form input[type=checkbox]').forEach(c=>c.checked=true)">Выбрать всё</button>
+          <button type="button" class="btn btn-outline btn-sm" onclick="document.querySelectorAll('#access-form input[type=checkbox]').forEach(c=>c.checked=false)">Снять всё</button>
+        </div>
+        <div class="access-section">
         <h4>Плагины</h4>
         {% for p in plugins %}
         <label class="check-row"><input type="checkbox" name="access_plugin_{{ p.id }}" {% if ('plugin', p.id) in access %}checked{% endif %}> {{ p.name }}</label>
@@ -43,7 +104,10 @@
         {% for v in videos %}
         <label class="check-row"><input type="checkbox" name="access_video_{{ v.id }}" {% if ('video', v.id) in access %}checked{% endif %}> {{ v.title }}</label>
         {% endfor %}
-        <button class="btn btn-primary" style="margin-top:12px">Обновить доступ</button>
+        </div>
+        <div class="form-actions">
+        <button class="btn btn-primary">Обновить доступ</button>
+        </div>
       </form>
     </div>
   </div>

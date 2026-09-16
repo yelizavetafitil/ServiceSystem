@@ -1,0 +1,79 @@
+{% extends "base.html" %}
+{% from "macros/forms.html" import csrf_field %}
+{% block title %}Плагин {{ plugin.name }}{% endblock %}
+{% block head %}{% from "macros/editor.html" import editor_assets %}{{ editor_assets() }}{% endblock %}
+{% block content %}
+<div class="container">
+  <a href="{{ url_for('admin.plugins') }}" class="back-link">← Репозиторий плагинов</a>
+  <div class="page-header">
+    <div class="page-header-main">
+      <h1>{{ plugin.name }}</h1>
+      <p class="page-subtitle">Системный идентификатор: <code>{{ plugin.slug }}</code> · текущая версия <strong>v{{ plugin.current_version or '—' }}</strong></p>
+    </div>
+  </div>
+
+  <div class="grid-2">
+    <div class="card">
+      <h3>Метаданные плагина (TZ 3.8.1.1)</h3>
+      <form method="post">
+        {{ csrf_field() }}
+        <div class="form-group"><label>Наименование</label><input name="name" class="form-control" value="{{ plugin.name }}" required></div>
+        <div class="form-group"><label>Системный идентификатор (slug)</label><input class="form-control" value="{{ plugin.slug }}" disabled><p class="hint">Задаётся при регистрации, не изменяется.</p></div>
+        <div class="form-row">
+          <div class="form-group"><label>Min версия ядра ЭМСТПН</label><input name="min_core_version" class="form-control" value="{{ plugin.min_core_version or '' }}" placeholder="1.8.0"></div>
+          <div class="form-group"><label>Max версия ядра ЭМСТПН</label><input name="max_core_version" class="form-control" value="{{ plugin.max_core_version or '' }}" placeholder="3.0.0"></div>
+        </div>
+        <div class="form-group"><label>Описание</label><textarea name="description" class="form-control" rows="3">{{ plugin.description or '' }}</textarea></div>
+        <label class="check-row"><input type="checkbox" name="is_active" value="1" {% if plugin.is_active %}checked{% endif %}> Доступен в репозитории</label>
+        <button class="btn btn-primary" style="margin-top:12px">Сохранить метаданные</button>
+      </form>
+    </div>
+
+    <div class="card">
+      <h3>Загрузить новую версию (TZ 3.8.1.2)</h3>
+      <p class="hint">Текущий дистрибутив автоматически перемещается в архив версий.</p>
+      <form method="post" action="{{ url_for('admin.plugin_version_upload', pid=plugin.id) }}" enctype="multipart/form-data">
+        {{ csrf_field() }}
+        <div class="form-group"><label>Номер версии *</label><input name="version" class="form-control" placeholder="2.5.0" required></div>
+        <div class="form-group"><label>Что нового (Markdown) *</label><textarea name="changelog_md" class="form-control editor-field changelog-field" rows="6" required placeholder="## v2.5.0&#10;- Исправлены ошибки..."></textarea></div>
+        <div class="form-group"><label>Файл дистрибутива *</label><input type="file" name="file" class="form-control" accept=".zip,.rar,.7z" required></div>
+        <button class="btn btn-primary">Загрузить и опубликовать</button>
+      </form>
+    </div>
+  </div>
+
+  <div class="card" style="margin-top:16px">
+    <h3>Архив версий и откат</h3>
+    {% set versions = plugin.versions.all() %}
+    {% if versions %}
+    <div class="table-wrap">
+      <table>
+        <thead><tr><th>Версия</th><th>Дата</th><th>Размер</th><th>Статус</th><th>Что нового</th><th></th></tr></thead>
+        <tbody>
+        {% for v in versions %}
+        <tr>
+          <td><strong>v{{ v.version }}</strong></td>
+          <td>{{ v.created_at.strftime('%d.%m.%Y %H:%M') if v.created_at else '—' }}</td>
+          <td>{{ (v.size_bytes / 1024 / 1024)|round(2) }} МБ</td>
+          <td>{% if v.is_current %}<span class="badge status-resolved">Текущая</span>{% elif v.is_archived %}<span class="badge status-on_review">Архив</span>{% else %}—{% endif %}</td>
+          <td class="muted" style="max-width:240px">{{ (v.changelog_md or '')[:80] }}{% if v.changelog_md and v.changelog_md|length > 80 %}…{% endif %}</td>
+          <td>
+            {% if not v.is_current %}
+            <form method="post" action="{{ url_for('admin.plugin_version_rollback', pid=plugin.id, vid=v.id) }}" style="display:inline" onsubmit="return confirm('Откатить к v{{ v.version }}?')">
+              {{ csrf_field() }}
+              <button class="btn btn-outline btn-sm">Откатить</button>
+            </form>
+            {% endif %}
+          </td>
+        </tr>
+        {% endfor %}
+        </tbody>
+      </table>
+    </div>
+    {% else %}
+    <p class="muted">Версии ещё не загружены.</p>
+    {% endif %}
+  </div>
+</div>
+{% endblock %}
+{% block scripts %}{% from "macros/editor.html" import init_editor %}{{ init_editor('.changelog-field', 200) }}{% endblock %}

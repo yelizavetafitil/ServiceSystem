@@ -1,22 +1,38 @@
 {% extends "base.html" %}
+{% from "macros/forms.html" import csrf_field %}
 {% block title %}Туториалы{% endblock %}
+{% block head %}{% from "macros/editor.html" import editor_assets %}{{ editor_assets() }}{% endblock %}
 {% block content %}
 <div class="container">
-  <div class="page-header"><h1>Туториалы (CMS)</h1></div>
+  <div class="page-header">
+    <div class="page-header-main">
+      <h1>Туториалы (CMS)</h1>
+      <p class="page-subtitle">Статьи хранятся в БД как Markdown для поиска и API (TZ 3.8.2.1)</p>
+    </div>
+  </div>
   {% for t in tutorials %}
-  <div class="card" style="margin-bottom:10px"><strong>{{ t.title }}</strong> — {{ t.category }}</div>
+  <div class="card mb-md">
+    <div class="list-row">
+      <div class="list-row-main"><strong>{{ t.title }}</strong> — {{ t.category }}</div>
+      <a href="{{ url_for('admin.tutorial_edit', tid=t.id) }}" class="btn btn-outline btn-sm">Изменить</a>
+    </div>
+  </div>
   {% endfor %}
   <div class="card">
     <form method="post" action="{{ url_for('admin.tutorial_create') }}">
+      {{ csrf_field() }}
       <div class="form-row">
         <input name="title" class="form-control" placeholder="Заголовок" required>
         <input name="slug" class="form-control" placeholder="slug">
         <input name="category" class="form-control" placeholder="Категория">
         <input name="tags" class="form-control" placeholder="теги">
       </div>
-      <textarea name="content_md" class="form-control" rows="8" placeholder="Markdown" required style="margin-top:10px"></textarea>
-      <button class="btn btn-primary" style="margin-top:10px">Добавить</button>
+      <textarea name="content_md" class="form-control editor-field mt-sm" rows="8" placeholder="Содержание статьи" required></textarea>
+      <div class="form-actions">
+        <button class="btn btn-primary">Добавить</button>
+      </div>
     </form>
   </div>
 </div>
 {% endblock %}
+{% block scripts %}{% from "macros/editor.html" import init_editor %}{{ init_editor('.editor-field', 320) }}{% endblock %}

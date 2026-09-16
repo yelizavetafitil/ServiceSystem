@@ -1,14 +1,27 @@
 {% extends "base.html" %}
+{% from "macros/forms.html" import csrf_field %}
 {% block title %}Пользователи{% endblock %}
 {% block content %}
 <div class="container">
   <div class="card">
     <h2>Пользователи</h2>
     <div class="table-wrap"><table>
-      <thead><tr><th>ФИО</th><th>Email</th><th>Роль</th><th>Должность</th></tr></thead>
-      <tbody>{% for u in users %}<tr><td>{{ u.full_name }}</td><td>{{ u.email }}</td><td>{{ u.role }}</td><td>{{ u.position }}</td></tr>{% endfor %}</tbody>
+      <thead><tr><th>ФИО</th><th>Email</th><th>Роль</th><th>Должность</th><th>Статус</th><th></th></tr></thead>
+      <tbody>{% for u in users %}
+      <tr>
+        <td>{{ u.full_name }}</td><td>{{ u.email }}</td><td>{{ ROLES.get(u.role, u.role) }}</td><td>{{ u.position }}</td>
+        <td>{% if u.is_active %}<span class="badge status-resolved">Активен</span>{% else %}<span class="badge status-rejected">Отключён</span>{% endif %}</td>
+        <td>
+          <a href="{{ url_for('admin.user_edit', uid=u.id) }}">Изменить</a>
+          {% if u.role == 'customer' %}
+          · <a href="{{ url_for('admin.user_audit', uid=u.id) }}">Журнал</a>
+          {% endif %}
+        </td>
+      </tr>
+      {% endfor %}</tbody>
     </table></div>
     <form method="post" action="{{ url_for('admin.user_create') }}" style="margin-top:16px">
+      {{ csrf_field() }}
       <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:10px">
         <input name="full_name" class="form-control" placeholder="ФИО" required>
         <input name="email" class="form-control" placeholder="Email" required>

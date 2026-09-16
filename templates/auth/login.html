@@ -1,4 +1,5 @@
 {% extends "base.html" %}
+{% from "macros/forms.html" import csrf_field %}
 {% block title %}Вход — {{ APP_NAME }}{% endblock %}
 {% block content %}
 <div class="auth-page">
@@ -17,6 +18,7 @@
     </div>
 
     <form method="post" id="form-personal" class="tab-panel active">
+      {{ csrf_field() }}
       <input type="hidden" name="login_type" value="personal">
       <div class="form-group">
         <label>Рабочий email</label>
@@ -30,6 +32,7 @@
     </form>
 
     <form method="post" id="form-master" class="tab-panel">
+      {{ csrf_field() }}
       <input type="hidden" name="login_type" value="master">
       <p class="hint">Первичный вход по временному ключу организации для обязательной персональной регистрации сотрудника.</p>
       <div class="form-group">

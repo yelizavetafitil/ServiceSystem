@@ -1,12 +1,13 @@
 <!DOCTYPE html>
-<html lang="ru">
+<html lang="ru" class="{% if not current_user.is_authenticated %}auth-page{% endif %}">
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="csrf-token" content="{{ csrf_token() }}">
   <title>{% block title %}{{ APP_NAME }}{% endblock %}</title>
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="{{ url_for('static', filename='css/main.css') }}">
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/main.css') }}?v=2">
   {% block head %}{% endblock %}
 </head>
 <body class="{% if not current_user.is_authenticated %}auth-body{% endif %}">
@@ -60,15 +61,33 @@
   <main class="main-content">
     {% with messages = get_flashed_messages(with_categories=true) %}
       {% if messages %}
+      <div class="container flash-messages">
         {% for cat, msg in messages %}
         <div class="alert alert-{{ cat }}">{{ msg }}</div>
         {% endfor %}
+      </div>
       {% endif %}
     {% endwith %}
     {% block content %}{% endblock %}
   </main>
 </div>
-<script src="{{ url_for('static', filename='js/app.js') }}"></script>
+<script src="{{ url_for('static', filename='js/app.js') }}?v=2"></script>
+<script>
+document.querySelectorAll('form[method="post"]').forEach(function(form) {
+  form.addEventListener('submit', function() {
+    if (!form.querySelector('input[name="csrf_token"]')) {
+      var meta = document.querySelector('meta[name="csrf-token"]');
+      if (meta && meta.content) {
+        var input = document.createElement('input');
+        input.type = 'hidden';
+        input.name = 'csrf_token';
+        input.value = meta.content;
+        form.appendChild(input);
+      }
+    }
+  });
+});
+</script>
 {% block scripts %}{% endblock %}
 </body>
 </html>

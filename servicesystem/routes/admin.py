@@ -1,10 +1,10 @@
-import os
-from datetime import datetime
+from datetime import datetime, timezone
 
-from flask import Blueprint, abort, current_app, flash, redirect, render_template, request, url_for
+from flask import Blueprint, abort, flash, redirect, render_template, request, url_for
 from flask_login import current_user, login_required
 
 from servicesystem.decorators import admin_required
+from servicesystem.config import Config
 from servicesystem.extensions import db
 from servicesystem.models import (
     AuditLog,
@@ -12,6 +12,7 @@ from servicesystem.models import (
     ContractContentAccess,
     IncidentCategory,
     ObjectCategory,
+    ObjectCategoryRouting,
     Organization,
     Plugin,
     PluginVersion,
@@ -21,7 +22,8 @@ from servicesystem.models import (
     VideoChapter,
     VideoTutorial,
 )
-from servicesystem.services.audit import ensure_upload_dir, log_audit, unique_filename
+from servicesystem.services.audit import log_audit, unique_filename
+from servicesystem.services.storage import get_storage
 
 bp = Blueprint("admin", __name__)
 
@@ -33,7 +35,7 @@ def dashboard():
     stats = {
         "users": User.query.count(),
         "contracts": Contract.query.count(),
-        "tickets_open": Ticket.query.filter(Ticket.status.in_(["new", "in_progress", "on_review"])).count(),
+        "tickets_open": Ticket.query.filter(Ticket.status.in_(["new", "in_progress", "on_review", "ready"])).count(),
         "plugins": Plugin.query.count(),
     }
     expiring = Contract.query.filter(
@@ -62,8 +64,10 @@ def contract_create():
         number=request.form["number"].strip(),
         signed_at=datetime.strptime(request.form["signed_at"], "%Y-%m-%d").date() if request.form.get("signed_at") else None,
         service_end_date=datetime.strptime(request.form["service_end_date"], "%Y-%m-%d").date() if request.form.get("service_end_date") else None,
+        master_key_expires_at=datetime.strptime(request.form["master_key_expires_at"], "%Y-%m-%d").date() if request.form.get("master_key_expires_at") else None,
         status=request.form.get("status", "active_warranty"),
         master_login=request.form["master_login"].strip(),
+        document_url=request.form.get("document_url", "").strip() or None,
     )
     c.set_master_password(request.form["master_password"])
     db.session.add(c)
@@ -78,18 +82,52 @@ def contract_create():
 def contract_edit(cid):
     contract = db.session.get(Contract, cid) or abort(404)
     if request.method == "POST":
+        old_end = contract.service_end_date
+        old_status = contract.status
         contract.service_end_date = datetime.strptime(request.form["service_end_date"], "%Y-%m-%d").date() if request.form.get("service_end_date") else None
+        contract.master_key_expires_at = datetime.strptime(request.form["master_key_expires_at"], "%Y-%m-%d").date() if request.form.get("master_key_expires_at") else None
+        if request.form.get("sync_master_key") == "1" and contract.service_end_date:
+            contract.master_key_expires_at = contract.service_end_date
         contract.status = request.form["status"]
         contract.notes = request.form.get("notes", "")
-        log_audit(current_user.id, "contract_update", "contract", cid, f"status={contract.status}")
+        contract.document_url = request.form.get("document_url", "").strip() or contract.document_url
+        users_count = User.query.filter_by(contract_id=cid, role="customer", is_active=True).count()
+        details = f"status={contract.status}"
+        if contract.service_end_date != old_end:
+            details += f"; service_end_date={old_end}->{contract.service_end_date}; users={users_count}"
+        log_audit(current_user.id, "contract_update", "contract", cid, details)
         db.session.commit()
-        flash("Договор обновлён.", "success")
-        return redirect(url_for("admin.contracts"))
+        if contract.service_end_date != old_end and users_count:
+            flash(
+                f"Договор обновлён. Доступ автоматически продлён для {users_count} "
+                f"персональных учётных записей до {contract.service_end_date.strftime('%d.%m.%Y')}.",
+                "success",
+            )
+        elif contract.status != old_status:
+            flash(
+                f"Статус договора изменён на «{Config.CONTRACT_STATUSES.get(contract.status, contract.status)}». "
+                f"Затронуто учётных записей: {users_count}.",
+                "success",
+            )
+        else:
+            flash("Договор обновлён.", "success")
+        return redirect(url_for("admin.contract_edit", cid=cid))
     plugins = Plugin.query.filter_by(is_active=True).all()
     tutorials = Tutorial.query.filter_by(is_published=True).all()
     videos = VideoTutorial.query.filter_by(is_published=True).all()
     access = {(a.content_type, a.content_id) for a in contract.content_access.all()}
-    return render_template("admin/contract_edit.html", contract=contract, plugins=plugins, tutorials=tutorials, videos=videos, access=access)
+    contract_users = User.query.filter_by(contract_id=cid, role="customer").order_by(User.full_name).all()
+    org_contracts = Contract.query.filter_by(organization_id=contract.organization_id).order_by(Contract.number).all()
+    return render_template(
+        "admin/contract_edit.html",
+        contract=contract,
+        plugins=plugins,
+        tutorials=tutorials,
+        videos=videos,
+        access=access,
+        contract_users=contract_users,
+        org_contracts=org_contracts,
+    )
 
 
 @bp.route("/contracts/<int:cid>/access", methods=["POST"])
@@ -104,6 +142,37 @@ def contract_access(cid):
             db.session.add(ContractContentAccess(contract_id=cid, content_type=ctype, content_id=int(cid_str)))
     db.session.commit()
     flash("Доступ к контенту обновлён.", "success")
+    return redirect(url_for("admin.contract_edit", cid=cid))
+
+
+@bp.route("/contracts/<int:cid>/access/copy-org", methods=["POST"])
+@login_required
+@admin_required
+def contract_access_copy_org(cid):
+    """Применить видимость контента ко всем договорам организации (TZ 3.3.1)."""
+    contract = db.session.get(Contract, cid) or abort(404)
+    access_rows = list(contract.content_access.all())
+    siblings = Contract.query.filter(
+        Contract.organization_id == contract.organization_id,
+        Contract.id != cid,
+    ).all()
+    for sibling in siblings:
+        ContractContentAccess.query.filter_by(contract_id=sibling.id).delete()
+        for row in access_rows:
+            db.session.add(ContractContentAccess(
+                contract_id=sibling.id,
+                content_type=row.content_type,
+                content_id=row.content_id,
+            ))
+    log_audit(
+        current_user.id,
+        "contract_access_copy_org",
+        "organization",
+        contract.organization_id,
+        f"from_contract={contract.number}, targets={len(siblings)}",
+    )
+    db.session.commit()
+    flash(f"Видимость контента скопирована на {len(siblings)} договор(ов) организации.", "success")
     return redirect(url_for("admin.contract_edit", cid=cid))
 
 
@@ -130,6 +199,191 @@ def user_create():
     db.session.commit()
     flash("Пользователь создан.", "success")
     return redirect(url_for("admin.users"))
+
+
+@bp.route("/users/<int:uid>", methods=["GET", "POST"])
+@login_required
+@admin_required
+def user_edit(uid):
+    user = db.session.get(User, uid) or abort(404)
+    if request.method == "POST":
+        user.full_name = request.form["full_name"].strip()
+        user.position = request.form.get("position", "")
+        user.role = request.form["role"]
+        user.is_active = request.form.get("is_active") == "1"
+        if request.form.get("password"):
+            user.set_password(request.form["password"])
+        db.session.commit()
+        flash("Пользователь обновлён.", "success")
+        return redirect(url_for("admin.users"))
+    return render_template("admin/user_edit.html", user=user)
+
+
+@bp.route("/users/<int:uid>/audit")
+@login_required
+@admin_required
+def user_audit(uid):
+    """Журнал действий персонального аккаунта (TZ 3.1.4)."""
+    user = db.session.get(User, uid) or abort(404)
+    logs = (
+        AuditLog.query.filter_by(user_id=uid)
+        .order_by(AuditLog.created_at.desc())
+        .limit(500)
+        .all()
+    )
+    known_ids = {l.id for l in logs}
+    legacy_register = (
+        AuditLog.query.filter(
+            AuditLog.user_id.is_(None),
+            AuditLog.action == "register",
+            AuditLog.details.contains(user.email),
+        )
+        .order_by(AuditLog.created_at.desc())
+        .all()
+    )
+    for entry in legacy_register:
+        if entry.id not in known_ids:
+            logs.append(entry)
+    logs.sort(key=lambda l: l.created_at or datetime(1970, 1, 1, tzinfo=timezone.utc), reverse=True)
+    action_labels = {
+        "login": "Вход в систему",
+        "logout": "Выход",
+        "register": "Персональная регистрация",
+        "master_login": "Вход по мастер-ключу",
+        "ticket_create": "Создание заявки",
+        "download": "Скачивание материала",
+        "view": "Просмотр материала",
+        "contract_update": "Изменение договора",
+    }
+    return render_template(
+        "admin/user_audit.html",
+        user=user,
+        logs=logs,
+        action_labels=action_labels,
+    )
+
+
+@bp.route("/routing", methods=["GET", "POST"])
+@login_required
+@admin_required
+def routing():
+    objects = ObjectCategory.query.filter_by(is_active=True).order_by(ObjectCategory.sort_order).all()
+    auditors = User.query.filter_by(role="auditor", is_active=True).all()
+    executors = User.query.filter_by(role="executor", is_active=True).all()
+    if request.method == "POST":
+        for obj in objects:
+            aud_id = request.form.get(f"auditor_{obj.id}")
+            exec_id = request.form.get(f"executor_{obj.id}")
+            if not aud_id:
+                continue
+            route = ObjectCategoryRouting.query.filter_by(object_category_id=obj.id).first()
+            if not route:
+                route = ObjectCategoryRouting(object_category_id=obj.id)
+                db.session.add(route)
+            route.auditor_id = int(aud_id)
+            route.default_executor_id = int(exec_id) if exec_id else None
+        db.session.commit()
+        flash("Маршрутизация тикетов обновлена.", "success")
+        return redirect(url_for("admin.routing"))
+    routes = {r.object_category_id: r for r in ObjectCategoryRouting.query.all()}
+    return render_template("admin/routing.html", objects=objects, auditors=auditors, executors=executors, routes=routes)
+
+
+@bp.route("/categories/object/<int:oid>/edit", methods=["POST"])
+@login_required
+@admin_required
+def object_category_edit(oid):
+    obj = db.session.get(ObjectCategory, oid) or abort(404)
+    obj.name = request.form["name"].strip()
+    obj.is_active = request.form.get("is_active") == "1"
+    db.session.commit()
+    return redirect(url_for("admin.categories"))
+
+
+@bp.route("/categories/incident/<int:iid>/edit", methods=["POST"])
+@login_required
+@admin_required
+def incident_category_edit(iid):
+    inc = db.session.get(IncidentCategory, iid) or abort(404)
+    inc.name = request.form["name"].strip()
+    inc.is_active = request.form.get("is_active") == "1"
+    db.session.commit()
+    return redirect(url_for("admin.categories"))
+
+
+@bp.route("/plugins/<int:pid>/edit", methods=["GET", "POST"])
+@login_required
+@admin_required
+def plugin_edit(pid):
+    plugin = db.session.get(Plugin, pid) or abort(404)
+    if request.method == "POST":
+        plugin.name = request.form["name"]
+        plugin.description = request.form.get("description", "")
+        plugin.min_core_version = request.form.get("min_core_version")
+        plugin.max_core_version = request.form.get("max_core_version")
+        plugin.is_active = request.form.get("is_active") == "1"
+        db.session.commit()
+        flash("Плагин обновлён.", "success")
+        return redirect(url_for("admin.plugin_edit", pid=pid))
+    versions = plugin.versions.all()
+    return render_template("admin/plugin_edit.html", plugin=plugin, versions=versions)
+
+
+@bp.route("/tutorials/<int:tid>/edit", methods=["GET", "POST"])
+@login_required
+@admin_required
+def tutorial_edit(tid):
+    t = db.session.get(Tutorial, tid) or abort(404)
+    if request.method == "POST":
+        t.title = request.form["title"]
+        t.slug = request.form.get("slug") or t.slug
+        t.category = request.form.get("category")
+        t.tags = request.form.get("tags")
+        t.content_md = request.form["content_md"]
+        t.is_published = request.form.get("is_published") == "1"
+        db.session.commit()
+        flash("Туториал обновлён.", "success")
+        return redirect(url_for("admin.tutorials"))
+    return render_template("admin/tutorial_edit.html", tutorial=t)
+
+
+@bp.route("/videos/<int:vid>/edit", methods=["GET", "POST"])
+@login_required
+@admin_required
+def video_edit(vid):
+    v = db.session.get(VideoTutorial, vid) or abort(404)
+    if request.method == "POST":
+        v.title = request.form["title"]
+        v.slug = request.form.get("slug") or v.slug
+        v.category = request.form.get("category")
+        v.description = request.form.get("description")
+        v.video_url = request.form.get("video_url") or v.video_url
+        v.duration_sec = int(request.form["duration_sec"]) if request.form.get("duration_sec") else v.duration_sec
+        v.is_published = request.form.get("is_published") == "1"
+        f = request.files.get("video_file")
+        if f and f.filename:
+            stored = unique_filename(f.filename)
+            storage = get_storage()
+            storage.ensure_dir("videos")
+            size = storage.save_file(f"videos/{stored}", f)
+            v.video_file = stored
+            v.video_url = url_for("cabinet.stream_video", filename=stored, _external=False)
+        VideoChapter.query.filter_by(video_id=v.id).delete()
+        for i, line in enumerate(request.form.get("chapters", "").strip().split("\n")):
+            if "|" in line:
+                start, title = line.split("|", 1)
+                desc = ""
+                if ";" in title:
+                    title, desc = title.split(";", 1)
+                db.session.add(VideoChapter(
+                    video_id=v.id, title=title.strip(), start_sec=int(start.strip()),
+                    description=desc.strip() or None, sort_order=i,
+                ))
+        db.session.commit()
+        flash("Видео обновлено.", "success")
+        return redirect(url_for("admin.videos"))
+    chapters = "\n".join(f"{c.start_sec}|{c.title}" + (f";{c.description}" if c.description else "") for c in v.chapters.all())
+    return render_template("admin/video_edit.html", video=v, chapters=chapters)
 
 
 @bp.route("/categories")
@@ -192,13 +446,18 @@ def plugin_version_rollback(pid, vid):
     version = db.session.get(PluginVersion, vid)
     if not version or version.plugin_id != pid:
         abort(404)
+    old_current = PluginVersion.query.filter_by(plugin_id=pid, is_current=True).first()
+    if old_current and old_current.id != version.id:
+        old_current.is_current = False
+        old_current.is_archived = True
     PluginVersion.query.filter_by(plugin_id=pid, is_current=True).update({"is_current": False})
     version.is_current = True
     version.is_archived = False
     plugin.current_version = version.version
+    log_audit(current_user.id, "plugin_rollback", "plugin", pid, f"version={version.version}")
     db.session.commit()
     flash(f"Откат к версии {version.version} выполнен.", "success")
-    return redirect(url_for("admin.plugins"))
+    return redirect(url_for("admin.plugin_edit", pid=pid))
 
 
 @bp.route("/plugins/<int:pid>/upload", methods=["POST"])
@@ -207,26 +466,35 @@ def plugin_version_rollback(pid, vid):
 def plugin_version_upload(pid):
     plugin = db.session.get(Plugin, pid) or abort(404)
     f = request.files.get("file")
-    version = request.form["version"]
+    if not f or not f.filename:
+        flash("Выберите файл дистрибутива.", "danger")
+        return redirect(url_for("admin.plugin_edit", pid=pid))
+    version = request.form.get("version", "").strip()
+    changelog = request.form.get("changelog_md", "").strip()
+    if not version or not changelog:
+        flash("Укажите номер версии и текст «Что нового».", "danger")
+        return redirect(url_for("admin.plugin_edit", pid=pid))
     stored = unique_filename(f.filename)
-    ensure_upload_dir(current_app.config["UPLOAD_FOLDER"], "plugins")
-    path = os.path.join(current_app.config["UPLOAD_FOLDER"], "plugins", stored)
-    f.save(path)
+    storage = get_storage()
+    storage.ensure_dir("plugins")
+    size = storage.save_file(f"plugins/{stored}", f)
     PluginVersion.query.filter_by(plugin_id=pid, is_current=True).update({"is_current": False, "is_archived": True})
     pv = PluginVersion(
         plugin_id=pid,
         version=version,
-        changelog_md=request.form.get("changelog_md", ""),
+        changelog_md=changelog,
         stored_name=stored,
         original_name=f.filename,
-        size_bytes=os.path.getsize(path),
+        size_bytes=size,
         is_current=True,
+        is_archived=False,
     )
     plugin.current_version = version
     db.session.add(pv)
+    log_audit(current_user.id, "plugin_version_upload", "plugin", pid, f"version={version}; file={f.filename}")
     db.session.commit()
-    flash(f"Версия {version} загружена.", "success")
-    return redirect(url_for("admin.plugins"))
+    flash(f"Версия {version} загружена. Предыдущая перемещена в архив.", "success")
+    return redirect(url_for("admin.plugin_edit", pid=pid))
 
 
 @bp.route("/tutorials")
@@ -266,12 +534,26 @@ def videos():
 @login_required
 @admin_required
 def video_create():
+    video_url = request.form.get("video_url", "").strip()
+    video_file = None
+    f = request.files.get("video_file")
+    if f and f.filename:
+        stored = unique_filename(f.filename)
+        storage = get_storage()
+        storage.ensure_dir("videos")
+        storage.save_file(f"videos/{stored}", f)
+        video_file = stored
+        video_url = url_for("cabinet.stream_video", filename=stored, _external=False)
+    if not video_url:
+        flash("Укажите URL видео или загрузите файл.", "danger")
+        return redirect(url_for("admin.videos"))
     v = VideoTutorial(
         title=request.form["title"],
         slug=request.form["slug"],
         category=request.form.get("category"),
         description=request.form.get("description"),
-        video_url=request.form["video_url"],
+        video_url=video_url,
+        video_file=video_file,
         duration_sec=int(request.form["duration_sec"]) if request.form.get("duration_sec") else None,
     )
     db.session.add(v)
@@ -280,7 +562,13 @@ def video_create():
     for i, line in enumerate(chapters_raw.strip().split("\n")):
         if "|" in line:
             start, title = line.split("|", 1)
-            db.session.add(VideoChapter(video_id=v.id, title=title.strip(), start_sec=int(start.strip()), sort_order=i))
+            desc = ""
+            if ";" in title:
+                title, desc = title.split(";", 1)
+            db.session.add(VideoChapter(
+                video_id=v.id, title=title.strip(), start_sec=int(start.strip()),
+                description=desc.strip() or None, sort_order=i,
+            ))
     db.session.commit()
     return redirect(url_for("admin.videos"))
 
@@ -289,8 +577,17 @@ def video_create():
 @login_required
 @admin_required
 def audit():
-    logs = AuditLog.query.order_by(AuditLog.created_at.desc()).limit(200).all()
-    return render_template("admin/audit.html", logs=logs)
+    q = AuditLog.query
+    user_id = request.args.get("user_id", type=int)
+    action = request.args.get("action", "").strip()
+    if user_id:
+        q = q.filter_by(user_id=user_id)
+    if action:
+        q = q.filter(AuditLog.action == action)
+    logs = q.order_by(AuditLog.created_at.desc()).limit(500).all()
+    users = User.query.order_by(User.full_name).all()
+    actions = [r[0] for r in db.session.query(AuditLog.action).distinct().order_by(AuditLog.action).all()]
+    return render_template("admin/audit.html", logs=logs, users=users, actions=actions, filter_user=user_id, filter_action=action)
 
 
 @bp.route("/organizations/create", methods=["POST"])

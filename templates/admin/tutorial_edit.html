@@ -1,0 +1,24 @@
+{% extends "base.html" %}
+{% from "macros/forms.html" import csrf_field %}
+{% block title %}Редактирование — {{ tutorial.title }}{% endblock %}
+{% block head %}{% from "macros/editor.html" import editor_assets %}{{ editor_assets() }}{% endblock %}
+{% block content %}
+<div class="container">
+  <a href="{{ url_for('admin.tutorials') }}" class="back-link">← Туториалы</a>
+  <div class="card">
+    <form method="post">
+      {{ csrf_field() }}
+      <div class="form-row">
+        <input name="title" class="form-control" value="{{ tutorial.title }}" required>
+        <input name="slug" class="form-control" value="{{ tutorial.slug }}">
+        <input name="category" class="form-control" value="{{ tutorial.category or '' }}" placeholder="Категория">
+        <input name="tags" class="form-control" value="{{ tutorial.tags or '' }}" placeholder="теги">
+      </div>
+      <textarea name="content_md" class="form-control editor-field" rows="12" required style="margin-top:10px">{{ tutorial.content_md }}</textarea>
+      <label class="check-row" style="margin-top:10px"><input type="checkbox" name="is_published" value="1" {% if tutorial.is_published %}checked{% endif %}> Опубликован</label>
+      <button class="btn btn-primary" style="margin-top:10px">Сохранить</button>
+    </form>
+  </div>
+</div>
+{% endblock %}
+{% block scripts %}{% from "macros/editor.html" import init_editor %}{{ init_editor('.editor-field', 360) }}{% endblock %}

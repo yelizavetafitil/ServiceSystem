@@ -1,44 +1,39 @@
 {% extends "base.html" %}
-{% block title %}Плагины{% endblock %}
+{% from "macros/forms.html" import csrf_field %}
+{% block title %}Репозиторий плагинов{% endblock %}
 {% block content %}
 <div class="container">
-  <div class="card">
-    <h2>Репозиторий плагинов</h2>
-    {% for p in plugins %}
-    <div class="plugin-card" style="margin-bottom:16px">
-      <div><strong>{{ p.name }}</strong> ({{ p.slug }}) · ядро {{ p.min_core_version }}–{{ p.max_core_version }} · текущая <strong>v{{ p.current_version }}</strong></div>
-      <form method="post" action="{{ url_for('admin.plugin_version_upload', pid=p.id) }}" enctype="multipart/form-data" style="display:flex;gap:8px;align-items:center;margin-top:10px;flex-wrap:wrap">
-        <input name="version" class="form-control" placeholder="Версия" required style="width:100px">
-        <input name="changelog_md" class="form-control" placeholder="Что нового (Markdown)">
-        <input type="file" name="file" required>
-        <button class="btn btn-primary">Загрузить версию</button>
-      </form>
-      {% set versions = p.versions.all() %}
-      {% if versions|length > 1 %}
-      <details style="margin-top:10px">
-        <summary>Архив версий ({{ versions|length }})</summary>
-        <ul>
-        {% for v in versions %}
-        <li>
-          v{{ v.version }} {% if v.is_current %}<em>(текущая)</em>{% elif v.is_archived %}(архив){% endif %}
-          {% if not v.is_current %}
-          <form method="post" action="{{ url_for('admin.plugin_version_rollback', pid=p.id, vid=v.id) }}" style="display:inline">
-            <button class="btn btn-outline btn-sm">Откатить</button>
-          </form>
-          {% endif %}
-        </li>
-        {% endfor %}
-        </ul>
-      </details>
-      {% endif %}
+  <div class="page-header">
+    <div class="page-header-main">
+      <h1>Репозиторий плагинов</h1>
+      <p class="page-subtitle">Внутренний реестр модулей ЭМСТПН (TZ 3.8.1)</p>
     </div>
+  </div>
+  <div class="card">
+    {% for p in plugins %}
+    <div class="list-divider">
+      <div class="list-row">
+        <div class="list-row-main">
+          <strong>{{ p.name }}</strong>
+          <span class="muted">· <code>{{ p.slug }}</code></span><br>
+          <span class="muted">Ядро {{ p.min_core_version or '—' }} — {{ p.max_core_version or '—' }} · текущая <strong>v{{ p.current_version or '—' }}</strong></span>
+          {% if not p.is_active %}<span class="badge status-rejected">Скрыт</span>{% endif %}
+        </div>
+        <a href="{{ url_for('admin.plugin_edit', pid=p.id) }}" class="btn btn-primary btn-sm">Управление версиями</a>
+      </div>
+    </div>
+    {% else %}
+    <p class="muted">Плагины не зарегистрированы.</p>
     {% endfor %}
-    <form method="post" action="{{ url_for('admin.plugin_create') }}" style="margin-top:16px;display:flex;gap:10px;flex-wrap:wrap">
-      <input name="name" class="form-control" placeholder="Название" required>
-      <input name="slug" class="form-control" placeholder="slug" required>
+
+    <h3 class="mt-lg">Зарегистрировать плагин</h3>
+    <form method="post" action="{{ url_for('admin.plugin_create') }}" class="form-row mt-sm">
+      {{ csrf_field() }}
+      <input name="name" class="form-control" placeholder="Наименование" required>
+      <input name="slug" class="form-control" placeholder="Системный идентификатор (slug)" required pattern="[a-z0-9-]+" title="латиница, цифры, дефис">
       <input name="min_core_version" class="form-control" placeholder="Min ядро">
       <input name="max_core_version" class="form-control" placeholder="Max ядро">
-      <button class="btn btn-outline">+ Плагин</button>
+      <button class="btn btn-outline">+ Зарегистрировать</button>
     </form>
   </div>
 </div>

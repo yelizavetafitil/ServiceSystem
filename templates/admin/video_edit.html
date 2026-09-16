@@ -1,0 +1,39 @@
+{% extends "base.html" %}
+{% from "macros/forms.html" import csrf_field %}
+{% block title %}Видео — {{ video.title }}{% endblock %}
+{% block content %}
+<div class="container">
+  <a href="{{ url_for('admin.videos') }}" class="back-link">← Видеоуроки</a>
+  <div class="card">
+    <h2>{{ video.title }}</h2>
+    <form method="post" enctype="multipart/form-data">
+      {{ csrf_field() }}
+      <div class="form-row">
+        <div class="form-group"><label>Заголовок</label><input name="title" class="form-control" value="{{ video.title }}" required></div>
+        <div class="form-group"><label>Slug</label><input name="slug" class="form-control" value="{{ video.slug }}"></div>
+        <div class="form-group"><label>Категория</label><input name="category" class="form-control" value="{{ video.category or '' }}"></div>
+      </div>
+      <div class="form-group" style="margin-top:10px">
+        <label>URL видео (внутренний хостинг / embed)</label>
+        <input name="video_url" class="form-control" value="{{ video.video_url or '' }}" placeholder="https://... или /cabinet/media/videos/...">
+      </div>
+      <div class="form-group">
+        <label>Или загрузить видеофайл</label>
+        <input type="file" name="video_file" class="form-control" accept="video/*">
+        {% if video.video_file %}<p class="hint">Текущий файл: {{ video.video_file }}</p>{% endif %}
+      </div>
+      <div class="form-group"><label>Описание</label><textarea name="description" class="form-control" rows="2">{{ video.description or '' }}</textarea></div>
+      <div class="form-group"><label>Длительность (сек)</label><input name="duration_sec" class="form-control" value="{{ video.duration_sec or '' }}" type="number" min="0"></div>
+
+      <div class="form-group" style="margin-top:16px">
+        <label>Оглавление видео — таблица тайм-кодов (TZ 3.8.2.2)</label>
+        {% from "macros/chapters.html" import chapter_editor %}
+        {{ chapter_editor('video-chapters', chapters) }}
+      </div>
+
+      <label class="check-row" style="margin-top:12px"><input type="checkbox" name="is_published" value="1" {% if video.is_published %}checked{% endif %}> Опубликован</label>
+      <button class="btn btn-primary" style="margin-top:12px">Сохранить</button>
+    </form>
+  </div>
+</div>
+{% endblock %}

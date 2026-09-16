@@ -1,0 +1,33 @@
+{% macro editor_assets() %}
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/easymde@2.18.0/dist/easymde.min.css">
+<script src="https://cdn.jsdelivr.net/npm/easymde@2.18.0/dist/easymde.min.js"></script>
+{% endmacro %}
+
+{% macro init_editor(selector, min_height=200) %}
+<script>
+document.addEventListener('DOMContentLoaded', function() {
+  const editors = [];
+  document.querySelectorAll('{{ selector }}').forEach(function(el) {
+    if (el.dataset.editorInit) return;
+    el.dataset.editorInit = '1';
+    var ed = new EasyMDE({
+      element: el,
+      spellChecker: false,
+      status: false,
+      minHeight: '{{ min_height }}px',
+      toolbar: ['bold', 'italic', 'heading', '|', 'quote', 'unordered-list', 'ordered-list', '|', 'link', 'code', 'table', '|', 'preview', 'guide'],
+    });
+    ed.codemirror.on('change', function() {
+      ed.codemirror.save();
+      document.dispatchEvent(new CustomEvent('editor-change'));
+    });
+    editors.push(ed);
+  });
+  document.querySelectorAll('form').forEach(function(form) {
+    form.addEventListener('submit', function() {
+      editors.forEach(function(ed) { if (ed.codemirror) ed.codemirror.save(); });
+    });
+  });
+});
+</script>
+{% endmacro %}

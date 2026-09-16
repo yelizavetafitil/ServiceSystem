@@ -1,0 +1,61 @@
+{% macro chapter_editor(field_id='chapters-data', initial='') %}
+<div class="chapter-editor" data-target="{{ field_id }}">
+  <div class="table-wrap">
+    <table class="chapter-table">
+      <thead>
+        <tr><th>Время (сек)</th><th>Заголовок главы</th><th>Описание</th><th></th></tr>
+      </thead>
+      <tbody id="{{ field_id }}-rows"></tbody>
+    </table>
+  </div>
+  <button type="button" class="btn btn-outline btn-sm chapter-add">+ Добавить тайм-код</button>
+  <textarea name="chapters" id="{{ field_id }}" hidden>{{ initial }}</textarea>
+</div>
+<script>
+(function() {
+  const editor = document.querySelector('.chapter-editor[data-target="{{ field_id }}"]');
+  if (!editor || editor.dataset.init) return;
+  editor.dataset.init = '1';
+  const tbody = editor.querySelector('tbody');
+  const hidden = document.getElementById('{{ field_id }}');
+
+  function addRow(start='', title='', desc='') {
+    const tr = document.createElement('tr');
+    tr.innerHTML = `
+      <td><input type="number" class="form-control ch-start" min="0" value="${start}" placeholder="0"></td>
+      <td><input type="text" class="form-control ch-title" value="${title.replace(/"/g, '&quot;')}" placeholder="Название"></td>
+      <td><input type="text" class="form-control ch-desc" value="${desc.replace(/"/g, '&quot;')}" placeholder="Необязательно"></td>
+      <td><button type="button" class="btn btn-outline btn-sm ch-del">×</button></td>`;
+    tr.querySelector('.ch-del').addEventListener('click', () => tr.remove());
+    tbody.appendChild(tr);
+  }
+
+  function loadInitial() {
+    (hidden.value || '').split('\n').forEach(line => {
+      line = line.trim();
+      if (!line || !line.includes('|')) return;
+      const [start, rest] = line.split('|', 2);
+      let title = rest, desc = '';
+      if (rest.includes(';')) [title, desc] = rest.split(';', 2);
+      addRow(start.trim(), title.trim(), (desc || '').trim());
+    });
+    if (!tbody.children.length) addRow('0', 'Введение', '');
+  }
+
+  function syncHidden() {
+    const lines = [];
+    tbody.querySelectorAll('tr').forEach(tr => {
+      const start = tr.querySelector('.ch-start').value.trim();
+      const title = tr.querySelector('.ch-title').value.trim();
+      const desc = tr.querySelector('.ch-desc').value.trim();
+      if (start && title) lines.push(start + '|' + title + (desc ? ';' + desc : ''));
+    });
+    hidden.value = lines.join('\n');
+  }
+
+  editor.querySelector('.chapter-add').addEventListener('click', () => addRow('', '', ''));
+  editor.closest('form')?.addEventListener('submit', syncHidden);
+  loadInitial();
+})();
+</script>
+{% endmacro %}

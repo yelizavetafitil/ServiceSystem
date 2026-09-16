@@ -32,6 +32,7 @@ class Contract(db.Model):
     status = db.Column(db.String(32), nullable=False, default="active_warranty")
     master_login = db.Column(db.String(64), nullable=False)
     master_password_hash = db.Column(db.String(255), nullable=False)
+    master_key_expires_at = db.Column(db.Date)
     notes = db.Column(db.Text)
     document_url = db.Column(db.String(512))
     created_at = db.Column(db.DateTime(timezone=True), default=utcnow)
@@ -47,8 +48,24 @@ class Contract(db.Model):
         return check_password_hash(self.master_password_hash, password)
 
     @property
+    def is_expired(self) -> bool:
+        if not self.service_end_date:
+            return False
+        return self.service_end_date < datetime.now().date()
+
+    @property
+    def is_master_key_expired(self) -> bool:
+        if not self.master_key_expires_at:
+            return False
+        return self.master_key_expires_at < datetime.now().date()
+
+    @property
     def is_blocked(self) -> bool:
-        return self.status == "terminated"
+        if self.status == "terminated":
+            return True
+        if self.is_expired and self.status in ("active_warranty", "active_post_warranty"):
+            return True
+        return False
 
     @property
     def is_readonly(self) -> bool:
@@ -121,6 +138,21 @@ class ObjectCategory(db.Model):
     is_active = db.Column(db.Boolean, default=True)
 
     incidents = db.relationship("IncidentCategory", back_populates="object_category", lazy="dynamic")
+    routing = db.relationship("ObjectCategoryRouting", back_populates="object_category", uselist=False)
+
+
+class ObjectCategoryRouting(db.Model):
+    """Ticket routing: auditor (and optional default executor) per object category (TZ 3.3.7)."""
+    __tablename__ = "object_category_routing"
+
+    id = db.Column(db.Integer, primary_key=True)
+    object_category_id = db.Column(db.Integer, db.ForeignKey("object_categories.id"), unique=True, nullable=False)
+    auditor_id = db.Column(db.Integer, db.ForeignKey("users.id"), nullable=False)
+    default_executor_id = db.Column(db.Integer, db.ForeignKey("users.id"))
+
+    object_category = db.relationship("ObjectCategory", back_populates="routing")
+    auditor = db.relationship("User", foreign_keys=[auditor_id])
+    default_executor = db.relationship("User", foreign_keys=[default_executor_id])
 
 
 class IncidentCategory(db.Model):
@@ -164,6 +196,10 @@ class Ticket(db.Model):
     timer2_stopped_at = db.Column(db.DateTime(timezone=True))
     timer2_total_seconds = db.Column(db.Integer, default=0)
     resolved_at = db.Column(db.DateTime(timezone=True))
+
+    @property
+    def timer_total_seconds(self) -> int:
+        return (self.timer1_total_seconds or 0) + (self.timer2_total_seconds or 0)
 
     contract = db.relationship("Contract")
     author = db.relationship("User", foreign_keys=[author_id])
@@ -276,7 +312,8 @@ class VideoTutorial(db.Model):
     slug = db.Column(db.String(128), unique=True, nullable=False)
     category = db.Column(db.String(128))
     description = db.Column(db.Text)
-    video_url = db.Column(db.String(1024), nullable=False)
+    video_url = db.Column(db.String(1024))
+    video_file = db.Column(db.String(512))
     duration_sec = db.Column(db.Integer)
     is_published = db.Column(db.Boolean, default=True)
     created_at = db.Column(db.DateTime(timezone=True), default=utcnow)

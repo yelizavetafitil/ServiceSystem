@@ -1,80 +1,247 @@
 {% extends "base.html" %}
+
+{% from "macros/forms.html" import csrf_field %}
+
 {% block title %}Новая заявка{% endblock %}
+
 {% block content %}
-<div class="container" style="max-width:760px">
+
+<div class="container container-narrow">
+
   <div class="page-header"><h1>Новая заявка</h1></div>
+
   <div class="card">
-    <p>Договор: <a href="{{ url_for('cabinet.contract') }}" target="_blank"><strong>{{ contract.number }}</strong></a>
-      от {{ contract.signed_at.strftime('%d.%m.%Y') if contract.signed_at else '—' }}</p>
+
+    {% set doc_url = contract.document_url or url_for('cabinet.contract') %}
+
+    <div class="form-group">
+
+      <label>Номер договора</label>
+
+      <p class="contract-ref">Договор <a href="{{ doc_url }}" target="_blank"><strong>№{{ contract.number }}</strong></a>
+
+        от {{ contract.signed_at.strftime('%d.%m.%Y') if contract.signed_at else '—' }}</p>
+
+    </div>
+
     <form method="post" id="ticket-form">
+
+      {{ csrf_field() }}
+
       <div class="form-group">
+
         <label>Категория объекта *</label>
+
         <select name="object_category_id" id="object_category" class="form-control" required>
+
           <option value="">— выберите —</option>
+
           {% for o in objects %}<option value="{{ o.id }}">{{ o.name }}</option>{% endfor %}
+
         </select>
+
       </div>
+
       <div class="form-group">
+
         <label>Категория инцидента *</label>
+
         <select name="incident_category_id" id="incident_category" class="form-control" required disabled>
+
           <option value="">— сначала выберите объект —</option>
+
         </select>
+
       </div>
+
       <div class="form-group">
+
         <label>Уровень критичности *</label>
+
         <div class="priority-radios">
+
           {% for lvl, cfg in SLA_PRIORITIES.items() %}
-          <label class="priority-option" style="--pc:{{ cfg.color }}">
+
+          <label class="priority-option" style="--pc:{{ cfg.color }}" title="{{ cfg.description }}. {{ cfg.criteria }}">
+
             <input type="radio" name="priority" value="{{ lvl }}" {% if lvl == 2 %}checked{% endif %} required>
+
             <span>{{ cfg.name }}</span>
+
           </label>
+
           {% endfor %}
+
         </div>
+
+        <p class="hint" id="sla-hint"></p>
+
       </div>
+
       <div class="form-group">
-        <label>Тема обращения *</label>
-        <input type="text" name="subject" class="form-control" maxlength="120" required placeholder="Кратко укажите суть проблемы">
+
+        <label>Тема обращения * <span class="muted" id="subject-count">0/120</span></label>
+
+        <input type="text" name="subject" id="subject" class="form-control" maxlength="120" required placeholder="Кратко укажите суть проблемы">
+
       </div>
+
       <div class="form-group">
-        <label>Подробное описание *</label>
-        <textarea name="description" class="form-control" rows="8" required placeholder="Markdown поддерживается"></textarea>
+
+        <label>Подробное описание проблемы *</label>
+
+        <textarea name="description" class="form-control editor-field" rows="8" required placeholder="Опишите обстоятельства возникновения ошибки, шаги для воспроизведения и ожидаемый расчётный результат. Поддерживается Markdown."></textarea>
+
       </div>
+
       <div class="form-group">
-        <label>Вложения</label>
+
+        <label>Вложения <span class="muted">(необязательно)</span></label>
+
+        <p class="hint">Архивы БД ЭМ (*.zpkg.zip, .zip, .rar, .7z), логи (.log, .txt), скриншоты (.png, .jpg). До {{ MAX_UPLOAD_MB }} МБ на файл{% if MAX_UPLOAD_MB < 1024 %} (настраивается до 1 ГБ){% endif %}.</p>
+
         <div class="dropzone" id="dropzone">
+
           <p>Перетащите файлы или <button type="button" class="btn-link" id="browse-btn">Обзор</button></p>
-          <input type="file" id="file-input" multiple hidden>
+
+          <input type="file" id="file-input" multiple hidden accept=".zpkg.zip,.zip,.rar,.7z,.log,.txt,.png,.jpg,.jpeg">
+
           <div id="upload-list"></div>
+
         </div>
+
         <input type="hidden" name="attachment_ids" id="attachment_ids">
+
       </div>
+
       <button type="submit" class="btn btn-primary" id="submit-btn" disabled>Отправить заявку</button>
+
     </form>
+
   </div>
+
 </div>
+
 {% endblock %}
+
+{% block head %}
+
+{% from "macros/editor.html" import editor_assets %}{{ editor_assets() }}
+
+{% endblock %}
+
 {% block scripts %}
+
 <script src="{{ url_for('static', filename='js/upload.js') }}"></script>
+
 <script>
-document.getElementById('object_category').addEventListener('change', async function() {
-  const sel = document.getElementById('incident_category');
-  sel.disabled = true;
-  sel.innerHTML = '<option>Загрузка...</option>';
-  const r = await fetch('/tickets/api/incidents/' + this.value);
-  const data = await r.json();
-  sel.innerHTML = '<option value="">— выберите —</option>';
-  data.forEach(i => { const o = document.createElement('option'); o.value = i.id; o.textContent = i.name; sel.appendChild(o); });
-  sel.disabled = false;
-  validateForm();
-});
-document.getElementById('ticket-form').addEventListener('input', validateForm);
-document.getElementById('ticket-form').addEventListener('change', validateForm);
-function validateForm() {
-  const form = document.getElementById('ticket-form');
-  const btn = document.getElementById('submit-btn');
-  const uploadsDone = !window.__uploadsPending;
-  btn.disabled = !(form.checkValidity() && uploadsDone);
+
+const SLA_LABELS = {{ SLA_PRIORITIES|tojson }};
+
+
+
+function updateSlaHint() {
+
+  const checked = document.querySelector('input[name=priority]:checked');
+
+  const hint = document.getElementById('sla-hint');
+
+  if (!checked) { hint.textContent = ''; return; }
+
+  const cfg = SLA_LABELS[checked.value];
+
+  let resolution = cfg.resolution_hours
+
+    ? `${cfg.resolution_hours} раб. ч на устранение`
+
+    : `${cfg.resolution_days} раб. дн на устранение`;
+
+  hint.textContent = `SLA: реакция аудитора — ${cfg.reaction_hours} раб. ч, ${resolution}.`;
+
 }
+
+
+
+document.getElementById('object_category').addEventListener('change', async function() {
+
+  const sel = document.getElementById('incident_category');
+
+  sel.disabled = true;
+
+  sel.innerHTML = '<option value="">Загрузка...</option>';
+
+  if (!this.value) {
+
+    sel.innerHTML = '<option value="">— сначала выберите объект —</option>';
+
+    return;
+
+  }
+
+  const r = await fetch('/tickets/api/incidents/' + this.value);
+
+  const data = await r.json();
+
+  sel.innerHTML = '<option value="">— выберите —</option>';
+
+  data.forEach(i => { const o = document.createElement('option'); o.value = i.id; o.textContent = i.name; sel.appendChild(o); });
+
+  sel.disabled = false;
+
+  validateForm();
+
+});
+
+
+
+document.getElementById('subject').addEventListener('input', function() {
+
+  document.getElementById('subject-count').textContent = this.value.length + '/120';
+
+  validateForm();
+
+});
+
+
+
+document.querySelectorAll('input[name=priority]').forEach(r => r.addEventListener('change', updateSlaHint));
+
+document.getElementById('ticket-form').addEventListener('input', validateForm);
+
+document.getElementById('ticket-form').addEventListener('change', validateForm);
+
+document.addEventListener('editor-change', validateForm);
+
+
+
+function validateForm() {
+
+  const form = document.getElementById('ticket-form');
+
+  const btn = document.getElementById('submit-btn');
+
+  const desc = document.querySelector('[name=description]');
+
+  const descOk = desc && desc.value.trim().length > 0;
+
+  const uploadsDone = !window.__uploadsPending;
+
+  btn.disabled = !(form.checkValidity() && descOk && uploadsDone);
+
+}
+
+
+
+updateSlaHint();
+
 validateForm();
+
+document.getElementById('subject').dispatchEvent(new Event('input'));
+
 </script>
+
+{% from "macros/editor.html" import init_editor %}{{ init_editor('.editor-field', 240) }}
+
 {% endblock %}
+
+

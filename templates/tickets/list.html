@@ -8,15 +8,19 @@
     <a href="{{ url_for('tickets.create') }}" class="btn btn-primary">+ Новая заявка</a>
     {% endif %}
   </div>
-  <div class="card table-wrap">
+  <div class="card">
+    <div class="table-wrap">
     <table>
       <thead><tr><th>№</th><th>Тема</th><th>Приоритет</th><th>Статус</th><th>Дата</th></tr></thead>
       <tbody>
       {% for t in tickets %}
       <tr>
         <td><a href="{{ url_for('tickets.detail', tid=t.id) }}">{{ t.number }}</a></td>
-        <td>{{ t.subject }}</td>
-        <td><span class="priority p{{ t.priority }}" style="--pc:{{ SLA_PRIORITIES[t.priority].color }}">{{ SLA_PRIORITIES[t.priority].name }}</span></td>
+        <td class="cell-subject">{{ t.subject }}</td>
+        <td>
+          <span class="priority p{{ t.priority }}" style="--pc:{{ SLA_PRIORITIES[t.priority].color }}">{{ SLA_PRIORITIES[t.priority].name }}</span>
+          {% if t.priority_changed %}<span class="priority-badge-changed" title="{{ t.priority_change_reason }}">!</span>{% endif %}
+        </td>
         <td><span class="badge status-{{ t.status }}">{{ TICKET_STATUSES.get(t.status, t.status) }}</span></td>
         <td>{{ t.created_at.strftime('%d.%m.%Y %H:%M') if t.created_at else '—' }}</td>
       </tr>
@@ -25,6 +29,7 @@
       {% endfor %}
       </tbody>
     </table>
+    </div>
   </div>
 </div>
 {% endblock %}

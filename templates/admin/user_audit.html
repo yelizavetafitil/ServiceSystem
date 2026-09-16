@@ -1,0 +1,33 @@
+{% extends "base.html" %}
+{% block title %}Аудит — {{ user.full_name }}{% endblock %}
+{% block content %}
+<div class="container">
+  <a href="{{ url_for('admin.users') }}" class="back-link">← Пользователи</a>
+  <div class="page-header">
+    <div class="page-header-main">
+      <h1>Журнал действий</h1>
+      <p class="page-subtitle">{{ user.full_name }} · {{ user.email }} · {{ ROLES.get(user.role, user.role) }}</p>
+    </div>
+  </div>
+  <div class="card">
+    <div class="table-wrap">
+    <table>
+      <thead><tr><th>Время</th><th>Действие</th><th>Ресурс</th><th>Детали</th><th>IP</th></tr></thead>
+      <tbody>
+      {% for l in logs %}
+      <tr>
+        <td>{{ l.created_at.strftime('%d.%m.%Y %H:%M') if l.created_at else '—' }}</td>
+        <td>{{ action_labels.get(l.action, l.action) }}</td>
+        <td>{% if l.resource_type %}{{ l.resource_type }}{% if l.resource_id %} #{{ l.resource_id }}{% endif %}{% else %}—{% endif %}</td>
+        <td>{{ l.details or '—' }}</td>
+        <td>{{ l.ip_address or '—' }}</td>
+      </tr>
+      {% else %}
+      <tr><td colspan="5" class="muted">Записей пока нет</td></tr>
+      {% endfor %}
+      </tbody>
+    </table>
+    </div>
+  </div>
+</div>
+{% endblock %}
