@@ -7,7 +7,7 @@
   <title>{% block title %}{{ APP_NAME }}{% endblock %}</title>
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="{{ url_for('static', filename='css/main.css') }}?v=2">
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/main.css') }}?v=7">
   {% block head %}{% endblock %}
 </head>
 <body class="{% if not current_user.is_authenticated %}auth-body{% endif %}">
@@ -71,7 +71,7 @@
     {% block content %}{% endblock %}
   </main>
 </div>
-<script src="{{ url_for('static', filename='js/app.js') }}?v=2"></script>
+<script src="{{ url_for('static', filename='js/app.js') }}?v=7"></script>
 <script>
 document.querySelectorAll('form[method="post"]').forEach(function(form) {
   form.addEventListener('submit', function() {

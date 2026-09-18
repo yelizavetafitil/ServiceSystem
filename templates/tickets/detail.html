@@ -109,14 +109,15 @@
         {% if current_user.is_auditor %}
         <div class="form-group arm-block">
           <label>Назначить исполнителя</label>
-          <input type="search" id="executor-search" class="form-control" placeholder="Поиск по ФИО исполнителя...">
-          <select name="executor_id" id="executor-select" class="form-control" size="5">
+          <input type="search" id="executor-search" class="form-control" placeholder="Поиск по ФИО исполнителя..." autocomplete="off">
+          <select name="executor_id" id="executor-select" class="form-control executor-select">
             <option value="">— выберите исполнителя —</option>
             {% for e in executors %}
             <option value="{{ e.id }}" data-name="{{ e.full_name|lower }} {{ (e.position or '')|lower }}" {% if ticket.executor_id == e.id %}selected{% endif %}>{{ e.full_name }} — {{ e.position or 'Исполнитель' }}</option>
             {% endfor %}
           </select>
-          <button type="submit" name="auditor_action" value="assign" class="btn btn-outline btn-sm">Назначить и перевести «В работе»</button>
+          <p class="hint mt-sm">Выберите исполнителя в списке и нажмите «Назначить».</p>
+          <button type="submit" name="auditor_action" value="assign" class="btn btn-outline btn-sm mt-sm">Назначить и перевести «В работе»</button>
         </div>
 
         <div class="form-group arm-block">
@@ -229,13 +230,22 @@ document.getElementById('priority-modal')?.addEventListener('click', function(e)
   if (e.target === this) closePriorityModal();
 });
 
-document.getElementById('executor-search')?.addEventListener('input', function() {
-  const q = this.value.toLowerCase();
-  document.querySelectorAll('#executor-select option').forEach(o => {
-    if (!o.value) return;
-    o.hidden = !o.dataset.name.includes(q);
+(function() {
+  const search = document.getElementById('executor-search');
+  const select = document.getElementById('executor-select');
+  if (!search || !select) return;
+  search.addEventListener('input', function() {
+    const q = this.value.toLowerCase().trim();
+    let firstMatch = null;
+    select.querySelectorAll('option').forEach(function(o) {
+      if (!o.value) return;
+      const show = !q || (o.dataset.name || '').includes(q);
+      o.hidden = !show;
+      if (show && !firstMatch) firstMatch = o;
+    });
+    if (q && firstMatch) select.value = firstMatch.value;
   });
-});
+})();
 
 function validatePriorityForm() {
   const reason = document.getElementById('priority-reason')?.value.trim() || '';

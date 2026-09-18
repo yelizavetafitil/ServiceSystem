@@ -1,35 +1,68 @@
 {% extends "base.html" %}
+
+{% from "macros/tickets.html" import ticket_list_item with context %}
+
 {% block title %}Заявки{% endblock %}
+
 {% block content %}
+
 <div class="container">
+
   <div class="page-header">
-    <h1>Мои заявки</h1>
-    {% if current_user.is_customer %}
-    <a href="{{ url_for('tickets.create') }}" class="btn btn-primary">+ Новая заявка</a>
-    {% endif %}
-  </div>
-  <div class="card">
-    <div class="table-wrap">
-    <table>
-      <thead><tr><th>№</th><th>Тема</th><th>Приоритет</th><th>Статус</th><th>Дата</th></tr></thead>
-      <tbody>
-      {% for t in tickets %}
-      <tr>
-        <td><a href="{{ url_for('tickets.detail', tid=t.id) }}">{{ t.number }}</a></td>
-        <td class="cell-subject">{{ t.subject }}</td>
-        <td>
-          <span class="priority p{{ t.priority }}" style="--pc:{{ SLA_PRIORITIES[t.priority].color }}">{{ SLA_PRIORITIES[t.priority].name }}</span>
-          {% if t.priority_changed %}<span class="priority-badge-changed" title="{{ t.priority_change_reason }}">!</span>{% endif %}
-        </td>
-        <td><span class="badge status-{{ t.status }}">{{ TICKET_STATUSES.get(t.status, t.status) }}</span></td>
-        <td>{{ t.created_at.strftime('%d.%m.%Y %H:%M') if t.created_at else '—' }}</td>
-      </tr>
-      {% else %}
-      <tr><td colspan="5" class="muted">Заявок нет</td></tr>
-      {% endfor %}
-      </tbody>
-    </table>
+
+    <div class="page-header-main">
+
+      <h1>Мои заявки</h1>
+
+      <p class="page-subtitle">Все обращения по вашему договору</p>
+
     </div>
+
+    {% if current_user.is_customer %}
+
+    <div class="page-header-actions">
+
+      <a href="{{ url_for('tickets.create') }}" class="btn btn-primary">+ Новая заявка</a>
+
+    </div>
+
+    {% endif %}
+
   </div>
+
+  <div class="card card--flush">
+
+    {% if tickets %}
+
+    <ul class="ticket-list">
+
+      {% for t in tickets %}
+
+      {{ ticket_list_item(
+
+        t,
+
+        url_for('tickets.detail', tid=t.id),
+
+        show_priority=true,
+
+        meta_line=(t.created_at.strftime('%d.%m.%Y %H:%M') if t.created_at else '—')
+
+      ) }}
+
+      {% endfor %}
+
+    </ul>
+
+    {% else %}
+
+    <p class="ticket-list-empty muted">Заявок пока нет. Создайте первую заявку, если нужна помощь по ЭМСТПН.</p>
+
+    {% endif %}
+
+  </div>
+
 </div>
+
 {% endblock %}
+

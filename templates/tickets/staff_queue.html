@@ -1,32 +1,41 @@
-{% extends "base.html" %}
-{% block title %}Очередь заявок{% endblock %}
-{% block content %}
-<div class="container">
-  <div class="page-header"><h1>Очередь обработки</h1></div>
-  <div class="card">
-    <div class="table-wrap">
-    <table>
-      <thead><tr><th>№</th><th>Тема</th><th>Приоритет</th><th>Статус</th><th>Реакция до</th><th>Устранение до</th><th>Автор</th></tr></thead>
-      <tbody>
-      {% for t in tickets %}
-      <tr class="sla-{{ sla_status(t.reaction_deadline) }}">
-        <td><a href="{{ url_for('tickets.detail', tid=t.id, tab='response') }}">{{ t.number }}</a></td>
-        <td class="cell-subject">{{ t.subject }}</td>
-        <td>
-          <span class="priority p{{ t.priority }}" style="--pc:{{ SLA_PRIORITIES[t.priority].color }}">{{ SLA_PRIORITIES[t.priority].name }}</span>
-          {% if t.priority_changed %}<span class="priority-badge-changed" title="Изменён аудитором: {{ t.priority_change_reason }}">!</span>{% endif %}
-        </td>
-        <td><span class="badge status-{{ t.status }}">{{ TICKET_STATUSES.get(t.status, t.status) }}</span></td>
-        <td>{{ t.reaction_deadline.strftime('%d.%m %H:%M') if t.reaction_deadline else '—' }}</td>
-        <td class="sla-{{ sla_status(t.resolution_deadline) }}">{{ t.resolution_deadline.strftime('%d.%m %H:%M') if t.resolution_deadline else '—' }}</td>
-        <td>{{ t.author.full_name if t.author else '—' }}</td>
-      </tr>
-      {% else %}
-      <tr><td colspan="7" class="muted">Очередь пуста</td></tr>
-      {% endfor %}
-      </tbody>
-    </table>
-    </div>
-  </div>
-</div>
-{% endblock %}
+{% extends "base.html" %}
+{% block title %}Очередь заявок{% endblock %}
+{% block content %}
+<div class="container">
+  <div class="page-header">
+    <div class="page-header-main">
+      <h1>Очередь обработки</h1>
+      <p class="page-subtitle">Заявки, требующие реакции или исполнения</p>
+    </div>
+  </div>
+  <div class="card card--flush">
+    {% if tickets %}
+    <ul class="ticket-list">
+      {% for t in tickets %}
+      <li class="ticket-list-item sla-row sla-{{ sla_status(t.reaction_deadline) }}">
+        <a href="{{ url_for('tickets.detail', tid=t.id, tab='response') }}" class="ticket-list-link">
+          <div class="ticket-list-head">
+            <span class="ticket-list-num">{{ t.number }}</span>
+            <div class="ticket-list-tags">
+              <span class="priority p{{ t.priority }}" style="--pc:{{ SLA_PRIORITIES[t.priority].color }}">{{ SLA_PRIORITIES[t.priority].name }}</span>
+              {% if t.priority_changed %}<span class="priority-badge-changed" title="{{ t.priority_change_reason }}">!</span>{% endif %}
+              <span class="badge status-{{ t.status }}">{{ TICKET_STATUSES.get(t.status, t.status) }}</span>
+            </div>
+          </div>
+          <p class="ticket-list-title">{{ t.subject }}</p>
+          <p class="ticket-list-meta">
+            <span class="sla-{{ sla_status(t.reaction_deadline) }}">Реакция до {{ t.reaction_deadline.strftime('%d.%m %H:%M') if t.reaction_deadline else '—' }}</span>
+            ·
+            <span class="sla-{{ sla_status(t.resolution_deadline) }}">Устранение до {{ t.resolution_deadline.strftime('%d.%m %H:%M') if t.resolution_deadline else '—' }}</span>
+            · {{ t.author.full_name if t.author else '—' }}
+          </p>
+        </a>
+      </li>
+      {% endfor %}
+    </ul>
+    {% else %}
+    <p class="ticket-list-empty muted">Очередь пуста</p>
+    {% endif %}
+  </div>
+</div>
+{% endblock %}

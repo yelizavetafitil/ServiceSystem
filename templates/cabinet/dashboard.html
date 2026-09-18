@@ -1,4 +1,5 @@
 {% extends "base.html" %}
+{% from "macros/tickets.html" import ticket_list_item with context %}
 {% block title %}Личный кабинет{% endblock %}
 {% block content %}
 <div class="container">
@@ -9,27 +10,27 @@
       <p class="page-subtitle">Договор {{ contract.number }} — {{ CONTRACT_STATUSES.get(contract.status, contract.status) }}</p>
       {% endif %}
     </div>
-    {% if contract %}
-    <div class="contract-badge status-{{ contract.status }}">
-      {% if contract.service_end_date %}Обслуживание до {{ contract.service_end_date.strftime('%d.%m.%Y') }}{% endif %}
-    </div>
-    {% endif %}
-  </div>
-
-  <div class="stats-grid">
-    <div class="stat-card"><span class="stat-num">{{ stats.open }}</span><span class="stat-label">Открытых заявок</span></div>
-    <div class="stat-card"><span class="stat-num">{{ stats.resolved }}</span><span class="stat-label">Решённых заявок</span></div>
-    <div class="stat-card primary">
+    <div class="page-header-actions">
+      {% if contract %}
+      <div class="contract-badge status-{{ contract.status }}">
+        {% if contract.service_end_date %}Обслуживание до {{ contract.service_end_date.strftime('%d.%m.%Y') }}{% endif %}
+      </div>
+      {% endif %}
       {% if contract and contract.is_readonly %}
-      <span class="stat-action muted">Создание заявок недоступно (договор приостановлен)</span>
+      <span class="btn btn-primary disabled" title="Договор приостановлен">Создать заявку</span>
       {% else %}
-      <a href="{{ url_for('tickets.create') }}" class="stat-action">Создать заявку</a>
+      <a href="{{ url_for('tickets.create') }}" class="btn btn-primary">Создать заявку</a>
       {% endif %}
     </div>
   </div>
 
-  <div class="grid-2">
-    <div class="card">
+  <div class="stats-grid stats-grid--two">
+    <div class="stat-card"><span class="stat-num">{{ stats.open }}</span><span class="stat-label">Открытых заявок</span></div>
+    <div class="stat-card"><span class="stat-num">{{ stats.resolved }}</span><span class="stat-label">Решённых заявок</span></div>
+  </div>
+
+  <div class="dashboard-layout">
+    <aside class="card dashboard-aside">
       <h3 class="section-title">Быстрый доступ</h3>
       <div class="quick-links">
         <a href="{{ url_for('cabinet.plugins') }}" class="quick-link">Плагины и обновления</a>
@@ -39,27 +40,32 @@
         <a href="{{ url_for('tickets.create') }}" class="quick-link">Подать заявку</a>
         {% endif %}
       </div>
-    </div>
-    <div class="card">
-      <h3 class="section-title">Последние заявки</h3>
+    </aside>
+
+    <section class="card card--flush dashboard-tickets">
+      <div class="dashboard-tickets-head">
+        <h3 class="section-title section-title--inset">Последние заявки</h3>
+        <a href="{{ url_for('tickets.list_tickets') }}" class="btn btn-outline btn-sm">Все заявки</a>
+      </div>
       {% if recent_tickets %}
-      <table class="table-compact">
-        <thead><tr><th>Номер</th><th>Тема</th><th>Статус</th><th>Срок обработки</th></tr></thead>
-        <tbody>
+      <ul class="ticket-list ticket-list--dashboard">
         {% for t in recent_tickets %}
-        <tr>
-          <td><a href="{{ url_for('tickets.detail', tid=t.id) }}">{{ t.number }}</a></td>
-          <td class="cell-subject">{{ t.subject }}</td>
-          <td><span class="badge status-{{ t.status }}">{{ TICKET_STATUSES.get(t.status, t.status) }}</span></td>
-          <td class="muted">{% if t.status == 'resolved' %}{{ format_duration(t.timer_total_seconds) }}{% else %}—{% endif %}</td>
-        </tr>
+        {{ ticket_list_item(
+          t,
+          url_for('tickets.detail', tid=t.id),
+          show_priority=false,
+          meta_line=(
+            (TICKET_STATUSES.get(t.status, t.status) ~ ' · срок обработки ' ~ format_duration(t.timer_total_seconds))
+            if t.status == 'resolved'
+            else (TICKET_STATUSES.get(t.status, t.status) ~ ' · ' ~ (t.created_at.strftime('%d.%m.%Y') if t.created_at else ''))
+          )
+        ) }}
         {% endfor %}
-        </tbody>
-      </table>
+      </ul>
       {% else %}
-      <p class="muted">Заявок пока нет.</p>
+      <p class="ticket-list-empty muted">Заявок пока нет.</p>
       {% endif %}
-    </div>
+    </section>
   </div>
 </div>
 {% endblock %}

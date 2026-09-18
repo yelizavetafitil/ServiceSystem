@@ -1,0 +1,20 @@
+{% macro ticket_list_item(t, href, show_priority=false, meta_line=None) %}
+<li class="ticket-list-item">
+  <a href="{{ href }}" class="ticket-list-link">
+    <div class="ticket-list-head">
+      <span class="ticket-list-num">{{ t.number }}</span>
+      <div class="ticket-list-tags">
+        {% if show_priority %}
+        <span class="priority p{{ t.priority }}" style="--pc:{{ SLA_PRIORITIES[t.priority].color }}">{{ SLA_PRIORITIES[t.priority].name }}</span>
+        {% if t.priority_changed %}<span class="priority-badge-changed" title="{{ t.priority_change_reason or 'Приоритет изменён' }}">!</span>{% endif %}
+        {% endif %}
+        <span class="badge status-{{ t.status }}">{{ TICKET_STATUSES.get(t.status, t.status) }}</span>
+      </div>
+    </div>
+    <p class="ticket-list-title">{{ t.subject }}</p>
+    {% if meta_line %}
+    <p class="ticket-list-meta">{{ meta_line }}</p>
+    {% endif %}
+  </a>
+</li>
+{% endmacro %}

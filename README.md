@@ -11,6 +11,16 @@ docker compose --profile seed run --rm seed
 
 Открыть: **http://localhost:8095**
 
+## Инструкции (со скриншотами)
+
+| Документ | Описание |
+|----------|----------|
+| [docs/INSTRUKCIYA_POLZOVATELA.md](docs/INSTRUKCIYA_POLZOVATELA.md) | Заказчик: вход, ЛК, плагины, база знаний, заявки |
+| [docs/INSTRUKCIYA_ADMINISTRATORA.md](docs/INSTRUKCIYA_ADMINISTRATORA.md) | Админ, аудитор, исполнитель: договоры, CMS, очередь, SLA |
+| [docs/README.md](docs/README.md) | Скриншоты и сборка DOCX |
+| [docs/INSTRUKCIYA_POLZOVATELA.docx](docs/INSTRUKCIYA_POLZOVATELA.docx) | Инструкция пользователя (Word) |
+| [docs/INSTRUKCIYA_ADMINISTRATORA.docx](docs/INSTRUKCIYA_ADMINISTRATORA.docx) | Инструкция администратора (Word) |
+
 **Готовый дамп БД** (схема + демо-данные) лежит в `database/servicesystem_seed.sql`. Восстановление:
 
 ```bash
@@ -37,9 +47,9 @@ docker compose --profile seed run --rm seed python seed.py --force
 | Роль | Email | Пароль |
 |------|-------|--------|
 | Администратор | admin@belnipi.by | admin123 |
-| Аудитор (ГИП) | auditor@belnipi.by | auditor123 |
+| Аудитор (ГИП) | auditor@belnipi.by |   |
 | Исполнитель | executor@belnipi.by | executor123 |
-| Исполнитель 2 | executor2@belnipi.by | executor123 |
+| Исполнитель 2 | executor2@belnipi.by |     |
 | Заказчик (Брест) | kozlov@brestenergo.by | customer123 |
 | Заказчик (Брест 2) | ivanova@brestenergo.by | customer123 |
 | Заказчик (Витебск) | sidorov@vitebskenergo.by | customer123 |
