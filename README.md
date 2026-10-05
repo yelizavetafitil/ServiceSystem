@@ -5,9 +5,13 @@
 ## Быстрый старт (Docker)
 
 ```bash
-docker compose up -d --build
+docker compose build web
+docker compose up -d db web
 docker compose --profile seed run --rm seed
 ```
+
+Сборка **без PyPI** (архив `docker/pydeps.tgz`). Подробности: [docker/README.md](docker/README.md).  
+Windows: `.\scripts\docker-up.ps1`
 
 Открыть: **http://localhost:8095**
 

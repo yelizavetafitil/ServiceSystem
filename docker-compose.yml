@@ -35,6 +35,11 @@ services:
       STORAGE_BACKEND: ${STORAGE_BACKEND:-local}
     volumes:
       - upload_data:/app/data/uploads
+      # Код с хоста: правки templates/static/python без пересборки образа (docker compose restart web)
+      - ./servicesystem:/app/servicesystem:ro
+      - ./templates:/app/templates:ro
+      - ./static:/app/static:ro
+      - ./wsgi.py:/app/wsgi.py:ro
     depends_on:
       db:
         condition: service_healthy

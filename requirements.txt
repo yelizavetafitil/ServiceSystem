@@ -1,7 +1,8 @@
+# Pinned versions for reproducible Docker builds (SQLAlchemy 2.1+ requires psycopg3).
 Flask==3.1.0
 Flask-Login==0.6.3
 Flask-SQLAlchemy==3.1.1
-SQLAlchemy>=2.0.16,<2.1
+SQLAlchemy==2.0.36
 Flask-WTF==1.2.2
 boto3==1.35.99
 Werkzeug==3.1.3

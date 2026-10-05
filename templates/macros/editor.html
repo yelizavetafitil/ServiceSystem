@@ -3,6 +3,12 @@
 <script src="https://cdn.jsdelivr.net/npm/easymde@2.18.0/dist/easymde.min.js"></script>
 {% endmacro %}
 
+{% macro cms_editor_assets() %}
+{{ editor_assets() }}
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/highlight.js@11.9.0/styles/github.min.css">
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11.9.0/highlight.min.js"></script>
+{% endmacro %}
+
 {% macro init_editor(selector, min_height=200, cms=false) %}
 <script>
 document.addEventListener('DOMContentLoaded', function() {
@@ -10,20 +16,43 @@ document.addEventListener('DOMContentLoaded', function() {
   const cmsMode = {{ 'true' if cms else 'false' }};
   const basicToolbar = ['bold', 'italic', 'heading', '|', 'quote', 'unordered-list', 'ordered-list', '|', 'link', 'code', 'table', '|', 'preview', 'guide'];
   const cmsToolbar = [
+    'undo', 'redo', '|',
     'bold', 'italic', 'strikethrough', 'heading', 'heading-smaller', 'heading-bigger', '|',
     'quote', 'unordered-list', 'ordered-list', 'code', 'table', 'horizontal-rule', '|',
-    'link', '|', 'preview', 'side-by-side', 'fullscreen', '|', 'guide'
+    'link', 'image', '|',
+    'preview', 'side-by-side', 'fullscreen', '|', 'guide'
   ];
   document.querySelectorAll('{{ selector }}').forEach(function(el) {
     if (el.dataset.editorInit) return;
     el.dataset.editorInit = '1';
-    var ed = new EasyMDE({
+    var opts = {
       element: el,
       spellChecker: false,
-      status: ['lines', 'words', 'cursor'],
+      autofocus: false,
       minHeight: '{{ min_height }}px',
       toolbar: cmsMode ? cmsToolbar : basicToolbar,
-    });
+    };
+    if (cmsMode) {
+      opts.placeholder = 'Текст статьи (Markdown): заголовки, списки, таблицы, блоки кода, ссылки и изображения по URL…';
+      opts.status = ['lines', 'words', 'cursor'];
+      opts.lineNumbers = true;
+      opts.lineWrapping = true;
+      opts.syncSideBySidePreviewScroll = true;
+      opts.previewClass = ['markdown-body', 'cms-editor-preview'];
+      opts.renderingConfig = {
+        singleLineBreaks: false,
+        codeSyntaxHighlighting: true,
+      };
+      opts.promptURLs = true;
+      opts.insertTexts = {
+        horizontalRule: ['', '\n\n---\n\n'],
+        image: ['![](https://', ')'],
+        link: ['[', '](https://)'],
+      };
+    } else {
+      opts.status = false;
+    }
+    var ed = new EasyMDE(opts);
     ed.codemirror.on('change', function() {
       ed.codemirror.save();
       document.dispatchEvent(new CustomEvent('editor-change'));
@@ -37,4 +66,8 @@ document.addEventListener('DOMContentLoaded', function() {
   });
 });
 </script>
+{% endmacro %}
+
+{% macro init_cms_editor(selector, min_height=480) %}
+{{ init_editor(selector, min_height, cms=true) }}
 {% endmacro %}

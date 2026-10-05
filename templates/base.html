@@ -7,7 +7,7 @@
   <title>{% block title %}{{ APP_NAME }}{% endblock %}</title>
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="{{ url_for('static', filename='css/main.css') }}?v=7">
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/main.css') }}?v=8">
   {% block head %}{% endblock %}
 </head>
 <body class="{% if not current_user.is_authenticated %}auth-body{% endif %}">

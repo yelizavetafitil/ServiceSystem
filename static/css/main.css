@@ -632,8 +632,40 @@ body.modal-open { overflow: hidden; }
 .markdown-body pre { overflow-x: auto; padding: 12px; background: var(--surface-muted); border-radius: 8px; font-size: 13px; }
 
 .EasyMDEContainer { max-width: 100%; }
-.EasyMDEContainer .CodeMirror { max-width: 100%; border-radius: 10px; }
+.EasyMDEContainer .CodeMirror { max-width: 100%; border-radius: 10px; font-size: 15px; line-height: 1.6; }
 .editor-toolbar { border-radius: 10px 10px 0 0 !important; flex-wrap: wrap; }
+
+.cms-page .cms-meta-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: 12px 16px;
+  margin-bottom: 16px;
+}
+.cms-page .cms-meta-grid label { display: block; font-size: 13px; font-weight: 600; margin-bottom: 4px; color: var(--primary-dark); }
+.cms-editor-card { padding-top: 20px; }
+.cms-editor-wrap .EasyMDEContainer { margin-top: 4px; }
+.cms-editor-wrap .EasyMDEContainer .CodeMirror,
+.cms-editor-wrap .EasyMDEContainer .editor-preview-side {
+  min-height: 420px;
+}
+.cms-editor-wrap .editor-toolbar.fullscreen {
+  position: fixed;
+  top: 0;
+}
+.cms-editor-wrap .editor-toolbar:not(.fullscreen) {
+  position: sticky;
+  top: 56px;
+  z-index: 20;
+  background: #fff;
+  border: 1px solid var(--border);
+  box-shadow: 0 2px 8px rgba(15, 23, 42, 0.06);
+}
+.cms-editor-preview { padding: 16px 20px; max-width: none; }
+.cms-editor-preview h1, .cms-editor-preview h2, .cms-editor-preview h3 {
+  margin: 1.2em 0 0.5em;
+  color: var(--primary-dark);
+}
+.cms-editor-preview pre code.hljs { font-size: 13px; border-radius: 6px; }
 
 .sla-overdue { background: #fef2f2 !important; }
 .sla-warning { background: #fffbeb !important; }

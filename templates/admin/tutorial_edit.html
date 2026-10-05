@@ -1,24 +1,42 @@
 {% extends "base.html" %}
 {% from "macros/forms.html" import csrf_field %}
 {% block title %}Редактирование — {{ tutorial.title }}{% endblock %}
-{% block head %}{% from "macros/editor.html" import editor_assets %}{{ editor_assets() }}{% endblock %}
+{% block head %}{% from "macros/editor.html" import cms_editor_assets %}{{ cms_editor_assets() }}{% endblock %}
 {% block content %}
-<div class="container">
+<div class="container cms-page">
   <a href="{{ url_for('admin.tutorials') }}" class="back-link">← Туториалы</a>
-  <div class="card">
+  <div class="card cms-editor-card">
+    <h1 class="section-title">{{ tutorial.title }}</h1>
     <form method="post">
       {{ csrf_field() }}
-      <div class="form-row">
-        <input name="title" class="form-control" value="{{ tutorial.title }}" required>
-        <input name="slug" class="form-control" value="{{ tutorial.slug }}">
-        <input name="category" class="form-control" value="{{ tutorial.category or '' }}" placeholder="Категория">
-        <input name="tags" class="form-control" value="{{ tutorial.tags or '' }}" placeholder="теги">
+      <div class="cms-meta-grid">
+        <div class="form-group">
+          <label>Заголовок *</label>
+          <input name="title" class="form-control" value="{{ tutorial.title }}" required>
+        </div>
+        <div class="form-group">
+          <label>Slug</label>
+          <input name="slug" class="form-control" value="{{ tutorial.slug }}">
+        </div>
+        <div class="form-group">
+          <label>Категория</label>
+          <input name="category" class="form-control" value="{{ tutorial.category or '' }}" placeholder="Категория">
+        </div>
+        <div class="form-group">
+          <label>Теги</label>
+          <input name="tags" class="form-control" value="{{ tutorial.tags or '' }}" placeholder="теги через запятую">
+        </div>
       </div>
-      <textarea name="content_md" class="form-control editor-field" rows="12" required style="margin-top:10px">{{ tutorial.content_md }}</textarea>
-      <label class="check-row" style="margin-top:10px"><input type="checkbox" name="is_published" value="1" {% if tutorial.is_published %}checked{% endif %}> Опубликован</label>
-      <button class="btn btn-primary" style="margin-top:10px">Сохранить</button>
+      <div class="form-group cms-editor-wrap">
+        <label>Содержание *</label>
+        <textarea name="content_md" class="form-control cms-editor-field" rows="12" required>{{ tutorial.content_md }}</textarea>
+      </div>
+      <label class="check-row"><input type="checkbox" name="is_published" value="1" {% if tutorial.is_published %}checked{% endif %}> Опубликован (виден в списках CMS и может попасть в ЛК по договору)</label>
+      <div class="form-actions">
+        <button class="btn btn-primary">Сохранить</button>
+      </div>
     </form>
   </div>
 </div>
 {% endblock %}
-{% block scripts %}{% from "macros/editor.html" import init_editor %}{{ init_editor('.editor-field', 480, cms=true) }}{% endblock %}
+{% block scripts %}{% from "macros/editor.html" import init_cms_editor %}{{ init_cms_editor('.cms-editor-field', 560) }}{% endblock %}
