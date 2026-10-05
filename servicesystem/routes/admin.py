@@ -3,7 +3,7 @@ from datetime import datetime, timezone
 from flask import Blueprint, abort, flash, redirect, render_template, request, url_for
 from flask_login import current_user, login_required
 
-from servicesystem.decorators import admin_required
+from servicesystem.decorators import admin_required, content_cms_required
 from servicesystem.config import Config
 from servicesystem.extensions import db
 from servicesystem.models import (
@@ -331,7 +331,7 @@ def plugin_edit(pid):
 
 @bp.route("/tutorials/<int:tid>/edit", methods=["GET", "POST"])
 @login_required
-@admin_required
+@content_cms_required
 def tutorial_edit(tid):
     t = db.session.get(Tutorial, tid) or abort(404)
     if request.method == "POST":
@@ -349,7 +349,7 @@ def tutorial_edit(tid):
 
 @bp.route("/videos/<int:vid>/edit", methods=["GET", "POST"])
 @login_required
-@admin_required
+@content_cms_required
 def video_edit(vid):
     v = db.session.get(VideoTutorial, vid) or abort(404)
     if request.method == "POST":
@@ -499,7 +499,7 @@ def plugin_version_upload(pid):
 
 @bp.route("/tutorials")
 @login_required
-@admin_required
+@content_cms_required
 def tutorials():
     items = Tutorial.query.order_by(Tutorial.title).all()
     return render_template("admin/tutorials.html", tutorials=items)
@@ -507,7 +507,7 @@ def tutorials():
 
 @bp.route("/tutorials/create", methods=["POST"])
 @login_required
-@admin_required
+@content_cms_required
 def tutorial_create():
     slug = request.form["slug"] or request.form["title"].lower().replace(" ", "-")[:120]
     t = Tutorial(
@@ -524,7 +524,7 @@ def tutorial_create():
 
 @bp.route("/videos")
 @login_required
-@admin_required
+@content_cms_required
 def videos():
     items = VideoTutorial.query.order_by(VideoTutorial.title).all()
     return render_template("admin/videos.html", videos=items)
@@ -532,7 +532,7 @@ def videos():
 
 @bp.route("/videos/create", methods=["POST"])
 @login_required
-@admin_required
+@content_cms_required
 def video_create():
     video_url = request.form.get("video_url", "").strip()
     video_file = None

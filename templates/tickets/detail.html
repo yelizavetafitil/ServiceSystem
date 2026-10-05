@@ -66,12 +66,25 @@
       <ul>{% for a in ticket.attachments %}<li><a href="{{ url_for('tickets.download_attachment', tid=ticket.id, aid=a.id) }}">{{ a.original_name }}</a></li>{% endfor %}</ul>
       {% endif %}
     </div>
-    {% if ticket.response_text_md and ticket.status == 'resolved' %}
+    {% if ticket.status == 'resolved' and ticket.response_text_md %}
     <div class="card response-card">
       <h3>Официальный ответ</h3>
       <div class="markdown-body">{{ resp_html|safe }}</div>
       {% if ticket.response_files.count() %}
       <h4>Исправленные файлы</h4>
+      <ul>{% for f in ticket.response_files %}<li><a href="{{ url_for('tickets.download_response_file', tid=ticket.id, fid=f.id) }}">{{ f.original_name }}</a></li>{% endfor %}</ul>
+      {% endif %}
+    </div>
+    {% elif current_user.is_staff and (ticket.response_text_md or ticket.response_files.count()) %}
+    <div class="card response-card response-card--draft">
+      <h3>Ответ исполнителя {% if ticket.status != 'resolved' %}(на проверке, заказчик ещё не видит){% endif %}</h3>
+      {% if ticket.response_text_md %}
+      <div class="markdown-body">{{ resp_html|safe }}</div>
+      {% else %}
+      <p class="hint">Текст ответа пока не заполнен.</p>
+      {% endif %}
+      {% if ticket.response_files.count() %}
+      <h4>Файлы к ответу</h4>
       <ul>{% for f in ticket.response_files %}<li><a href="{{ url_for('tickets.download_response_file', tid=ticket.id, fid=f.id) }}">{{ f.original_name }}</a></li>{% endfor %}</ul>
       {% endif %}
     </div>
@@ -145,13 +158,21 @@
 
         <div class="form-group">
           <label>Исправленные файлы для заказчика</label>
-          <p class="hint">Drag-and-drop или «Обзор». До {{ MAX_UPLOAD_MB }} МБ, с докачкой при обрыве связи.</p>
+          <p class="hint">Архивы БД (*.zpkg, .zip, .rar, .7z), PDF, логи, скриншоты. До {{ MAX_UPLOAD_MB }} МБ, с докачкой при обрыве связи.</p>
+          {% if ticket.response_files.count() %}
+          <ul class="response-files-existing">
+            {% for f in ticket.response_files %}
+            <li><a href="{{ url_for('tickets.download_response_file', tid=ticket.id, fid=f.id) }}">{{ f.original_name }}</a></li>
+            {% endfor %}
+          </ul>
+          <p class="hint">Уже прикреплённые файлы видны аудитору на вкладке «Суть проблемы».</p>
+          {% endif %}
           <div class="dropzone" id="response-dropzone">
             <p>Перетащите файлы или <button type="button" class="btn-link" id="response-browse">Обзор</button></p>
-            <input type="file" id="response-file-input" multiple hidden accept=".zpkg.zip,.zip,.rar,.7z,.log,.txt,.png,.jpg,.jpeg">
+            <input type="file" id="response-file-input" multiple hidden accept=".zpkg,.zip,.rar,.7z,.pdf,.log,.txt,.png,.jpg,.jpeg">
             <div id="response-upload-list"></div>
           </div>
-          <input type="hidden" name="response_file_ids" id="response_file_ids">
+          <input type="hidden" name="response_file_ids" id="response_file_ids" value="{% for f in ticket.response_files %}{{ f.id }}{% if not loop.last %},{% endif %}{% endfor %}">
         </div>
 
         <div class="arm-actions">
@@ -270,7 +291,7 @@ document.getElementById('respond-form')?.addEventListener('change', validateArmF
 document.addEventListener('editor-change', validateArmForm);
 validateArmForm();
 </script>
-<script src="{{ url_for('static', filename='js/upload.js') }}"></script>
+<script src="{{ url_for('static', filename='js/upload.js') }}?v=9"></script>
 <script>
 initUploadZone({ zone: 'response-dropzone', input: 'response-file-input', browse: 'response-browse', list: 'response-upload-list', hidden: 'response_file_ids', context: 'response' });
 if (typeof validateArmForm === 'function') validateArmForm();

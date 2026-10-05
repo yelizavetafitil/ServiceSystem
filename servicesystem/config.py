@@ -6,12 +6,19 @@ from dotenv import load_dotenv
 load_dotenv()
 
 
-class Config:
-    SECRET_KEY = os.environ.get("SECRET_KEY", "dev-change-me-in-production")
-    SQLALCHEMY_DATABASE_URI = os.environ.get(
+def _database_uri() -> str:
+    url = os.environ.get(
         "DATABASE_URL",
         "postgresql://servicesystem:servicesystem@localhost:5432/servicesystem",
     )
+    if url.startswith("postgresql://") and "+psycopg" not in url.split("://", 1)[0]:
+        url = "postgresql+psycopg2://" + url.split("://", 1)[1]
+    return url
+
+
+class Config:
+    SECRET_KEY = os.environ.get("SECRET_KEY", "dev-change-me-in-production")
+    SQLALCHEMY_DATABASE_URI = _database_uri()
     SQLALCHEMY_TRACK_MODIFICATIONS = False
     SQLALCHEMY_ENGINE_OPTIONS = {"pool_pre_ping": True}
 
@@ -55,7 +62,8 @@ class Config:
     LLM_API_KEY = os.environ.get("LLM_API_KEY", "")
 
     ALLOWED_UPLOAD_EXTENSIONS = frozenset({
-        ".zpkg.zip", ".zip", ".rar", ".7z", ".log", ".txt", ".png", ".jpg", ".jpeg",
+        ".zpkg", ".zip", ".rar", ".7z", ".pdf",
+        ".log", ".txt", ".png", ".jpg", ".jpeg",
     })
 
     SLA_PRIORITIES = {

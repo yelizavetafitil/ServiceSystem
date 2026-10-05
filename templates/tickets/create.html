@@ -98,13 +98,13 @@
 
         <label>Вложения <span class="muted">(необязательно)</span></label>
 
-        <p class="hint">Архивы БД ЭМ (*.zpkg.zip, .zip, .rar, .7z), логи (.log, .txt), скриншоты (.png, .jpg). До {{ MAX_UPLOAD_MB }} МБ на файл{% if MAX_UPLOAD_MB < 1024 %} (настраивается до 1 ГБ){% endif %}.</p>
+        <p class="hint">Архивы БД ЭМ (*.zpkg, .zip, .rar, .7z), PDF, логи (.log, .txt), скриншоты (.png, .jpg). До {{ MAX_UPLOAD_MB }} МБ на файл{% if MAX_UPLOAD_MB < 1024 %} (настраивается до 1 ГБ){% endif %}.</p>
 
         <div class="dropzone" id="dropzone">
 
           <p>Перетащите файлы или <button type="button" class="btn-link" id="browse-btn">Обзор</button></p>
 
-          <input type="file" id="file-input" multiple hidden accept=".zpkg.zip,.zip,.rar,.7z,.log,.txt,.png,.jpg,.jpeg">
+          <input type="file" id="file-input" multiple hidden accept=".zpkg,.zip,.rar,.7z,.pdf,.log,.txt,.png,.jpg,.jpeg">
 
           <div id="upload-list"></div>
 
@@ -132,7 +132,7 @@
 
 {% block scripts %}
 
-<script src="{{ url_for('static', filename='js/upload.js') }}"></script>
+<script src="{{ url_for('static', filename='js/upload.js') }}?v=9"></script>
 
 <script>
 

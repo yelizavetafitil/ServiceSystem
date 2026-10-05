@@ -36,6 +36,8 @@
         <a href="{{ url_for('tickets.list_tickets') }}">Все заявки</a>
         {% if current_user.is_admin %}
         <a href="{{ url_for('admin.dashboard') }}">Администрирование</a>
+        {% elif current_user.is_executor %}
+        <a href="{{ url_for('admin.tutorials') }}">Контент</a>
         {% endif %}
       {% endif %}
     </nav>

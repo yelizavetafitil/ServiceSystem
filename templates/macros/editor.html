@@ -3,19 +3,26 @@
 <script src="https://cdn.jsdelivr.net/npm/easymde@2.18.0/dist/easymde.min.js"></script>
 {% endmacro %}
 
-{% macro init_editor(selector, min_height=200) %}
+{% macro init_editor(selector, min_height=200, cms=false) %}
 <script>
 document.addEventListener('DOMContentLoaded', function() {
   const editors = [];
+  const cmsMode = {{ 'true' if cms else 'false' }};
+  const basicToolbar = ['bold', 'italic', 'heading', '|', 'quote', 'unordered-list', 'ordered-list', '|', 'link', 'code', 'table', '|', 'preview', 'guide'];
+  const cmsToolbar = [
+    'bold', 'italic', 'strikethrough', 'heading', 'heading-smaller', 'heading-bigger', '|',
+    'quote', 'unordered-list', 'ordered-list', 'code', 'table', 'horizontal-rule', '|',
+    'link', '|', 'preview', 'side-by-side', 'fullscreen', '|', 'guide'
+  ];
   document.querySelectorAll('{{ selector }}').forEach(function(el) {
     if (el.dataset.editorInit) return;
     el.dataset.editorInit = '1';
     var ed = new EasyMDE({
       element: el,
       spellChecker: false,
-      status: false,
+      status: ['lines', 'words', 'cursor'],
       minHeight: '{{ min_height }}px',
-      toolbar: ['bold', 'italic', 'heading', '|', 'quote', 'unordered-list', 'ordered-list', '|', 'link', 'code', 'table', '|', 'preview', 'guide'],
+      toolbar: cmsMode ? cmsToolbar : basicToolbar,
     });
     ed.codemirror.on('change', function() {
       ed.codemirror.save();

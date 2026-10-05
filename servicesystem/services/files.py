@@ -9,7 +9,7 @@ def allowed_filename(filename: str) -> bool:
         return False
     name = filename.lower().strip()
     allowed = current_app.config.get("ALLOWED_UPLOAD_EXTENSIONS", set())
-    for ext in allowed:
+    for ext in sorted(allowed, key=len, reverse=True):
         if name.endswith(ext.lower()):
             return True
     base, ext = os.path.splitext(name)

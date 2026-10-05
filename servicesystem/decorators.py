@@ -35,6 +35,18 @@ def admin_required(fn):
     return wrapper
 
 
+def content_cms_required(fn):
+    """Admin or executor: tutorials and video CMS (not plugins/contracts/users)."""
+    @wraps(fn)
+    def wrapper(*args, **kwargs):
+        if not current_user.is_authenticated:
+            return redirect(url_for("auth.login"))
+        if not (current_user.is_admin or current_user.is_executor):
+            abort(403)
+        return fn(*args, **kwargs)
+    return wrapper
+
+
 def contract_access_required(fn):
     @wraps(fn)
     def wrapper(*args, **kwargs):

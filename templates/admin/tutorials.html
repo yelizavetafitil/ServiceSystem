@@ -9,6 +9,12 @@
       <h1>Туториалы (CMS)</h1>
       <p class="page-subtitle">Статьи хранятся в БД как Markdown для поиска и API (TZ 3.8.2.1)</p>
     </div>
+    <div class="page-header-actions">
+      <a href="{{ url_for('admin.videos') }}" class="btn btn-outline btn-sm">Видеоуроки</a>
+      {% if current_user.is_admin %}
+      <a href="{{ url_for('admin.dashboard') }}" class="btn btn-outline btn-sm">Админ-панель</a>
+      {% endif %}
+    </div>
   </div>
   {% for t in tutorials %}
   <div class="card mb-md">
@@ -35,4 +41,4 @@
   </div>
 </div>
 {% endblock %}
-{% block scripts %}{% from "macros/editor.html" import init_editor %}{{ init_editor('.editor-field', 320) }}{% endblock %}
+{% block scripts %}{% from "macros/editor.html" import init_editor %}{{ init_editor('.editor-field', 420, cms=true) }}{% endblock %}

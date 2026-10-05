@@ -1,7 +1,7 @@
 (function () {
   window.__uploadsPending = false;
 
-  const ALLOWED_EXT = ['.zpkg.zip', '.zip', '.rar', '.7z', '.log', '.txt', '.png', '.jpg', '.jpeg'];
+  const ALLOWED_EXT = ['.zpkg', '.zip', '.rar', '.7z', '.pdf', '.log', '.txt', '.png', '.jpg', '.jpeg'];
 
   function csrfHeaders(extra) {
     const token = document.querySelector('meta[name=csrf-token]')?.content || '';
@@ -35,6 +35,7 @@
     async function handleFiles(files) {
       window.__uploadsPending = true;
       if (typeof validateForm === 'function') validateForm();
+      if (typeof validateArmForm === 'function') validateArmForm();
       for (const file of files) {
         if (!isAllowed(file.name)) {
           alert('Недопустимый формат: ' + file.name + '. Разрешены: ' + ALLOWED_EXT.join(', '));
@@ -45,6 +46,7 @@
       window.__uploadsPending = false;
       if (hiddenField) hiddenField.value = ids.join(',');
       if (typeof validateForm === 'function') validateForm();
+      if (typeof validateArmForm === 'function') validateArmForm();
     }
 
     async function uploadFile(file) {
