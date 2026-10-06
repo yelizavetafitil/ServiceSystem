@@ -133,8 +133,22 @@ def tutorial_detail(slug):
         allowed = _allowed_content_ids(current_user.contract_id, "tutorial")
         if t.id not in allowed:
             abort(403)
+    import bleach
     import markdown
-    html = markdown.markdown(t.content_md, extensions=["tables", "fenced_code"])
+    html = markdown.markdown(t.content_md or "", extensions=["tables", "fenced_code", "nl2br"])
+    allowed_tags = bleach.sanitizer.ALLOWED_TAGS.union({
+        "p", "h1", "h2", "h3", "h4", "pre", "code", "ul", "ol", "li", "strong", "em",
+        "br", "hr", "table", "thead", "tbody", "tr", "th", "td", "img", "blockquote",
+    })
+    html = bleach.clean(
+        html,
+        tags=allowed_tags,
+        attributes={
+            "a": ["href", "title", "rel"],
+            "code": ["class"],
+            "img": ["src", "alt", "title", "width", "height"],
+        },
+    )
     log_audit(current_user.id, "view", "tutorial", t.id)
     db.session.commit()
     return render_template("cabinet/tutorial_detail.html", tutorial=t, content_html=html)

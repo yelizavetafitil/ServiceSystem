@@ -49,15 +49,21 @@ def create_app(config_class=Config):
     import markdown as md_lib
 
     allowed_tags = bleach.sanitizer.ALLOWED_TAGS.union({
-        "p", "h1", "h2", "h3", "h4", "pre", "code", "ul", "ol", "li", "strong", "em", "br", "hr", "table", "thead", "tbody", "tr", "th", "td"
+        "p", "h1", "h2", "h3", "h4", "pre", "code", "ul", "ol", "li", "strong", "em",
+        "br", "hr", "table", "thead", "tbody", "tr", "th", "td", "img", "blockquote",
     })
+    allowed_attrs = {
+        "a": ["href", "title", "rel"],
+        "code": ["class"],
+        "img": ["src", "alt", "title", "width", "height"],
+    }
 
     @app.template_filter("markdown")
     def markdown_filter(text):
         if not text:
             return ""
-        html = md_lib.markdown(text, extensions=["fenced_code", "tables"])
-        return bleach.clean(html, tags=allowed_tags, attributes={"a": ["href", "title"], "code": ["class"]})
+        html = md_lib.markdown(text, extensions=["fenced_code", "tables", "nl2br"])
+        return bleach.clean(html, tags=allowed_tags, attributes=allowed_attrs)
 
     @app.before_request
     def force_https():

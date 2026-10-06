@@ -13,6 +13,15 @@
     return ALLOWED_EXT.some(ext => lower.endsWith(ext));
   }
 
+  function syncHidden(hiddenField, ids) {
+    if (hiddenField) hiddenField.value = ids.join(',');
+  }
+
+  function removeId(ids, id) {
+    const idx = ids.indexOf(String(id));
+    if (idx >= 0) ids.splice(idx, 1);
+  }
+
   function initUploadZone(opts) {
     const dropzone = document.getElementById(opts.zone || 'dropzone');
     const fileInput = document.getElementById(opts.input || 'file-input');
@@ -25,6 +34,19 @@
     const ids = hiddenField?.value ? hiddenField.value.split(',').filter(Boolean) : [];
     const CHUNK = 8 * 1024 * 1024;
     const sessions = JSON.parse(localStorage.getItem('uploadSessions') || '{}');
+
+    // Allow removing already-attached files listed in the page
+    document.querySelectorAll('[data-remove-file-id]').forEach(function(btn) {
+      btn.addEventListener('click', function() {
+        const id = String(btn.getAttribute('data-remove-file-id'));
+        removeId(ids, id);
+        syncHidden(hiddenField, ids);
+        const li = btn.closest('li');
+        if (li) li.remove();
+        if (typeof validateArmForm === 'function') validateArmForm();
+        if (typeof validateForm === 'function') validateForm();
+      });
+    });
 
     browseBtn?.addEventListener('click', () => fileInput.click());
     dropzone.addEventListener('dragover', e => { e.preventDefault(); dropzone.classList.add('drag'); });
@@ -44,7 +66,7 @@
         await uploadFile(file);
       }
       window.__uploadsPending = false;
-      if (hiddenField) hiddenField.value = ids.join(',');
+      syncHidden(hiddenField, ids);
       if (typeof validateForm === 'function') validateForm();
       if (typeof validateArmForm === 'function') validateArmForm();
     }
@@ -53,11 +75,22 @@
       const key = file.name + '_' + file.size;
       const row = document.createElement('div');
       row.className = 'upload-item';
-      row.innerHTML = `<span>${file.name}</span><div class="progress-bar"><div class="progress-fill" style="width:0%"></div></div><span class="pct">0%</span><span class="speed"></span>`;
+      row.innerHTML = `<span class="upload-name"></span><div class="progress-bar"><div class="progress-fill" style="width:0%"></div></div><span class="pct">0%</span><span class="speed"></span><button type="button" class="btn-link upload-remove" title="Удалить">✕</button>`;
+      row.querySelector('.upload-name').textContent = file.name;
       uploadList.appendChild(row);
       const fill = row.querySelector('.progress-fill');
       const pct = row.querySelector('.pct');
       const speedEl = row.querySelector('.speed');
+      const removeBtn = row.querySelector('.upload-remove');
+
+      let fileId = null;
+      removeBtn.addEventListener('click', function() {
+        if (fileId) removeId(ids, fileId);
+        syncHidden(hiddenField, ids);
+        row.remove();
+        if (typeof validateArmForm === 'function') validateArmForm();
+        if (typeof validateForm === 'function') validateForm();
+      });
 
       let sessionId = sessions[key];
       let offset = 0;
@@ -119,12 +152,19 @@
         body: JSON.stringify({}),
       }).then(r => r.json());
       const id = fin.attachment_id || fin.file_id;
-      if (id) ids.push(id);
+      if (id) {
+        fileId = String(id);
+        ids.push(fileId);
+        syncHidden(hiddenField, ids);
+      }
       delete sessions[key];
       localStorage.setItem('uploadSessions', JSON.stringify(sessions));
       pct.textContent = '100%';
       speedEl.textContent = '';
-      row.insertAdjacentHTML('beforeend', '<span class="upload-done">Готово</span>');
+      const done = document.createElement('span');
+      done.className = 'upload-done';
+      done.textContent = 'Готово';
+      row.insertBefore(done, removeBtn);
     }
   }
 

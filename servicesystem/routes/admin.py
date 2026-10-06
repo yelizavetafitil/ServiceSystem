@@ -1,6 +1,6 @@
 from datetime import datetime, timezone
 
-from flask import Blueprint, abort, flash, redirect, render_template, request, url_for
+from flask import Blueprint, abort, flash, jsonify, redirect, render_template, request, send_file, url_for
 from flask_login import current_user, login_required
 
 from servicesystem.decorators import admin_required, content_cms_required
@@ -24,6 +24,9 @@ from servicesystem.models import (
 )
 from servicesystem.services.audit import log_audit, unique_filename
 from servicesystem.services.storage import get_storage
+
+CMS_IMAGE_EXTENSIONS = {".png", ".jpg", ".jpeg", ".gif", ".webp"}
+CMS_IMAGE_MAX_BYTES = 8 * 1024 * 1024
 
 bp = Blueprint("admin", __name__)
 
@@ -495,6 +498,52 @@ def plugin_version_upload(pid):
     db.session.commit()
     flash(f"Версия {version} загружена. Предыдущая перемещена в архив.", "success")
     return redirect(url_for("admin.plugin_edit", pid=pid))
+
+
+@bp.route("/cms-images", methods=["POST"])
+@login_required
+@content_cms_required
+def cms_image_upload():
+    """Upload image for tutorial Markdown (file picker, not URL prompt)."""
+    f = request.files.get("image")
+    if not f or not f.filename:
+        return jsonify({"error": "Выберите файл изображения"}), 400
+    name = f.filename.lower().strip()
+    ext = "." + name.rsplit(".", 1)[-1] if "." in name else ""
+    if ext not in CMS_IMAGE_EXTENSIONS:
+        return jsonify({"error": "Допустимы: PNG, JPG, GIF, WEBP"}), 400
+    f.seek(0, 2)
+    size = f.tell()
+    f.seek(0)
+    if size <= 0 or size > CMS_IMAGE_MAX_BYTES:
+        return jsonify({"error": f"Размер файла до {CMS_IMAGE_MAX_BYTES // (1024 * 1024)} МБ"}), 400
+    stored = unique_filename(f.filename)
+    storage = get_storage()
+    storage.ensure_dir("cms")
+    storage.save_file(f"cms/{stored}", f)
+    url = url_for("admin.cms_image_serve", filename=stored)
+    return jsonify({"url": url, "filename": stored})
+
+
+@bp.route("/cms-images/<path:filename>")
+@login_required
+def cms_image_serve(filename):
+    """Serve CMS images to staff and customers with article access (any logged-in)."""
+    if "/" in filename or ".." in filename:
+        abort(404)
+    storage = get_storage()
+    rel = f"cms/{filename}"
+    if not storage.exists(rel):
+        abort(404)
+    mime = "image/jpeg"
+    lower = filename.lower()
+    if lower.endswith(".png"):
+        mime = "image/png"
+    elif lower.endswith(".gif"):
+        mime = "image/gif"
+    elif lower.endswith(".webp"):
+        mime = "image/webp"
+    return send_file(storage.read_path(rel), mimetype=mime)
 
 
 @bp.route("/tutorials")

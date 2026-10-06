@@ -29,6 +29,7 @@
       </div>
       <div class="form-group cms-editor-wrap">
         <label>Содержание *</label>
+        <p class="hint">Картинка: иконка изображения → файл с диска → глаз (предпросмотр). Выход из полного экрана: та же иконка стрелок, ✕ в панели или Esc. Сохранить и «Опубликован» — чтобы увидеть в ЛК.</p>
         <textarea name="content_md" class="form-control cms-editor-field" rows="12" required>{{ tutorial.content_md }}</textarea>
       </div>
       <label class="check-row"><input type="checkbox" name="is_published" value="1" {% if tutorial.is_published %}checked{% endif %}> Опубликован (виден в списках CMS и может попасть в ЛК по договору)</label>

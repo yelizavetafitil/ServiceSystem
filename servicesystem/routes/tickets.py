@@ -207,14 +207,22 @@ def respond(tid):
     response_text = request.form.get("response_text", "").strip()
     ticket.response_text_md = response_text
 
-    response_file_ids = request.form.get("response_file_ids", "")
-    if response_file_ids:
-        for fid in response_file_ids.split(","):
-            fid = fid.strip()
-            if fid:
-                rf = db.session.get(TicketResponseFile, int(fid))
-                if rf and rf.ticket_id is None:
-                    rf.ticket_id = ticket.id
+    keep_ids = set()
+    for fid in request.form.get("response_file_ids", "").split(","):
+        fid = fid.strip()
+        if not fid:
+            continue
+        try:
+            keep_ids.add(int(fid))
+        except ValueError:
+            continue
+    for rf in ticket.response_files.all():
+        if rf.id not in keep_ids:
+            rf.ticket_id = None
+    for fid in keep_ids:
+        rf = db.session.get(TicketResponseFile, fid)
+        if rf and (rf.ticket_id is None or rf.ticket_id == ticket.id):
+            rf.ticket_id = ticket.id
 
     if current_user.is_executor:
         action = request.form.get("executor_action")

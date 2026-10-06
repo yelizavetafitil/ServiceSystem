@@ -162,10 +162,13 @@
           {% if ticket.response_files.count() %}
           <ul class="response-files-existing">
             {% for f in ticket.response_files %}
-            <li><a href="{{ url_for('tickets.download_response_file', tid=ticket.id, fid=f.id) }}">{{ f.original_name }}</a></li>
+            <li>
+              <a href="{{ url_for('tickets.download_response_file', tid=ticket.id, fid=f.id) }}">{{ f.original_name }}</a>
+              <button type="button" class="btn-link upload-remove" data-remove-file-id="{{ f.id }}" title="Убрать из ответа">✕</button>
+            </li>
             {% endfor %}
           </ul>
-          <p class="hint">Уже прикреплённые файлы видны аудитору на вкладке «Суть проблемы».</p>
+          <p class="hint">Уже прикреплённые файлы видны аудитору на вкладке «Суть проблемы». Крестик — убрать из ответа перед отправкой.</p>
           {% endif %}
           <div class="dropzone" id="response-dropzone">
             <p>Перетащите файлы или <button type="button" class="btn-link" id="response-browse">Обзор</button></p>
@@ -291,7 +294,7 @@ document.getElementById('respond-form')?.addEventListener('change', validateArmF
 document.addEventListener('editor-change', validateArmForm);
 validateArmForm();
 </script>
-<script src="{{ url_for('static', filename='js/upload.js') }}?v=9"></script>
+<script src="{{ url_for('static', filename='js/upload.js') }}?v=10"></script>
 <script>
 initUploadZone({ zone: 'response-dropzone', input: 'response-file-input', browse: 'response-browse', list: 'response-upload-list', hidden: 'response_file_ids', context: 'response' });
 if (typeof validateArmForm === 'function') validateArmForm();

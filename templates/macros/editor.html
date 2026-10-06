@@ -15,50 +15,164 @@ document.addEventListener('DOMContentLoaded', function() {
   const editors = [];
   const cmsMode = {{ 'true' if cms else 'false' }};
   const basicToolbar = ['bold', 'italic', 'heading', '|', 'quote', 'unordered-list', 'ordered-list', '|', 'link', 'code', 'table', '|', 'preview', 'guide'];
-  const cmsToolbar = [
-    'undo', 'redo', '|',
-    'bold', 'italic', 'strikethrough', 'heading', 'heading-smaller', 'heading-bigger', '|',
-    'quote', 'unordered-list', 'ordered-list', 'code', 'table', 'horizontal-rule', '|',
-    'link', 'image', '|',
-    'preview', 'side-by-side', 'fullscreen', '|', 'guide'
-  ];
+  const uploadUrl = '{{ url_for("admin.cms_image_upload") }}';
+
+  function csrfToken() {
+    return document.querySelector('meta[name=csrf-token]')?.content || '';
+  }
+
+  function exitEditorModes(editor) {
+    try { if (editor.isFullscreenActive()) EasyMDE.toggleFullScreen(editor); } catch (e) {}
+    try { if (editor.isSideBySideActive()) EasyMDE.toggleSideBySide(editor); } catch (e) {}
+    try { if (editor.isPreviewActive()) EasyMDE.togglePreview(editor); } catch (e) {}
+    var c = editor.codemirror.getWrapperElement().closest('.EasyMDEContainer');
+    if (c) {
+      c.classList.remove('fullscreen', 'sided');
+      var tb = c.querySelector('.editor-toolbar');
+      if (tb) tb.classList.remove('fullscreen');
+      editor.codemirror.getWrapperElement().classList.remove('CodeMirror-fullscreen');
+      var prev = c.querySelector('.editor-preview-active');
+      if (prev) { prev.classList.remove('editor-preview-active'); prev.style.display = 'none'; }
+      var side = c.querySelector('.editor-preview-active-side');
+      if (side) side.classList.remove('editor-preview-active-side');
+    }
+    document.body.classList.remove('cms-editor-immersive');
+    editor.codemirror.refresh();
+    editor.codemirror.focus();
+  }
+
+  var uploadImageToolbar = {
+    name: 'upload-image',
+    className: 'fa fa-picture-o',
+    title: 'Вставить изображение с диска',
+    action: function(editor) {
+      var input = document.createElement('input');
+      input.type = 'file';
+      input.accept = 'image/png,image/jpeg,image/jpg,image/gif,image/webp,.png,.jpg,.jpeg,.gif,.webp';
+      input.style.display = 'none';
+      document.body.appendChild(input);
+      input.addEventListener('change', function() {
+        var file = input.files && input.files[0];
+        document.body.removeChild(input);
+        if (!file) return;
+        var form = new FormData();
+        form.append('image', file);
+        form.append('csrf_token', csrfToken());
+        var wrap = editor.codemirror.getWrapperElement();
+        var tip = document.createElement('div');
+        tip.className = 'cms-upload-tip';
+        tip.textContent = 'Загрузка изображения…';
+        wrap.appendChild(tip);
+        editor.codemirror.setOption('readOnly', 'nocursor');
+        fetch(uploadUrl, {
+          method: 'POST',
+          headers: { 'X-CSRFToken': csrfToken() },
+          body: form
+        }).then(function(r) {
+          return r.json().then(function(j) { return { ok: r.ok, j: j }; });
+        }).then(function(res) {
+          tip.remove();
+          editor.codemirror.setOption('readOnly', false);
+          if (!res.ok || !res.j.url) {
+            alert((res.j && res.j.error) || 'Не удалось загрузить изображение');
+            return;
+          }
+          var alt = (file.name || 'image').replace(/\.[^.]+$/, '');
+          editor.codemirror.replaceSelection('![' + alt + '](' + res.j.url + ')');
+          editor.codemirror.focus();
+        }).catch(function() {
+          tip.remove();
+          editor.codemirror.setOption('readOnly', false);
+          alert('Ошибка сети при загрузке изображения');
+        });
+      });
+      input.click();
+    }
+  };
+
   document.querySelectorAll('{{ selector }}').forEach(function(el) {
     if (el.dataset.editorInit) return;
     el.dataset.editorInit = '1';
+
     var opts = {
       element: el,
       spellChecker: false,
       autofocus: false,
       minHeight: '{{ min_height }}px',
-      toolbar: cmsMode ? cmsToolbar : basicToolbar,
+      promptURLs: false,
     };
+
     if (cmsMode) {
-      opts.placeholder = 'Текст статьи (Markdown): заголовки, списки, таблицы, блоки кода, ссылки и изображения по URL…';
+      opts.placeholder = 'Текст статьи (Markdown). Картинка — иконка изображения (файл с диска). Предпросмотр — глаз. Выход из полного экрана — та же иконка стрелок, ✕ в панели или Esc.';
       opts.status = ['lines', 'words', 'cursor'];
-      opts.lineNumbers = true;
       opts.lineWrapping = true;
+      opts.lineNumbers = false;
       opts.syncSideBySidePreviewScroll = true;
-      opts.previewClass = ['markdown-body', 'cms-editor-preview'];
       opts.renderingConfig = {
         singleLineBreaks: false,
         codeSyntaxHighlighting: true,
       };
-      opts.promptURLs = true;
+      opts.toolbar = [
+        'undo', 'redo', '|',
+        'bold', 'italic', 'strikethrough', 'heading', '|',
+        'quote', 'unordered-list', 'ordered-list', 'code', 'table', 'horizontal-rule', '|',
+        'link', uploadImageToolbar, '|',
+        'preview', 'side-by-side', 'fullscreen',
+        {
+          name: 'exit-modes',
+          className: 'fa fa-times',
+          title: 'Выйти из полного экрана / разделённого вида (Esc)',
+          action: exitEditorModes
+        },
+        '|', 'guide'
+      ];
+      opts.shortcuts = {
+        togglePreview: 'Ctrl-Alt-P',
+        toggleSideBySide: 'F9',
+        toggleFullScreen: 'Ctrl-Alt-F',
+      };
       opts.insertTexts = {
         horizontalRule: ['', '\n\n---\n\n'],
-        image: ['![](https://', ')'],
         link: ['[', '](https://)'],
       };
     } else {
       opts.status = false;
+      opts.toolbar = basicToolbar;
     }
+
     var ed = new EasyMDE(opts);
     ed.codemirror.on('change', function() {
       ed.codemirror.save();
       document.dispatchEvent(new CustomEvent('editor-change'));
     });
+    ed._cmsExitImmersive = function() { exitEditorModes(ed); };
+
+    var container = ed.codemirror.getWrapperElement().closest('.EasyMDEContainer');
+    if (cmsMode && container) {
+      var mo = new MutationObserver(function() {
+        document.body.classList.toggle(
+          'cms-editor-immersive',
+          container.classList.contains('fullscreen')
+        );
+      });
+      mo.observe(container, { attributes: true, attributeFilter: ['class'] });
+    }
+
     editors.push(ed);
   });
+
+  document.addEventListener('keydown', function(e) {
+    if (e.key !== 'Escape') return;
+    var immersive = document.querySelector(
+      '.EasyMDEContainer.fullscreen, .EasyMDEContainer.sided, .CodeMirror-fullscreen, .editor-preview-active-side'
+    );
+    if (!immersive) return;
+    e.preventDefault();
+    editors.forEach(function(ed) {
+      if (ed._cmsExitImmersive) ed._cmsExitImmersive();
+    });
+  }, true);
+
   document.querySelectorAll('form').forEach(function(form) {
     form.addEventListener('submit', function() {
       editors.forEach(function(ed) { if (ed.codemirror) ed.codemirror.save(); });
