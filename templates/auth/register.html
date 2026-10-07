@@ -3,15 +3,21 @@
 {% block title %}Регистрация — {{ APP_NAME }}{% endblock %}
 {% block content %}
 <div class="auth-page">
-  <div class="auth-card auth-card-wide">
-    <div class="auth-header">
+  <div class="auth-card auth-card--portal auth-card-wide">
+    <div class="auth-brand">
       {% from 'macros/logo.html' import belnipi_logo %}
-      {{ belnipi_logo('auth-logo-img') }}
+      {{ belnipi_logo('auth-brand-mark brand-logo-mark') }}
+      <div class="auth-brand-text">
+        <span class="auth-brand-line">{{ ORG_LEGAL_FORM }}</span>
+        <div class="auth-org">{{ ORG_NAME }}</div>
+      </div>
+    </div>
+    <div class="auth-header auth-header--portal">
       <h1>Персональная регистрация</h1>
       <p>Организация: <strong>{{ org_name }}</strong><br>
       Договор: <strong>{{ contract.number }}</strong> от {{ contract.signed_at.strftime('%d.%m.%Y') if contract.signed_at else '—' }}</p>
     </div>
-    <form method="post">
+    <form method="post" class="auth-form">
       {{ csrf_field() }}
       <div class="form-group">
         <label>ФИО *</label>
@@ -40,7 +46,7 @@
             <a href="{{ url_for('auth.privacy') }}" target="_blank">Политикой обработки ПДн</a> (Закон № 99-З)</span>
         </label>
       </div>
-      <button type="submit" class="btn btn-primary btn-block">Зарегистрироваться</button>
+      <button type="submit" class="btn btn-primary btn-block auth-submit">Зарегистрироваться</button>
     </form>
   </div>
 </div>

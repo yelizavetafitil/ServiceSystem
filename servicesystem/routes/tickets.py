@@ -175,7 +175,13 @@ def detail(tid):
     ticket = db.session.get(Ticket, tid) or abort(404)
     if not _can_view(ticket):
         abort(403)
-    history = ticket.history.all()
+    # Заказчику не отдаём журнал назначения/таймеров — только даты создания/закрытия в шаблоне
+    if current_user.is_customer:
+        history = []
+        if ticket.status == "rejected":
+            history = [h for h in ticket.history.all() if h.action == "rejected"][:1]
+    else:
+        history = ticket.history.all()
     executors = User.query.filter_by(role="executor", is_active=True).all() if current_user.is_auditor else []
     import markdown
     desc_html = markdown.markdown(ticket.description_md or "", extensions=["fenced_code"])

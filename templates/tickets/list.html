@@ -38,16 +38,19 @@
 
       {% for t in tickets %}
 
+      {% if current_user.is_customer %}
+        {% set meta = 'Создана ' ~ (t.created_at.strftime('%d.%m.%Y %H:%M') if t.created_at else '—') %}
+        {% if t.resolved_at %}
+          {% set meta = meta ~ ' · закрыта ' ~ t.resolved_at.strftime('%d.%m.%Y %H:%M') ~ ' · ' ~ format_duration(t.timer_total_seconds) %}
+        {% endif %}
+      {% else %}
+        {% set meta = t.created_at.strftime('%d.%m.%Y %H:%M') if t.created_at else '—' %}
+      {% endif %}
       {{ ticket_list_item(
-
         t,
-
         url_for('tickets.detail', tid=t.id),
-
-        show_priority=true,
-
-        meta_line=(t.created_at.strftime('%d.%m.%Y %H:%M') if t.created_at else '—')
-
+        show_priority=current_user.is_staff,
+        meta_line=meta
       ) }}
 
       {% endfor %}

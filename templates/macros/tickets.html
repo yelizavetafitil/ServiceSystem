@@ -8,7 +8,7 @@
         <span class="priority p{{ t.priority }}" style="--pc:{{ SLA_PRIORITIES[t.priority].color }}">{{ SLA_PRIORITIES[t.priority].name }}</span>
         {% if t.priority_changed %}<span class="priority-badge-changed" title="{{ t.priority_change_reason or 'Приоритет изменён' }}">!</span>{% endif %}
         {% endif %}
-        <span class="badge status-{{ t.status }}">{{ TICKET_STATUSES.get(t.status, t.status) }}</span>
+        <span class="badge status-{{ t.status }}">{% if current_user.is_customer %}{{ CUSTOMER_TICKET_STATUSES.get(t.status, TICKET_STATUSES.get(t.status, t.status)) }}{% else %}{{ TICKET_STATUSES.get(t.status, t.status) }}{% endif %}</span>
       </div>
     </div>
     <p class="ticket-list-title">{{ t.subject }}</p>

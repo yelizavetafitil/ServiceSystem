@@ -3,47 +3,72 @@
 {% block title %}Вход — {{ APP_NAME }}{% endblock %}
 {% block content %}
 <div class="auth-page">
-  <div class="auth-card">
-    <div class="auth-header">
+  <div class="auth-card auth-card--portal">
+    <div class="auth-brand">
       {% from 'macros/logo.html' import belnipi_logo %}
-      {{ belnipi_logo('auth-logo-img') }}
-      <div class="auth-org">{{ ORG_NAME }}</div>
-      <h1>{{ APP_NAME }}</h1>
+      {{ belnipi_logo('auth-brand-mark brand-logo-mark') }}
+      <div class="auth-brand-text">
+        <span class="auth-brand-line">{{ ORG_LEGAL_FORM }}</span>
+        <div class="auth-org">{{ ORG_NAME }}</div>
+      </div>
+    </div>
+
+    <div class="auth-intro auth-intro--service">
       <p>Гарантийное и постгарантийное обслуживание электронных моделей систем теплоснабжения производственного назначения</p>
     </div>
 
-    <div class="tabs">
+    <div class="tabs auth-tabs">
       <button type="button" class="tab active" data-tab="personal">Персональный вход</button>
       <button type="button" class="tab" data-tab="master">Мастер-ключ</button>
     </div>
 
-    <form method="post" id="form-personal" class="tab-panel active">
+    <form method="post" id="form-personal" class="tab-panel active auth-form">
       {{ csrf_field() }}
       <input type="hidden" name="login_type" value="personal">
       <div class="form-group">
-        <label>Рабочий email</label>
-        <input type="email" name="email" class="form-control" required placeholder="user@energo.by">
+        <label for="login-email">Рабочий email</label>
+        <div class="auth-field">
+          <span class="auth-field-icon" aria-hidden="true">
+            <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M4 6h16v12H4z"/><path d="m4 7 8 6 8-6"/></svg>
+          </span>
+          <input id="login-email" type="email" name="email" class="form-control" required placeholder="user@energo.by" autocomplete="username">
+        </div>
       </div>
       <div class="form-group">
-        <label>Пароль</label>
-        <input type="password" name="password" class="form-control" required>
+        <label for="login-password">Пароль</label>
+        <div class="auth-field">
+          <span class="auth-field-icon" aria-hidden="true">
+            <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.8"><rect x="5" y="10" width="14" height="10" rx="2"/><path d="M8 10V7a4 4 0 0 1 8 0v3"/></svg>
+          </span>
+          <input id="login-password" type="password" name="password" class="form-control" required autocomplete="current-password">
+        </div>
       </div>
-      <button type="submit" class="btn btn-primary btn-block">Войти в личный кабинет</button>
+      <button type="submit" class="btn btn-primary btn-block auth-submit">Войти в личный кабинет</button>
     </form>
 
-    <form method="post" id="form-master" class="tab-panel">
+    <form method="post" id="form-master" class="tab-panel auth-form">
       {{ csrf_field() }}
       <input type="hidden" name="login_type" value="master">
       <p class="hint">Первичный вход по временному ключу организации для обязательной персональной регистрации сотрудника.</p>
       <div class="form-group">
-        <label>Логин организации</label>
-        <input type="text" name="master_login" class="form-control" placeholder="master_brest">
+        <label for="master-login">Логин организации</label>
+        <div class="auth-field">
+          <span class="auth-field-icon" aria-hidden="true">
+            <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M4 20V8l8-4 8 4v12"/><path d="M9 20v-6h6v6"/></svg>
+          </span>
+          <input id="master-login" type="text" name="master_login" class="form-control" placeholder="master_brest" autocomplete="username">
+        </div>
       </div>
       <div class="form-group">
-        <label>Мастер-пароль</label>
-        <input type="password" name="master_password" class="form-control">
+        <label for="master-password">Мастер-пароль</label>
+        <div class="auth-field">
+          <span class="auth-field-icon" aria-hidden="true">
+            <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.8"><rect x="5" y="10" width="14" height="10" rx="2"/><path d="M8 10V7a4 4 0 0 1 8 0v3"/></svg>
+          </span>
+          <input id="master-password" type="password" name="master_password" class="form-control" autocomplete="current-password">
+        </div>
       </div>
-      <button type="submit" class="btn btn-primary btn-block">Продолжить регистрацию</button>
+      <button type="submit" class="btn btn-primary btn-block auth-submit">Продолжить регистрацию</button>
     </form>
   </div>
 </div>

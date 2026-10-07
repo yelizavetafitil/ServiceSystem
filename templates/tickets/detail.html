@@ -9,41 +9,31 @@
   <div class="page-header">
     <div class="page-header-main">
       <h1>{{ ticket.number }} — {{ ticket.subject }}</h1>
+      {% if current_user.is_staff %}
       <div class="page-header-meta">
         <span class="priority p{{ ticket.priority }}" style="--pc:{{ SLA_PRIORITIES[ticket.priority].color }}">{{ SLA_PRIORITIES[ticket.priority].name }}</span>
       </div>
+      {% endif %}
     </div>
   </div>
-  {% if ticket.priority_changed %}
+  {% if current_user.is_staff and ticket.priority_changed %}
   <div class="priority-notice">Приоритет изменён Аудитором. Причина: «{{ ticket.priority_change_reason }}»</div>
   {% endif %}
 
   <div class="ticket-meta">
+    {% if current_user.is_customer %}
+    <span class="badge status-{{ ticket.status }}">{{ CUSTOMER_TICKET_STATUSES.get(ticket.status, 'Открыта') }}</span>
+    <span>Договор: <a href="{{ url_for('cabinet.contract') }}">{{ ticket.contract.number }}</a></span>
+    {% else %}
     <span class="badge status-{{ ticket.status }}">{{ TICKET_STATUSES.get(ticket.status, ticket.status) }}</span>
-    <span>Договор: <a href="{{ url_for('cabinet.contract') if current_user.is_customer else url_for('admin.contract_edit', cid=ticket.contract_id) }}">{{ ticket.contract.number }}</a></span>
-    <span class="sla-{{ sla_status(ticket.reaction_deadline) }}">Реакция до: {{ format_deadline(ticket.reaction_deadline) }}</span>
-    <span>Факт реакции (Таймер №1): {{ format_duration(ticket.timer1_total_seconds) }}</span>
-    <span>Факт исполнения (Таймер №2): {{ format_duration(ticket.timer2_total_seconds) }}</span>
-    <span class="sla-{{ sla_status(ticket.resolution_deadline) }}">Устранение до: {{ format_deadline(ticket.resolution_deadline) }}</span>
-  </div>
-
-  {% if ticket.status in ('resolved', 'ready') %}
-  <div class="card sla-summary-card">
-    <h3>Регламентные сроки по заявке</h3>
-    <div class="sla-summary-grid">
-      <span><strong>Таймер №1</strong> (реакция аудитора): {{ format_duration(ticket.timer1_total_seconds) }}</span>
-      <span><strong>Таймер №2</strong> (исполнение): {{ format_duration(ticket.timer2_total_seconds) }}</span>
-      <span class="sla-total"><strong>Итого:</strong> {{ format_duration(timer_total_seconds(ticket)) }}</span>
-    </div>
-    {% if ticket.status == 'resolved' %}
-    <p class="hint">Зафиксировано при утверждении ответа и передаче в личный кабинет заказчика.</p>
+    <span>Договор: <a href="{{ url_for('admin.contract_edit', cid=ticket.contract_id) }}">{{ ticket.contract.number }}</a></span>
+    {% if ticket.executor %}<span>Исполнитель: {{ ticket.executor.full_name }}</span>{% endif %}
     {% endif %}
   </div>
-  {% endif %}
 
   <div class="tabs ticket-tabs">
     <button class="tab active" data-tab="problem">Суть проблемы</button>
-    <button class="tab" data-tab="history">История изменений</button>
+    <button class="tab" data-tab="history">{% if current_user.is_customer %}Хронология{% else %}История изменений{% endif %}</button>
     {% if current_user.is_staff %}<button class="tab" data-tab="response">Форма ответа</button>{% endif %}
   </div>
 
@@ -93,6 +83,39 @@
 
   <div class="tab-panel" id="panel-history">
     <div class="card">
+      {% if current_user.is_customer %}
+      <h3 class="section-title section-title--inset">Хронология заявки</h3>
+      <dl class="customer-ticket-dates">
+        <div class="customer-ticket-dates-row">
+          <dt>Дата и время создания заявки</dt>
+          <dd>{{ ticket.created_at.strftime('%d.%m.%Y %H:%M') if ticket.created_at else '—' }}</dd>
+        </div>
+        {% if ticket.status == 'rejected' %}
+        <div class="customer-ticket-dates-row">
+          <dt>Дата и время отклонения заявки</dt>
+          <dd>{% if history and history[0].created_at %}{{ history[0].created_at.strftime('%d.%m.%Y %H:%M') }}{% else %}—{% endif %}</dd>
+        </div>
+        {% elif ticket.resolved_at %}
+        <div class="customer-ticket-dates-row">
+          <dt>Дата и время закрытия заявки</dt>
+          <dd>{{ ticket.resolved_at.strftime('%d.%m.%Y %H:%M') }}</dd>
+        </div>
+        <div class="customer-ticket-dates-row customer-ticket-dates-row--total">
+          <dt>Общее время обработки</dt>
+          <dd>{{ format_duration(timer_total_seconds(ticket)) }}</dd>
+        </div>
+        {% else %}
+        <div class="customer-ticket-dates-row">
+          <dt>Дата и время закрытия заявки</dt>
+          <dd class="muted">Будет указано после завершения обработки</dd>
+        </div>
+        <div class="customer-ticket-dates-row">
+          <dt>Общее время обработки</dt>
+          <dd class="muted">Будет рассчитано после закрытия</dd>
+        </div>
+        {% endif %}
+      </dl>
+      {% else %}
       <ul class="timeline">
         {% for h in history %}
         <li>
@@ -110,6 +133,7 @@
         </li>
         {% endfor %}
       </ul>
+      {% endif %}
     </div>
   </div>
 
@@ -191,7 +215,7 @@
   {% endif %}
 
   <div class="ticket-footer">
-    <button type="button" class="btn btn-outline btn-sm" onclick="document.querySelector('[data-tab=history]').click()">Журнал изменений</button>
+    <button type="button" class="btn btn-outline btn-sm" onclick="document.querySelector('[data-tab=history]').click()">{% if current_user.is_customer %}Хронология{% else %}Журнал изменений{% endif %}</button>
   </div>
 </div>
 

@@ -55,41 +55,76 @@ def _video_payload(v):
 
 
 def _ticket_payload(t, include_history=False):
+    is_customer = (
+        current_user.is_authenticated
+        and getattr(current_user, "is_customer", False)
+        and not getattr(g, "llm_service", False)
+    )
+    status_labels = current_app.config.get(
+        "CUSTOMER_TICKET_STATUSES" if is_customer else "TICKET_STATUSES", {}
+    )
     data = {
         "id": t.id,
         "number": t.number,
         "status": t.status,
-        "priority": t.priority,
+        "status_label": status_labels.get(t.status, t.status),
         "subject": t.subject,
         "description_md": t.description_md,
         "description_format": "markdown",
-        "response_md": t.response_text_md,
-        "response_format": "markdown" if t.response_text_md else None,
+        "response_md": t.response_text_md if (not is_customer or t.status == "resolved") else None,
+        "response_format": "markdown" if t.response_text_md and (not is_customer or t.status == "resolved") else None,
         "created_at": t.created_at.isoformat() if t.created_at else None,
         "resolved_at": t.resolved_at.isoformat() if t.resolved_at else None,
         "contract_id": t.contract_id,
         "object_category": t.object_category.name if t.object_category else None,
         "incident_category": t.incident_category.name if t.incident_category else None,
-        "timer1_seconds": t.timer1_total_seconds or 0,
-        "timer2_seconds": t.timer2_total_seconds or 0,
         "timer_total_seconds": t.timer_total_seconds,
-        "reaction_deadline": t.reaction_deadline.isoformat() if t.reaction_deadline else None,
-        "resolution_deadline": t.resolution_deadline.isoformat() if t.resolution_deadline else None,
         "author": {
             "full_name": t.author.full_name if t.author else None,
             "organization": t.author.organization.name if t.author and t.author.organization else None,
         },
         "url": f"/tickets/{t.id}",
     }
-    if include_history:
-        data["history"] = [{
-            "action": h.action,
-            "old_value": h.old_value,
-            "new_value": h.new_value,
-            "details": h.details,
-            "user": h.user.full_name if h.user else None,
-            "created_at": h.created_at.isoformat() if h.created_at else None,
-        } for h in t.history.all()]
+    if not is_customer:
+        data.update({
+            "priority": t.priority,
+            "timer1_seconds": t.timer1_total_seconds or 0,
+            "timer2_seconds": t.timer2_total_seconds or 0,
+            "reaction_deadline": t.reaction_deadline.isoformat() if t.reaction_deadline else None,
+            "resolution_deadline": t.resolution_deadline.isoformat() if t.resolution_deadline else None,
+        })
+        if include_history:
+            data["history"] = [{
+                "action": h.action,
+                "old_value": h.old_value,
+                "new_value": h.new_value,
+                "details": h.details,
+                "user": h.user.full_name if h.user else None,
+                "created_at": h.created_at.isoformat() if h.created_at else None,
+            } for h in t.history.all()]
+    elif include_history:
+        # Заказчику — только вехи создания/закрытия, без назначения и таймеров
+        data["history"] = [
+            {
+                "action": "created",
+                "created_at": t.created_at.isoformat() if t.created_at else None,
+                "label": "Заявка создана",
+            }
+        ]
+        if t.status == "rejected":
+            rej = next((h for h in t.history.all() if h.action == "rejected"), None)
+            data["history"].append({
+                "action": "rejected",
+                "created_at": rej.created_at.isoformat() if rej and rej.created_at else None,
+                "label": "Заявка отклонена",
+            })
+        elif t.resolved_at:
+            data["history"].append({
+                "action": "closed",
+                "created_at": t.resolved_at.isoformat(),
+                "label": "Заявка закрыта",
+                "timer_total_seconds": t.timer_total_seconds,
+            })
     return data
 
 

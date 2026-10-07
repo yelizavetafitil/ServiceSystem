@@ -24,6 +24,10 @@ class Config:
 
     APP_NAME = os.environ.get("APP_NAME", "Сервис ЭМСТПН")
     ORG_NAME = os.environ.get("ORG_NAME", 'РУП «Белнипиэнергопром»')
+    ORG_LEGAL_FORM = os.environ.get(
+        "ORG_LEGAL_FORM",
+        "Проектное научно-исследовательское республиканское унитарное предприятие",
+    )
 
     UPLOAD_FOLDER = os.environ.get("UPLOAD_FOLDER", "/app/data/uploads")
     MAX_UPLOAD_MB = int(os.environ.get("MAX_UPLOAD_MB", "100"))
@@ -125,6 +129,16 @@ class Config:
         "ready": "Готов к выдаче",
         "rejected": "Отклонено",
         "resolved": "Решено",
+    }
+
+    # Заказчику не показываем внутренние этапы (назначение, проверка, выдача)
+    CUSTOMER_TICKET_STATUSES = {
+        "new": "Открыта",
+        "in_progress": "В обработке",
+        "on_review": "В обработке",
+        "ready": "В обработке",
+        "rejected": "Отклонена",
+        "resolved": "Закрыта",
     }
 
     ROLES = {

@@ -55,9 +55,10 @@
           url_for('tickets.detail', tid=t.id),
           show_priority=false,
           meta_line=(
-            (TICKET_STATUSES.get(t.status, t.status) ~ ' · срок обработки ' ~ format_duration(t.timer_total_seconds))
-            if t.status == 'resolved'
-            else (TICKET_STATUSES.get(t.status, t.status) ~ ' · ' ~ (t.created_at.strftime('%d.%m.%Y') if t.created_at else ''))
+            (CUSTOMER_TICKET_STATUSES.get(t.status, 'Закрыта') ~ ' · создана ' ~ (t.created_at.strftime('%d.%m.%Y %H:%M') if t.created_at else '') ~
+             ' · закрыта ' ~ t.resolved_at.strftime('%d.%m.%Y %H:%M') ~ ' · ' ~ format_duration(t.timer_total_seconds))
+            if t.status == 'resolved' and t.resolved_at
+            else (CUSTOMER_TICKET_STATUSES.get(t.status, 'Открыта') ~ ' · создана ' ~ (t.created_at.strftime('%d.%m.%Y %H:%M') if t.created_at else ''))
           )
         ) }}
         {% endfor %}

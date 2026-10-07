@@ -142,9 +142,11 @@ def create_app(config_class=Config):
         return {
             "APP_NAME": app.config["APP_NAME"],
             "ORG_NAME": app.config["ORG_NAME"],
+            "ORG_LEGAL_FORM": app.config.get("ORG_LEGAL_FORM", ""),
             "SLA_PRIORITIES": app.config["SLA_PRIORITIES"],
             "CONTRACT_STATUSES": app.config["CONTRACT_STATUSES"],
             "TICKET_STATUSES": app.config["TICKET_STATUSES"],
+            "CUSTOMER_TICKET_STATUSES": app.config.get("CUSTOMER_TICKET_STATUSES", {}),
             "ROLES": app.config["ROLES"],
             "HISTORY_ACTION_LABELS": app.config.get("HISTORY_ACTION_LABELS", {}),
             "expiry_banner": banner,
