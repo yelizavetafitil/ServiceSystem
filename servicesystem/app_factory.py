@@ -45,25 +45,11 @@ def create_app(config_class=Config):
     app.register_blueprint(api_bp, url_prefix="/api/v1")
     app.register_blueprint(uploads_bp)
 
-    import bleach
-    import markdown as md_lib
-
-    allowed_tags = bleach.sanitizer.ALLOWED_TAGS.union({
-        "p", "h1", "h2", "h3", "h4", "pre", "code", "ul", "ol", "li", "strong", "em",
-        "br", "hr", "table", "thead", "tbody", "tr", "th", "td", "img", "blockquote",
-    })
-    allowed_attrs = {
-        "a": ["href", "title", "rel"],
-        "code": ["class"],
-        "img": ["src", "alt", "title", "width", "height"],
-    }
+    from servicesystem.services.cms_html import render_cms_markdown
 
     @app.template_filter("markdown")
     def markdown_filter(text):
-        if not text:
-            return ""
-        html = md_lib.markdown(text, extensions=["fenced_code", "tables", "nl2br"])
-        return bleach.clean(html, tags=allowed_tags, attributes=allowed_attrs)
+        return render_cms_markdown(text)
 
     @app.before_request
     def force_https():

@@ -8,7 +8,7 @@
   <link rel="icon" href="{{ url_for('static', filename='img/belnipi-logo.png') }}?v=19" type="image/png">
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="{{ url_for('static', filename='css/main.css') }}?v=23">
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/main.css') }}?v=24">
   {% block head %}{% endblock %}
 </head>
 <body class="{% if not current_user.is_authenticated %}auth-body{% endif %}">
@@ -35,9 +35,12 @@
       {% elif current_user.is_staff %}
         <a href="{{ url_for('tickets.staff_queue') }}">Очередь</a>
         <a href="{{ url_for('tickets.list_tickets') }}">Все заявки</a>
+        <a href="{{ url_for('cabinet.tutorials') }}">База знаний</a>
+        <a href="{{ url_for('cabinet.videos') }}">Видео</a>
         {% if current_user.is_admin %}
         <a href="{{ url_for('admin.dashboard') }}">Администрирование</a>
-        {% elif current_user.is_executor %}
+        {% endif %}
+        {% if current_user.is_admin or current_user.is_auditor or current_user.is_executor %}
         <a href="{{ url_for('admin.tutorials') }}">Контент</a>
         {% endif %}
       {% endif %}

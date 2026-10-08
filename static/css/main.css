@@ -893,6 +893,50 @@ body.modal-open { overflow: hidden; }
 .markdown-body pre, .markdown-body code { max-width: 100%; }
 .markdown-body pre { overflow-x: auto; padding: 12px; background: var(--surface-muted); border-radius: 8px; font-size: 13px; }
 
+/* CMS tables: published view matches editor preview (grid + header band) */
+.markdown-body table,
+.article-body table,
+.EasyMDEContainer .editor-preview table,
+.EasyMDEContainer .editor-preview-side table {
+  width: 100%;
+  border-collapse: collapse;
+  margin: 16px 0;
+  font-size: 14px;
+  border: 1px solid var(--border);
+}
+.markdown-body th,
+.markdown-body td,
+.article-body th,
+.article-body td,
+.EasyMDEContainer .editor-preview th,
+.EasyMDEContainer .editor-preview td,
+.EasyMDEContainer .editor-preview-side th,
+.EasyMDEContainer .editor-preview-side td {
+  border: 1px solid var(--border);
+  padding: 10px 12px;
+  vertical-align: top;
+  text-align: left;
+  word-break: break-word;
+}
+.markdown-body th,
+.article-body th,
+.EasyMDEContainer .editor-preview th,
+.EasyMDEContainer .editor-preview-side th {
+  background: #eef2f7;
+  color: #4f5d75;
+  font-size: 11px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: .06em;
+  white-space: normal;
+}
+.markdown-body tbody tr:nth-child(even) td,
+.article-body tbody tr:nth-child(even) td,
+.EasyMDEContainer .editor-preview tbody tr:nth-child(even) td,
+.EasyMDEContainer .editor-preview-side tbody tr:nth-child(even) td {
+  background: #fafbfd;
+}
+
 .EasyMDEContainer { max-width: 100%; }
 .EasyMDEContainer .CodeMirror {
   max-width: 100%;
