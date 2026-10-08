@@ -1,3 +1,5 @@
+from sqlalchemy import func
+
 from flask import Blueprint, abort, flash, redirect, render_template, request, send_file, url_for
 from flask_login import current_user, login_required
 
@@ -5,6 +7,7 @@ from servicesystem.decorators import contract_access_required, write_access_requ
 from servicesystem.extensions import db
 from servicesystem.models import (
     ContractContentAccess,
+    NewsPost,
     Plugin,
     PluginVersion,
     Tutorial,
@@ -38,9 +41,16 @@ def dashboard():
         "open": tickets_q.filter(Ticket.status.in_(["new", "in_progress", "on_review", "ready"])).count(),
         "resolved": tickets_q.filter_by(status="resolved").count(),
     }
+    recent_news = (
+        NewsPost.query.filter_by(is_published=True)
+        .order_by(func.coalesce(NewsPost.published_at, NewsPost.created_at).desc())
+        .limit(3)
+        .all()
+    )
     return render_template(
         "cabinet/dashboard.html",
         recent_tickets=recent,
+        recent_news=recent_news,
         contract=contract,
         stats=stats,
     )
@@ -138,6 +148,31 @@ def tutorial_detail(slug):
     log_audit(current_user.id, "view", "tutorial", t.id)
     db.session.commit()
     return render_template("cabinet/tutorial_detail.html", tutorial=t, content_html=html)
+
+
+@bp.route("/news")
+@login_required
+@contract_access_required
+def news_list():
+    items = (
+        NewsPost.query.filter_by(is_published=True)
+        .order_by(func.coalesce(NewsPost.published_at, NewsPost.created_at).desc())
+        .all()
+    )
+    return render_template("cabinet/news.html", news_items=items)
+
+
+@bp.route("/news/<slug>")
+@login_required
+@contract_access_required
+def news_detail(slug):
+    from servicesystem.services.cms_html import render_cms_markdown
+
+    item = NewsPost.query.filter_by(slug=slug, is_published=True).first_or_404()
+    html = render_cms_markdown(item.content_md or "")
+    log_audit(current_user.id, "view", "news", item.id)
+    db.session.commit()
+    return render_template("cabinet/news_detail.html", item=item, content_html=html)
 
 
 @bp.route("/videos")

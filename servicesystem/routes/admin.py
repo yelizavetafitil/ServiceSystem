@@ -17,6 +17,7 @@ from servicesystem.models import (
     Plugin,
     PluginVersion,
     Ticket,
+    NewsPost,
     Tutorial,
     User,
     VideoChapter,
@@ -544,6 +545,58 @@ def cms_image_serve(filename):
     elif lower.endswith(".webp"):
         mime = "image/webp"
     return send_file(storage.read_path(rel), mimetype=mime)
+
+
+@bp.route("/news")
+@login_required
+@content_cms_required
+def news():
+    items = NewsPost.query.order_by(NewsPost.created_at.desc()).all()
+    return render_template("admin/news.html", news_items=items)
+
+
+@bp.route("/news/create", methods=["POST"])
+@login_required
+@content_cms_required
+def news_create():
+    slug = (request.form.get("slug") or request.form["title"]).lower().replace(" ", "-")[:120]
+    published = request.form.get("is_published") == "1"
+    now = datetime.now(timezone.utc)
+    post = NewsPost(
+        title=request.form["title"].strip(),
+        slug=slug,
+        summary=(request.form.get("summary") or "").strip() or None,
+        content_md=request.form["content_md"],
+        is_published=published,
+        author_id=current_user.id,
+        published_at=now if published else None,
+    )
+    db.session.add(post)
+    db.session.commit()
+    flash("Новость добавлена.", "success")
+    return redirect(url_for("admin.news"))
+
+
+@bp.route("/news/<int:nid>/edit", methods=["GET", "POST"])
+@login_required
+@content_cms_required
+def news_edit(nid):
+    post = db.session.get(NewsPost, nid) or abort(404)
+    if request.method == "POST":
+        post.title = request.form["title"].strip()
+        post.slug = (request.form.get("slug") or post.slug).strip()
+        post.summary = (request.form.get("summary") or "").strip() or None
+        post.content_md = request.form["content_md"]
+        was_published = post.is_published
+        post.is_published = request.form.get("is_published") == "1"
+        if post.is_published and not post.published_at:
+            post.published_at = datetime.now(timezone.utc)
+        elif not post.is_published and was_published:
+            post.published_at = None
+        db.session.commit()
+        flash("Новость обновлена.", "success")
+        return redirect(url_for("admin.news"))
+    return render_template("admin/news_edit.html", item=post)
 
 
 @bp.route("/tutorials")

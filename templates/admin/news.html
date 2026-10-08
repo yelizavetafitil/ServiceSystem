@@ -1,0 +1,61 @@
+{% extends "base.html" %}
+{% from "macros/forms.html" import csrf_field %}
+{% block title %}Новости{% endblock %}
+{% block head %}{% from "macros/editor.html" import cms_editor_assets %}{{ cms_editor_assets() }}{% endblock %}
+{% block content %}
+<div class="container cms-page">
+  <div class="page-header">
+    <div class="page-header-main">
+      <h1>Новости</h1>
+      <p class="page-subtitle">Общие объявления для всех пользователей. Не настраиваются в договоре — после публикации видны в разделе «Новости» у заказчиков и сотрудников.</p>
+    </div>
+    <div class="page-header-actions">
+      <a href="{{ url_for('admin.tutorials') }}" class="btn btn-outline btn-sm">Туториалы</a>
+      <a href="{{ url_for('admin.videos') }}" class="btn btn-outline btn-sm">Видео</a>
+    </div>
+  </div>
+  {% for n in news_items %}
+  <div class="card mb-md">
+    <div class="list-row">
+      <div class="list-row-main">
+        <strong>{{ n.title }}</strong>
+        <span class="muted">
+          — {% if n.is_published %}опубликовано {{ n.published_at.strftime('%d.%m.%Y') if n.published_at else '' }}{% else %}черновик{% endif %}
+          {% if n.author %} · {{ n.author.full_name }}{% endif %}
+        </span>
+      </div>
+      <a href="{{ url_for('admin.news_edit', nid=n.id) }}" class="btn btn-outline btn-sm">Изменить</a>
+    </div>
+  </div>
+  {% endfor %}
+  <div class="card cms-editor-card">
+    <h2 class="section-title">Новая новость</h2>
+    <form method="post" action="{{ url_for('admin.news_create') }}">
+      {{ csrf_field() }}
+      <div class="cms-meta-grid">
+        <div class="form-group">
+          <label>Заголовок *</label>
+          <input name="title" class="form-control" required placeholder="Обновление сервиса …">
+        </div>
+        <div class="form-group">
+          <label>Slug (URL)</label>
+          <input name="slug" class="form-control" placeholder="service-update-2026">
+        </div>
+        <div class="form-group cms-meta-grid-full">
+          <label>Кратко (анонс в списке)</label>
+          <input name="summary" class="form-control" maxlength="512" placeholder="Одна строка для списка новостей">
+        </div>
+      </div>
+      <div class="form-group cms-editor-wrap">
+        <label>Текст *</label>
+        <textarea name="content_md" class="form-control cms-editor-field" rows="10" required></textarea>
+      </div>
+      <label class="check-row"><input type="checkbox" name="is_published" value="1"> Опубликовать сразу</label>
+      <div class="form-actions">
+        <button class="btn btn-primary">Добавить новость</button>
+      </div>
+    </form>
+  </div>
+</div>
+{% endblock %}
+{% block scripts %}{% from "macros/editor.html" import init_cms_editor %}{{ init_cms_editor('.cms-editor-field', 480) }}{% endblock %}

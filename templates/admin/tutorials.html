@@ -10,6 +10,7 @@
       <p class="page-subtitle">Статьи в Markdown: полноценный редактор с предпросмотром и подсветкой кода. После сохранения не забудьте «Опубликован» и галочки в договоре.</p>
     </div>
     <div class="page-header-actions">
+      <a href="{{ url_for('admin.news') }}" class="btn btn-outline btn-sm">Новости</a>
       <a href="{{ url_for('admin.videos') }}" class="btn btn-outline btn-sm">Видеоуроки</a>
       {% if current_user.is_admin %}
       <a href="{{ url_for('admin.dashboard') }}" class="btn btn-outline btn-sm">Админ-панель</a>

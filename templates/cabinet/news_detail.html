@@ -1,0 +1,14 @@
+{% extends "base.html" %}
+{% block title %}{{ item.title }}{% endblock %}
+{% block content %}
+<div class="container prose">
+  <a href="{{ url_for('cabinet.news_list') }}" class="back-link">← К новостям</a>
+  <div class="card">
+    <span class="kb-cat">Новости</span>
+    <time class="news-date news-date--detail">{{ (item.published_at or item.created_at).strftime('%d.%m.%Y %H:%M') if (item.published_at or item.created_at) else '' }}</time>
+    <h1>{{ item.title }}</h1>
+    {% if item.summary %}<p class="news-lead">{{ item.summary }}</p>{% endif %}
+    <div class="markdown-body article-body">{{ content_html|safe }}</div>
+  </div>
+</div>
+{% endblock %}

@@ -304,6 +304,25 @@ class Tutorial(db.Model):
     updated_at = db.Column(db.DateTime(timezone=True), default=utcnow, onupdate=utcnow)
 
 
+class NewsPost(db.Model):
+    """Общие новости: видны всем пользователям, не привязаны к договору."""
+
+    __tablename__ = "news_posts"
+
+    id = db.Column(db.Integer, primary_key=True)
+    title = db.Column(db.String(512), nullable=False)
+    slug = db.Column(db.String(128), unique=True, nullable=False)
+    summary = db.Column(db.String(512))
+    content_md = db.Column(db.Text, nullable=False)
+    is_published = db.Column(db.Boolean, default=False)
+    author_id = db.Column(db.Integer, db.ForeignKey("users.id"))
+    published_at = db.Column(db.DateTime(timezone=True))
+    created_at = db.Column(db.DateTime(timezone=True), default=utcnow)
+    updated_at = db.Column(db.DateTime(timezone=True), default=utcnow, onupdate=utcnow)
+
+    author = db.relationship("User", foreign_keys=[author_id])
+
+
 class VideoTutorial(db.Model):
     __tablename__ = "video_tutorials"
 

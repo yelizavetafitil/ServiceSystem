@@ -24,6 +24,7 @@ from servicesystem.models import (
     Plugin,
     PluginVersion,
     Ticket,
+    NewsPost,
     Tutorial,
     User,
     VideoChapter,
@@ -258,6 +259,23 @@ def seed(force: bool = False):
 </tbody>
 </table>"""),
         ]
+        admin_user = User.query.filter_by(email="admin@belnipi.by").first()
+        db.session.add(NewsPost(
+            title="Добро пожаловать в сервис ЭМСТПН",
+            slug="welcome-service",
+            summary="Раздел «Новости» — общие объявления для всех пользователей.",
+            content_md=(
+                "# Обновления сервиса\n\n"
+                "Здесь публикуются **глобальные изменения**: обновления портала, регламенты, "
+                "важные уведомления для всех организаций.\n\n"
+                "Материалы базы знаний и видео по-прежнему настраиваются в договоре; "
+                "новости доступны всем без ограничений."
+            ),
+            is_published=True,
+            author_id=admin_user.id if admin_user else None,
+            published_at=utcnow(),
+        ))
+
         tutorial_ids = []
         for title, slug, cat, tags, content in tutorials_data:
             t = Tutorial(title=title, slug=slug, category=cat, tags=tags, content_md=content)

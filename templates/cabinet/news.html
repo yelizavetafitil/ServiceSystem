@@ -1,0 +1,25 @@
+{% extends "base.html" %}
+{% block title %}Новости{% endblock %}
+{% block content %}
+<div class="container">
+  <div class="page-header">
+    <div class="page-header-main">
+      <h1>Новости</h1>
+      <p class="page-subtitle">Общие объявления и изменения сервиса — доступны всем пользователям</p>
+    </div>
+  </div>
+  <div class="news-list">
+    {% for n in news_items %}
+    <a href="{{ url_for('cabinet.news_detail', slug=n.slug) }}" class="news-item">
+      <time class="news-date">{{ (n.published_at or n.created_at).strftime('%d.%m.%Y') if (n.published_at or n.created_at) else '—' }}</time>
+      <div class="news-item-body">
+        <h3>{{ n.title }}</h3>
+        {% if n.summary %}<p class="news-summary">{{ n.summary }}</p>{% endif %}
+      </div>
+    </a>
+    {% else %}
+    <p class="muted">Пока нет опубликованных новостей.</p>
+    {% endfor %}
+  </div>
+</div>
+{% endblock %}

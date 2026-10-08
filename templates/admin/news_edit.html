@@ -1,0 +1,41 @@
+{% extends "base.html" %}
+{% from "macros/forms.html" import csrf_field %}
+{% block title %}Новость — {{ item.title }}{% endblock %}
+{% block head %}{% from "macros/editor.html" import cms_editor_assets %}{{ cms_editor_assets() }}{% endblock %}
+{% block content %}
+<div class="container cms-page">
+  <a href="{{ url_for('admin.news') }}" class="back-link">← Новости</a>
+  <div class="card cms-editor-card">
+    <h1 class="section-title">{{ item.title }}</h1>
+    <form method="post">
+      {{ csrf_field() }}
+      <div class="cms-meta-grid">
+        <div class="form-group">
+          <label>Заголовок *</label>
+          <input name="title" class="form-control" value="{{ item.title }}" required>
+        </div>
+        <div class="form-group">
+          <label>Slug</label>
+          <input name="slug" class="form-control" value="{{ item.slug }}">
+        </div>
+        <div class="form-group cms-meta-grid-full">
+          <label>Кратко</label>
+          <input name="summary" class="form-control" maxlength="512" value="{{ item.summary or '' }}">
+        </div>
+      </div>
+      <div class="form-group cms-editor-wrap">
+        <label>Текст *</label>
+        <textarea name="content_md" class="form-control cms-editor-field" rows="12" required>{{ item.content_md }}</textarea>
+      </div>
+      <label class="check-row"><input type="checkbox" name="is_published" value="1" {% if item.is_published %}checked{% endif %}> Опубликовано</label>
+      <div class="form-actions">
+        <button class="btn btn-primary">Сохранить</button>
+        {% if item.is_published %}
+        <a href="{{ url_for('cabinet.news_detail', slug=item.slug) }}" class="btn btn-outline" target="_blank" rel="noopener">Открыть на портале</a>
+        {% endif %}
+      </div>
+    </form>
+  </div>
+</div>
+{% endblock %}
+{% block scripts %}{% from "macros/editor.html" import init_cms_editor %}{{ init_cms_editor('.cms-editor-field', 520) }}{% endblock %}

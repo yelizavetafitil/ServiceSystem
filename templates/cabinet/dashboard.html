@@ -29,10 +29,30 @@
     <div class="stat-card"><span class="stat-num">{{ stats.resolved }}</span><span class="stat-label">Решённых заявок</span></div>
   </div>
 
+  {% if recent_news %}
+  <section class="card card--flush dashboard-news mb-md">
+    <div class="dashboard-tickets-head">
+      <h3 class="section-title section-title--inset">Новости</h3>
+      <a href="{{ url_for('cabinet.news_list') }}" class="btn btn-outline btn-sm">Все новости</a>
+    </div>
+    <ul class="news-list news-list--compact">
+      {% for n in recent_news %}
+      <li>
+        <a href="{{ url_for('cabinet.news_detail', slug=n.slug) }}" class="news-item news-item--compact">
+          <time class="news-date">{{ (n.published_at or n.created_at).strftime('%d.%m.%Y') if (n.published_at or n.created_at) else '—' }}</time>
+          <span class="news-item-title">{{ n.title }}</span>
+        </a>
+      </li>
+      {% endfor %}
+    </ul>
+  </section>
+  {% endif %}
+
   <div class="dashboard-layout">
     <aside class="card dashboard-aside">
       <h3 class="section-title">Быстрый доступ</h3>
       <div class="quick-links">
+        <a href="{{ url_for('cabinet.news_list') }}" class="quick-link">Новости</a>
         <a href="{{ url_for('cabinet.plugins') }}" class="quick-link">Плагины и обновления</a>
         <a href="{{ url_for('cabinet.tutorials') }}" class="quick-link">База знаний</a>
         <a href="{{ url_for('cabinet.videos') }}" class="quick-link">Видеоинструкции</a>
