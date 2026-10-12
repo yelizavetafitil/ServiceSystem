@@ -1186,6 +1186,18 @@ body.modal-open { overflow: hidden; }
 .directory-card-meta dd { margin: 0; word-break: break-word; }
 .directory-card-cta { margin-top: auto; font-size: 13px; font-weight: 700; color: var(--primary); }
 .directory-detail h1 { font-size: 24px; margin: 0 0 8px; color: var(--primary-dark); }
+.directory-contact-title,
+.directory-row-meta,
+.directory-detail-position,
+.container-form .card h2 {
+  overflow-wrap: anywhere;
+  word-break: break-word;
+  max-width: 100%;
+}
+.directory-result-row .list-row-main {
+  min-width: 0;
+  max-width: 100%;
+}
 .directory-detail-position { margin: 0 0 16px; color: var(--muted); font-weight: 600; }
 .directory-detail-dl { margin: 0 0 24px; }
 .directory-detail-dl div {

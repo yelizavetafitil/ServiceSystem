@@ -30,7 +30,13 @@ from servicesystem.services.storage import get_storage
 from servicesystem.services.directory import staff_directory_query
 from servicesystem.services.directory_import import parse_directory_csv
 from servicesystem.services.directory_sync import log_directory_field_changes, snapshot_contact, sync_contact_to_user
-from servicesystem.services.vcard import build_vcard, parse_vcf_text, safe_vcf_filename
+from servicesystem.services.phone_format import split_work_phone
+from servicesystem.services.vcard import (
+    build_vcard,
+    parse_vcf_text,
+    repair_quoted_printable_text,
+    safe_vcf_filename,
+)
 
 CMS_IMAGE_EXTENSIONS = {".png", ".jpg", ".jpeg", ".gif", ".webp"}
 CMS_IMAGE_MAX_BYTES = 8 * 1024 * 1024
@@ -625,13 +631,17 @@ def _parse_directory_contact_form(form):
     mobile = (form.get("phone_mobile") or "").strip()
     if not mobile:
         raise ValueError("Мобильный телефон обязателен")
+    work_raw = (form.get("phone_work") or form.get("phone_internal") or "").strip()
+    phone_internal, phone_extension = split_work_phone(work_raw)
+    if not phone_extension:
+        phone_extension = (form.get("phone_extension") or "").strip() or None
     return {
         "organization_id": org_id,
-        "department": department,
-        "full_name": form["full_name"].strip(),
-        "position": (form.get("position") or "").strip() or None,
-        "phone_internal": (form.get("phone_internal") or "").strip() or None,
-        "phone_extension": (form.get("phone_extension") or "").strip() or None,
+        "department": repair_quoted_printable_text(department),
+        "full_name": repair_quoted_printable_text(form["full_name"].strip()),
+        "position": repair_quoted_printable_text((form.get("position") or "").strip()) or None,
+        "phone_internal": phone_internal,
+        "phone_extension": phone_extension,
         "phone_mobile": mobile,
         "email": email,
         "sort_order": int(form.get("sort_order") or 0),
@@ -712,9 +722,14 @@ def directory_import_vcf():
         flash("Выберите организацию и файл .vcf.", "danger")
         return redirect(url_for("admin.directory"))
     raw = upload.read(2 * 1024 * 1024)
-    try:
-        text = raw.decode("utf-8")
-    except UnicodeDecodeError:
+    text = None
+    for enc in ("utf-8-sig", "utf-8", "cp1251", "latin-1"):
+        try:
+            text = raw.decode(enc)
+            break
+        except UnicodeDecodeError:
+            continue
+    if text is None:
         text = raw.decode("utf-8", errors="replace")
     parsed = parse_vcf_text(text)
     if not parsed:
@@ -725,10 +740,11 @@ def directory_import_vcf():
         db.session.add(
             PhoneDirectoryContact(
                 organization_id=org_id,
-                department=item.department or default_department,
-                full_name=item.full_name,
-                position=item.position,
+                department=repair_quoted_printable_text(item.department or default_department),
+                full_name=repair_quoted_printable_text(item.full_name),
+                position=repair_quoted_printable_text(item.position) if item.position else None,
                 phone_internal=item.phone_internal,
+                phone_extension=item.phone_extension,
                 phone_mobile=item.phone_mobile or "—",
                 email=item.email,
                 is_published=True,
@@ -791,13 +807,15 @@ def directory_import_csv():
     created = 0
     for row in rows:
         target_org = _directory_resolve_org_id(row.organization_name, org_id)
+        work_main, work_ext = split_work_phone(row.phone_internal)
         db.session.add(
             PhoneDirectoryContact(
                 organization_id=target_org,
                 department=row.department,
                 full_name=row.full_name,
                 position=row.position,
-                phone_internal=row.phone_internal,
+                phone_internal=work_main,
+                phone_extension=work_ext,
                 phone_mobile=row.phone_mobile or "—",
                 email=row.email,
                 is_published=True,

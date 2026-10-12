@@ -2,10 +2,10 @@
 <div class="card mb-md directory-result-row live-search-item" data-live-search-item>
   <div class="list-row">
     <div class="list-row-main">
-      <strong>{{ c.full_name }}</strong>
-      <span class="muted">
-        — {{ c.organization.name if c.organization else '—' }}{% if c.department %}, {{ c.department }}{% endif %}
-        {% if c.position %} · {{ c.position }}{% endif %}
+      <strong class="directory-contact-title">{{ c.full_name|directory_text }}</strong>
+      <span class="muted directory-row-meta">
+        — {{ c.organization.name if c.organization else '—' }}{% if c.department %}, {{ c.department|directory_text }}{% endif %}
+        {% if c.position %} · {{ c.position|directory_text }}{% endif %}
         {% if not c.is_published %} · <em>черновик</em>{% endif %}
       </span>
     </div>
@@ -15,7 +15,7 @@
       <a href="{{ url_for('admin.directory_edit', cid=c.id) }}" class="btn btn-outline btn-sm">Изменить</a>
     </span>
   </div>
-  <p class="muted directory-row-phones">{{ c.phone_mobile }}{% if c.phone_internal %} · раб. {{ c.phone_internal }}{% if c.phone_extension %} доб. {{ c.phone_extension }}{% endif %}{% endif %}</p>
+  <p class="muted directory-row-phones">{{ c.phone_mobile }}{% if c.phone_internal or c.phone_extension %} · раб. {{ c|work_phone }}{% endif %}</p>
 </div>
 {% else %}
 <p class="muted directory-empty">Контакты не найдены. Измените запрос или сбросьте фильтр.</p>

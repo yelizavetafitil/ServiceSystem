@@ -1,9 +1,13 @@
 """vCard 3.0 generation and import (UTF-8, mobile-friendly)."""
 from __future__ import annotations
 
+import base64
+import quopri
 import re
 from dataclasses import dataclass
 from typing import Iterable
+
+from servicesystem.services.phone_format import format_work_phone, split_work_phone
 
 
 def _escape_v3(value: str) -> str:
@@ -75,11 +79,9 @@ def build_vcard(
         lines.append(f"TITLE:{_escape_v3(position.strip())}")
     if org_line:
         lines.append(f"ORG:{org_line}")
-    if phone_internal:
-        work = phone_internal.strip()
-        if phone_extension and str(phone_extension).strip():
-            work = f"{work} ext {str(phone_extension).strip()}"
-        lines.append(f"TEL;TYPE=WORK,VOICE:{work}")
+    work = format_work_phone(phone_internal, phone_extension)
+    if work:
+        lines.append(f"TEL;TYPE=WORK,VOICE:{work.replace(' доб. ', ' ext ')}")
     if phone_mobile:
         lines.append(f"TEL;TYPE=CELL:{phone_mobile.strip()}")
     if email:
@@ -99,6 +101,7 @@ class ParsedVCard:
     organization: str | None = None
     department: str | None = None
     phone_internal: str | None = None
+    phone_extension: str | None = None
     phone_mobile: str | None = None
     email: str | None = None
 
@@ -113,34 +116,112 @@ def _unescape_v3(value: str) -> str:
     )
 
 
-def _parse_property_block(block: str) -> ParsedVCard | None:
-    props: dict[str, list[tuple[str, str]]] = {}
-    raw_lines = re.split(r"\r?\n", block.strip())
+def _property_params(key_part: str) -> dict[str, str]:
+    params: dict[str, str] = {}
+    for piece in key_part.split(";")[1:]:
+        if "=" not in piece:
+            continue
+        k, v = piece.split("=", 1)
+        params[k.strip().upper()] = v.strip()
+    return params
+
+
+def _decode_property_value(value: str, params: dict[str, str]) -> str:
+    enc = (params.get("ENCODING") or "").upper()
+    charset = (params.get("CHARSET") or "utf-8").lower()
+    if enc in ("QUOTED-PRINTABLE", "QP"):
+        try:
+            qp = re.sub(r"=\s*\r?\n", "", value)
+            raw = quopri.decodestring(qp.encode("latin-1", errors="replace"))
+            value = raw.decode(charset, errors="replace")
+        except (ValueError, UnicodeDecodeError):
+            pass
+    elif enc in ("B", "BASE64"):
+        try:
+            value = base64.b64decode(value, validate=False).decode(charset, errors="replace")
+        except (ValueError, UnicodeDecodeError):
+            pass
+    return _unescape_v3(value)
+
+
+_PROPERTY_LINE = re.compile(r"^[A-Za-z][\w-]*(?:;[^:]*)?:")
+
+
+def _is_property_line(line: str) -> bool:
+    return bool(_PROPERTY_LINE.match(line))
+
+
+def _merge_vcard_physical_lines(raw_lines: Iterable[str]) -> list[str]:
+    """Unfold vCard 2.x/3.x lines (space prefix and QP soft breaks)."""
     merged: list[str] = []
     for line in raw_lines:
         if not line:
             continue
         if line.startswith((" ", "\t")) and merged:
             merged[-1] += line[1:]
-        else:
-            merged.append(line)
+            continue
+        if merged and not _is_property_line(line):
+            prev = merged[-1]
+            if prev.endswith("="):
+                merged[-1] = prev[:-1] + line
+            else:
+                merged[-1] = prev + line
+            continue
+        merged.append(line)
+    return merged
+
+
+def _format_name_from_n(n_val: str) -> str:
+    segs = n_val.split(";")
+    family = (segs[0] if segs else "").strip()
+    given = (segs[1] if len(segs) > 1 else "").strip()
+    if given and family:
+        return f"{given} {family}"
+    return (family or given).strip()
+
+
+def repair_quoted_printable_text(text: str | None) -> str:
+    """Decode mistaken raw quoted-printable stored in contact fields."""
+    if not text or "=" not in text:
+        return text or ""
+    if re.search(r"[\u0400-\u04FF]", text):
+        return text
+    if not re.search(r"=(?:[0-9A-Fa-f]{2})+", text):
+        return text
+    try:
+        qp = re.sub(r"=\s*\r?\n", "", text.strip())
+        raw = quopri.decodestring(qp.encode("latin-1", errors="replace"))
+        decoded = raw.decode("utf-8", errors="replace").strip()
+        if decoded:
+            return decoded
+    except (ValueError, UnicodeDecodeError):
+        pass
+    return text
+
+
+def _parse_property_block(block: str) -> ParsedVCard | None:
+    props: dict[str, list[tuple[str, str]]] = {}
+    raw_lines = re.split(r"\r?\n", block.strip())
+    merged = _merge_vcard_physical_lines(raw_lines)
 
     for line in merged:
         if line.upper().startswith("BEGIN:") or line.upper().startswith("END:"):
             continue
+        if not _is_property_line(line):
+            continue
         key_part, _, value = line.partition(":")
         key_upper = key_part.split(";", 1)[0].upper()
-        props.setdefault(key_upper, []).append((key_part, _unescape_v3(value)))
+        if key_upper in ("PHOTO", "LOGO", "SOUND"):
+            continue
+        params = _property_params(key_part)
+        decoded = _decode_property_value(value, params)
+        props.setdefault(key_upper, []).append((key_part, decoded))
 
     fn = ""
     if "FN" in props and props["FN"]:
-        fn = props["FN"][0][1]
+        fn = props["FN"][0][1].strip()
     elif "N" in props and props["N"]:
-        n_val = props["N"][0][1]
-        segs = n_val.split(";")
-        family = segs[0] if segs else ""
-        given = segs[1] if len(segs) > 1 else ""
-        fn = f"{family} {given}".strip()
+        fn = _format_name_from_n(props["N"][0][1])
     if not fn:
         return None
 
@@ -155,13 +236,15 @@ def _parse_property_block(block: str) -> ParsedVCard | None:
             department = org_parts[1] or None
 
     phone_internal = None
+    phone_extension = None
     phone_mobile = None
     for key_part, tel in props.get("TEL", []):
         kp = key_part.upper()
         if "CELL" in kp or "MOBILE" in kp:
             phone_mobile = phone_mobile or tel
         else:
-            phone_internal = phone_internal or tel
+            if not phone_internal:
+                phone_internal, phone_extension = split_work_phone(tel)
 
     email = None
     if "EMAIL" in props and props["EMAIL"]:
@@ -173,6 +256,7 @@ def _parse_property_block(block: str) -> ParsedVCard | None:
         organization=organization,
         department=department,
         phone_internal=phone_internal,
+        phone_extension=phone_extension,
         phone_mobile=phone_mobile,
         email=email,
     )

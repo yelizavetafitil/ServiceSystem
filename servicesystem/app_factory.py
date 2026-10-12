@@ -51,6 +51,19 @@ def create_app(config_class=Config):
     def markdown_filter(text):
         return render_cms_markdown(text)
 
+    from servicesystem.services.phone_format import format_work_phone
+    from servicesystem.services.vcard import repair_quoted_printable_text
+
+    @app.template_filter("directory_text")
+    def directory_text_filter(text):
+        return repair_quoted_printable_text(text)
+
+    @app.template_filter("work_phone")
+    def work_phone_filter(obj):
+        if hasattr(obj, "phone_internal"):
+            return format_work_phone(obj.phone_internal, getattr(obj, "phone_extension", None))
+        return format_work_phone(obj if isinstance(obj, str) else None, None)
+
     @app.before_request
     def force_https():
         if app.config.get("FORCE_HTTPS") and not request.is_secure:
