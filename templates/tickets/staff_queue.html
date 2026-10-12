@@ -7,6 +7,9 @@
       <h1>Очередь обработки</h1>
       <p class="page-subtitle">Заявки, требующие реакции или исполнения</p>
     </div>
+    <div class="page-header-actions">
+      <a href="{{ url_for('tickets.list_tickets') }}" class="btn btn-outline btn-sm">Все заявки</a>
+    </div>
   </div>
   <div class="card card--flush">
     {% if tickets %}

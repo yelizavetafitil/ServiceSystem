@@ -32,8 +32,19 @@
         <input type="email" name="email" class="form-control" required>
       </div>
       <div class="form-group">
-        <label>Телефон *</label>
-        <input type="tel" name="phone" class="form-control" required placeholder="+375 XX XXX-XX-XX">
+        <label>Мобильный телефон *</label>
+        <input type="tel" name="phone_mobile" class="form-control" required placeholder="+375 XX XXX-XX-XX">
+        <p class="hint">Для оперативной связи с диспетчерскими службами (попадёт во внутренний справочник Исполнителя).</p>
+      </div>
+      <div class="form-row grid-2">
+        <div class="form-group">
+          <label>Рабочий телефон</label>
+          <input type="tel" name="phone_work" class="form-control" placeholder="+375 17 …">
+        </div>
+        <div class="form-group">
+          <label>Добавочный</label>
+          <input type="text" name="phone_extension" class="form-control" placeholder="123">
+        </div>
       </div>
       <div class="form-group">
         <label>Личный пароль *</label>

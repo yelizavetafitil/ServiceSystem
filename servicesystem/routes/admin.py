@@ -3,7 +3,7 @@ from datetime import datetime, timezone
 from flask import Blueprint, abort, flash, jsonify, redirect, render_template, request, send_file, url_for
 from flask_login import current_user, login_required
 
-from servicesystem.decorators import admin_required, content_cms_required
+from servicesystem.decorators import admin_required, content_cms_required, staff_required
 from servicesystem.config import Config
 from servicesystem.extensions import db
 from servicesystem.models import (
@@ -18,6 +18,8 @@ from servicesystem.models import (
     PluginVersion,
     Ticket,
     NewsPost,
+    PhoneDirectoryContact,
+    PhoneDirectoryDepartment,
     Tutorial,
     User,
     VideoChapter,
@@ -25,6 +27,10 @@ from servicesystem.models import (
 )
 from servicesystem.services.audit import log_audit, unique_filename
 from servicesystem.services.storage import get_storage
+from servicesystem.services.directory import staff_directory_query
+from servicesystem.services.directory_import import parse_directory_csv
+from servicesystem.services.directory_sync import log_directory_field_changes, snapshot_contact, sync_contact_to_user
+from servicesystem.services.vcard import build_vcard, parse_vcf_text, safe_vcf_filename
 
 CMS_IMAGE_EXTENSIONS = {".png", ".jpg", ".jpeg", ".gif", ".webp"}
 CMS_IMAGE_MAX_BYTES = 8 * 1024 * 1024
@@ -597,6 +603,347 @@ def news_edit(nid):
         flash("Новость обновлена.", "success")
         return redirect(url_for("admin.news"))
     return render_template("admin/news_edit.html", item=post)
+
+
+def _directory_departments_for_org(org_id: int):
+    return (
+        PhoneDirectoryDepartment.query.filter_by(organization_id=org_id, is_active=True)
+        .order_by(PhoneDirectoryDepartment.sort_order, PhoneDirectoryDepartment.name)
+        .all()
+    )
+
+
+def _parse_directory_contact_form(form):
+    org_id = int(form["organization_id"])
+    department = (form.get("department") or "").strip()
+    email = (form.get("email") or "").strip().lower() or None
+    if email and "@" not in email:
+        raise ValueError("Некорректный email")
+    mobile = (form.get("phone_mobile") or "").strip()
+    if not mobile:
+        raise ValueError("Мобильный телефон обязателен")
+    return {
+        "organization_id": org_id,
+        "department": department,
+        "full_name": form["full_name"].strip(),
+        "position": (form.get("position") or "").strip() or None,
+        "phone_internal": (form.get("phone_internal") or "").strip() or None,
+        "phone_extension": (form.get("phone_extension") or "").strip() or None,
+        "phone_mobile": mobile,
+        "email": email,
+        "sort_order": int(form.get("sort_order") or 0),
+        "is_published": True,
+    }
+
+
+@bp.route("/directory")
+@login_required
+@staff_required
+def directory():
+    org_id = request.args.get("org", type=int)
+    q = (request.args.get("q") or "").strip()
+    contacts = staff_directory_query(org_id=org_id, q=q or None).all()
+    orgs = Organization.query.order_by(Organization.name).all()
+    departments = (
+        PhoneDirectoryDepartment.query.filter_by(is_active=True)
+        .order_by(PhoneDirectoryDepartment.organization_id, PhoneDirectoryDepartment.sort_order)
+        .all()
+    )
+    return render_template(
+        "admin/directory.html",
+        contacts=contacts,
+        organizations=orgs,
+        departments=departments,
+        filter_org=org_id,
+        search_q=q,
+    )
+
+
+@bp.route("/directory/departments", methods=["POST"])
+@login_required
+@staff_required
+def directory_department_create():
+    org_id = int(request.form["organization_id"])
+    name = request.form["name"].strip()
+    if not name:
+        flash("Укажите название подразделения.", "danger")
+        return redirect(url_for("admin.directory"))
+    dept = PhoneDirectoryDepartment(organization_id=org_id, name=name)
+    db.session.add(dept)
+    db.session.commit()
+    flash("Подразделение добавлено.", "success")
+    return redirect(url_for("admin.directory", org=org_id))
+
+
+@bp.route("/directory/create", methods=["POST"])
+@login_required
+@staff_required
+def directory_create():
+    try:
+        data = _parse_directory_contact_form(request.form)
+    except (ValueError, KeyError) as exc:
+        flash(str(exc) if str(exc) else "Заполните обязательные поля.", "danger")
+        return redirect(url_for("admin.directory"))
+    if not data["full_name"]:
+        flash("Укажите ФИО.", "danger")
+        return redirect(url_for("admin.directory"))
+    contact = PhoneDirectoryContact(**data, author_id=current_user.id)
+    db.session.add(contact)
+    db.session.commit()
+    log_audit(current_user.id, "directory_create", "phone_contact", contact.id, data["full_name"])
+    db.session.commit()
+    flash("Контакт добавлен.", "success")
+    return redirect(url_for("admin.directory_edit", cid=contact.id))
+
+
+@bp.route("/directory/import", methods=["POST"])
+@login_required
+@staff_required
+def directory_import_vcf():
+    org_id = request.form.get("organization_id", type=int)
+    default_department = (request.form.get("default_department") or "Импорт").strip()
+    upload = request.files.get("vcf_file")
+    if not org_id or not upload or not upload.filename:
+        flash("Выберите организацию и файл .vcf.", "danger")
+        return redirect(url_for("admin.directory"))
+    raw = upload.read(2 * 1024 * 1024)
+    try:
+        text = raw.decode("utf-8")
+    except UnicodeDecodeError:
+        text = raw.decode("utf-8", errors="replace")
+    parsed = parse_vcf_text(text)
+    if not parsed:
+        flash("В файле не найдено контактов vCard.", "warning")
+        return redirect(url_for("admin.directory"))
+    created = 0
+    for item in parsed:
+        db.session.add(
+            PhoneDirectoryContact(
+                organization_id=org_id,
+                department=item.department or default_department,
+                full_name=item.full_name,
+                position=item.position,
+                phone_internal=item.phone_internal,
+                phone_mobile=item.phone_mobile or "—",
+                email=item.email,
+                is_published=True,
+                author_id=current_user.id,
+            )
+        )
+        created += 1
+    db.session.commit()
+    log_audit(
+        current_user.id,
+        "directory_import",
+        "phone_contact",
+        None,
+        f"org={org_id}; count={created}; file={upload.filename}",
+    )
+    db.session.commit()
+    flash(f"Импортировано контактов: {created}.", "success")
+    return redirect(url_for("admin.directory", org=org_id))
+
+
+def _directory_resolve_org_id(name: str | None, default_org_id: int) -> int:
+    if not name or not name.strip():
+        return default_org_id
+    needle = name.strip()
+    org = Organization.query.filter(Organization.name.ilike(needle)).first()
+    if org:
+        return org.id
+    org = Organization.query.filter(Organization.name.ilike(f"%{needle}%")).first()
+    return org.id if org else default_org_id
+
+
+@bp.route("/directory/import-csv", methods=["POST"])
+@login_required
+@staff_required
+def directory_import_csv():
+    org_id = request.form.get("organization_id", type=int)
+    default_department = (request.form.get("default_department") or "Импорт").strip()
+    upload = request.files.get("csv_file")
+    if not org_id or not upload or not upload.filename:
+        flash("Выберите организацию по умолчанию и файл CSV.", "danger")
+        return redirect(url_for("admin.directory"))
+    raw = upload.read(5 * 1024 * 1024)
+    text = None
+    for enc in ("utf-8-sig", "utf-8", "cp1251"):
+        try:
+            text = raw.decode(enc)
+            break
+        except UnicodeDecodeError:
+            continue
+    if text is None:
+        text = raw.decode("utf-8", errors="replace")
+    try:
+        rows = parse_directory_csv(text, default_department=default_department)
+    except ValueError as exc:
+        flash(str(exc), "danger")
+        return redirect(url_for("admin.directory"))
+    if not rows:
+        flash("В CSV не найдено строк с ФИО.", "warning")
+        return redirect(url_for("admin.directory"))
+    created = 0
+    for row in rows:
+        target_org = _directory_resolve_org_id(row.organization_name, org_id)
+        db.session.add(
+            PhoneDirectoryContact(
+                organization_id=target_org,
+                department=row.department,
+                full_name=row.full_name,
+                position=row.position,
+                phone_internal=row.phone_internal,
+                phone_mobile=row.phone_mobile or "—",
+                email=row.email,
+                is_published=True,
+                author_id=current_user.id,
+            )
+        )
+        created += 1
+    db.session.commit()
+    log_audit(
+        current_user.id,
+        "directory_import_csv",
+        "phone_contact",
+        None,
+        f"default_org={org_id}; count={created}; file={upload.filename}",
+    )
+    db.session.commit()
+    flash(f"Импортировано из CSV: {created}.", "success")
+    return redirect(url_for("admin.directory", org=org_id))
+
+
+def _directory_vcard_text(contact: PhoneDirectoryContact) -> str:
+    org_name = contact.organization.name if contact.organization else ""
+    return build_vcard(
+        full_name=contact.full_name,
+        position=contact.position,
+        organization=org_name,
+        department=contact.department or None,
+        phone_internal=contact.phone_internal,
+        phone_extension=contact.phone_extension,
+        phone_mobile=contact.phone_mobile,
+        email=contact.email,
+    )
+
+
+@bp.route("/directory/export.vcf")
+@login_required
+@staff_required
+def directory_export_vcf():
+    org_id = request.args.get("org", type=int)
+    q = (request.args.get("q") or "").strip()
+    items = staff_directory_query(org_id=org_id, q=q or None).all()
+    if not items:
+        flash("Нет контактов для выгрузки.", "warning")
+        return redirect(url_for("admin.directory", org=org_id or "", q=q))
+    from io import BytesIO
+
+    body = "".join(_directory_vcard_text(c) for c in items)
+    buf = BytesIO(body.encode("utf-8"))
+    buf.seek(0)
+    return send_file(
+        buf,
+        mimetype="text/vcard; charset=utf-8",
+        as_attachment=True,
+        download_name="spravochnik_zakazchikov.vcf",
+    )
+
+
+@bp.route("/directory/<int:cid>")
+@login_required
+@staff_required
+def directory_detail(cid):
+    contact = db.session.get(PhoneDirectoryContact, cid) or abort(404)
+    if not contact.is_active:
+        abort(404)
+    vcard = _directory_vcard_text(contact)
+    return render_template("admin/directory_detail.html", contact=contact, vcard=vcard)
+
+
+@bp.route("/directory/<int:cid>/qr.svg")
+@login_required
+@staff_required
+def directory_qr(cid):
+    from flask import Response
+
+    from servicesystem.services.contact_qr import vcard_qr_svg
+
+    contact = db.session.get(PhoneDirectoryContact, cid) or abort(404)
+    if not contact.is_active:
+        abort(404)
+    vcard = _directory_vcard_text(contact)
+    svg = vcard_qr_svg(vcard)
+    response = Response(svg, mimetype="image/svg+xml; charset=utf-8")
+    response.headers["Cache-Control"] = "private, max-age=300"
+    return response
+
+
+@bp.route("/directory/<int:cid>/vcf")
+@login_required
+@staff_required
+def directory_vcf(cid):
+    contact = db.session.get(PhoneDirectoryContact, cid) or abort(404)
+    if not contact.is_active:
+        abort(404)
+    from io import BytesIO
+
+    vcard = _directory_vcard_text(contact)
+    buf = BytesIO(vcard.encode("utf-8"))
+    buf.seek(0)
+    return send_file(
+        buf,
+        mimetype="text/vcard; charset=utf-8",
+        as_attachment=True,
+        download_name=safe_vcf_filename(contact.full_name, contact.id),
+    )
+
+
+@bp.route("/directory/<int:cid>/edit", methods=["GET", "POST"])
+@login_required
+@staff_required
+def directory_edit(cid):
+    contact = db.session.get(PhoneDirectoryContact, cid) or abort(404)
+    if not contact.is_active:
+        abort(404)
+    orgs = Organization.query.order_by(Organization.name).all()
+    departments = _directory_departments_for_org(contact.organization_id)
+    if request.method == "POST":
+        if request.form.get("action") == "archive":
+            contact.is_active = False
+            db.session.commit()
+            log_audit(
+                current_user.id,
+                "directory_archive",
+                "phone_contact",
+                cid,
+                contact.full_name,
+            )
+            db.session.commit()
+            flash("Контакт перенесён в архив.", "success")
+            return redirect(url_for("admin.directory"))
+        try:
+            data = _parse_directory_contact_form(request.form)
+        except (ValueError, KeyError) as exc:
+            flash(str(exc) if str(exc) else "Проверьте поля формы.", "danger")
+            return redirect(url_for("admin.directory_edit", cid=cid))
+        if not data["full_name"]:
+            flash("Укажите ФИО.", "danger")
+            return redirect(url_for("admin.directory_edit", cid=cid))
+        before = snapshot_contact(contact)
+        for key, val in data.items():
+            setattr(contact, key, val)
+        log_directory_field_changes(current_user.id, contact.id, before, snapshot_contact(contact))
+        sync_contact_to_user(contact)
+        db.session.commit()
+        flash("Контакт обновлён.", "success")
+        return redirect(url_for("admin.directory_edit", cid=cid))
+    return render_template(
+        "admin/directory_edit.html",
+        contact=contact,
+        organizations=orgs,
+        departments=departments,
+    )
 
 
 @bp.route("/tutorials")

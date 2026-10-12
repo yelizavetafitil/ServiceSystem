@@ -98,16 +98,18 @@ def register():
         if not request.form.get("pd_consent"):
             flash("Необходимо согласие на обработку персональных данных.", "danger")
             return redirect(url_for("auth.register"))
-        phone = request.form.get("phone", "").strip()
-        if not phone:
-            flash("Укажите контактный телефон.", "danger")
+        phone_mobile = request.form.get("phone_mobile", "").strip() or request.form.get("phone", "").strip()
+        if not phone_mobile:
+            flash("Укажите мобильный телефон.", "danger")
             return redirect(url_for("auth.register"))
 
         user = User(
             email=email,
             full_name=request.form.get("full_name", "").strip(),
             position=request.form.get("position", "").strip(),
-            phone=phone,
+            phone=phone_mobile,
+            phone_work=(request.form.get("phone_work") or "").strip() or None,
+            phone_extension=(request.form.get("phone_extension") or "").strip() or None,
             role="customer",
             contract_id=contract.id,
             organization_id=contract.organization_id,
@@ -116,6 +118,9 @@ def register():
         user.set_password(request.form.get("password", ""))
         db.session.add(user)
         db.session.flush()
+        from servicesystem.services.directory_sync import create_contact_from_user
+
+        create_contact_from_user(user, author_id=user.id)
         log_audit(
             user.id,
             "register",

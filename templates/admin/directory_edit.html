@@ -1,0 +1,49 @@
+{% extends "base.html" %}
+{% from "macros/forms.html" import csrf_field %}
+{% block title %}Контакт — {{ contact.full_name }}{% endblock %}
+{% block content %}
+<div class="container container-form">
+  <a href="{{ url_for('admin.directory') }}" class="back-link">← Справочник</a>
+  <div class="card">
+    <h2>{{ contact.full_name }}</h2>
+    <form method="post">
+      {{ csrf_field() }}
+      <div class="form-group">
+        <label>Организация *</label>
+        <select name="organization_id" class="form-control" required>
+          {% for o in organizations %}
+          <option value="{{ o.id }}" {% if contact.organization_id == o.id %}selected{% endif %}>{{ o.name }}</option>
+          {% endfor %}
+        </select>
+      </div>
+      <div class="form-group">
+        <label>Подразделение / филиал</label>
+        <input name="department" class="form-control" value="{{ contact.department }}" list="dept-datalist" placeholder="Минские тепловые сети">
+        <datalist id="dept-datalist">
+          {% for d in departments %}
+          <option value="{{ d.name }}"></option>
+          {% endfor %}
+        </datalist>
+      </div>
+      <div class="form-group"><label>ФИО *</label><input name="full_name" class="form-control" required value="{{ contact.full_name }}"></div>
+      <div class="form-group"><label>Должность</label><input name="position" class="form-control" value="{{ contact.position or '' }}"></div>
+      <div class="form-row grid-2">
+        <div class="form-group"><label>Рабочий телефон</label><input name="phone_internal" class="form-control" value="{{ contact.phone_internal or '' }}"></div>
+        <div class="form-group"><label>Добавочный</label><input name="phone_extension" class="form-control" value="{{ contact.phone_extension or '' }}"></div>
+      </div>
+      <div class="form-group"><label>Мобильный телефон *</label><input name="phone_mobile" class="form-control" required value="{{ contact.phone_mobile or '' }}"></div>
+      <div class="form-group"><label>Корпоративный email</label><input name="email" type="email" class="form-control" value="{{ contact.email or '' }}"></div>
+      <div class="form-group"><label>Порядок сортировки</label><input name="sort_order" type="number" class="form-control" value="{{ contact.sort_order }}"></div>
+      <div class="form-actions">
+        <button class="btn btn-primary">Сохранить</button>
+        <a href="{{ url_for('admin.directory_detail', cid=contact.id) }}" class="btn btn-outline">QR / vCard</a>
+      </div>
+    </form>
+    <form method="post" class="directory-deactivate-form" onsubmit="return confirm('Перенести контакт в архив?');">
+      {{ csrf_field() }}
+      <input type="hidden" name="action" value="archive">
+      <button type="submit" class="btn btn-outline btn-danger-text">В архив</button>
+    </form>
+  </div>
+</div>
+{% endblock %}

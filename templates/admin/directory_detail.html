@@ -1,0 +1,37 @@
+{% extends "base.html" %}
+{% block title %}{{ contact.full_name }}{% endblock %}
+{% block content %}
+<div class="container container-narrow">
+  <a href="{{ url_for('admin.directory') }}" class="back-link">← Справочник заказчиков</a>
+  <div class="card directory-detail">
+    <h1>{{ contact.full_name }}</h1>
+    {% if contact.position %}<p class="directory-detail-position">{{ contact.position }}</p>{% endif %}
+    <dl class="directory-detail-dl">
+      <div><dt>Организация</dt><dd>{{ contact.organization.name if contact.organization else '—' }}</dd></div>
+      {% if contact.department %}<div><dt>Подразделение</dt><dd>{{ contact.department }}</dd></div>{% endif %}
+      {% if contact.phone_internal %}<div><dt>Рабочий телефон</dt><dd>{{ contact.phone_internal }}{% if contact.phone_extension %} доб. {{ contact.phone_extension }}{% endif %}</dd></div>{% endif %}
+      <div><dt>Мобильный</dt><dd><a href="tel:{{ contact.phone_mobile|replace(' ', '') }}">{{ contact.phone_mobile }}</a></dd></div>
+      {% if contact.email %}<div><dt>Email</dt><dd><a href="mailto:{{ contact.email }}">{{ contact.email }}</a></dd></div>{% endif %}
+    </dl>
+
+    <div class="directory-qr-block">
+      <h2 class="section-title">QR → телефон</h2>
+      <p class="hint">Scan-to-Save: vCard в UTF-8 для iOS / Android.</p>
+      <div class="directory-qr-wrap">
+        <img
+          src="{{ url_for('admin.directory_qr', cid=contact.id) }}"
+          width="256"
+          height="256"
+          alt="QR-код vCard для {{ contact.full_name }}"
+          class="directory-qr-img"
+          loading="eager"
+        >
+      </div>
+      <div class="form-actions">
+        <a href="{{ url_for('admin.directory_vcf', cid=contact.id) }}" class="btn btn-primary">Скачать .vcf</a>
+        <a href="{{ url_for('admin.directory_edit', cid=contact.id) }}" class="btn btn-outline">Изменить</a>
+      </div>
+    </div>
+  </div>
+</div>
+{% endblock %}

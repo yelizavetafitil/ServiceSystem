@@ -1,0 +1,33 @@
+{% extends "base.html" %}
+{% from "macros/forms.html" import csrf_field %}
+{% block title %}Мои контактные данные{% endblock %}
+{% block content %}
+<div class="container container-form">
+  <div class="page-header">
+    <div class="page-header-main">
+      <h1>Мои контактные данные</h1>
+      <p class="page-subtitle">Эти сведения попадают во внутренний справочник Исполнителя для оперативной связи. Сам справочник других организаций вам недоступен.</p>
+    </div>
+  </div>
+  <div class="card">
+    <form method="post">
+      {{ csrf_field() }}
+      <div class="form-group">
+        <label>Организация</label>
+        <input class="form-control" disabled value="{{ current_user.organization.name if current_user.organization else (current_user.contract.organization.name if current_user.contract else '—') }}">
+      </div>
+      <div class="form-group"><label>ФИО *</label><input name="full_name" class="form-control" required value="{{ current_user.full_name }}"></div>
+      <div class="form-group"><label>Должность *</label><input name="position" class="form-control" required value="{{ current_user.position or '' }}"></div>
+      <div class="form-group"><label>Рабочий email *</label><input name="email" type="email" class="form-control" required value="{{ current_user.email }}"></div>
+      <div class="form-group"><label>Мобильный телефон *</label><input name="phone_mobile" type="tel" class="form-control" required value="{{ current_user.phone or '' }}"></div>
+      <div class="form-row grid-2">
+        <div class="form-group"><label>Рабочий телефон</label><input name="phone_work" type="tel" class="form-control" value="{{ current_user.phone_work or '' }}"></div>
+        <div class="form-group"><label>Добавочный</label><input name="phone_extension" class="form-control" value="{{ current_user.phone_extension or '' }}"></div>
+      </div>
+      <div class="form-actions">
+        <button class="btn btn-primary">Сохранить</button>
+      </div>
+    </form>
+  </div>
+</div>
+{% endblock %}

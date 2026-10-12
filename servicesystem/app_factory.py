@@ -178,6 +178,12 @@ def _apply_schema_patches():
     patches = [
         "ALTER TABLE contracts ADD COLUMN IF NOT EXISTS master_key_expires_at DATE",
         "ALTER TABLE video_tutorials ADD COLUMN IF NOT EXISTS video_file VARCHAR(512)",
+        "ALTER TABLE users ADD COLUMN IF NOT EXISTS phone_work VARCHAR(64)",
+        "ALTER TABLE users ADD COLUMN IF NOT EXISTS phone_extension VARCHAR(16)",
+        "ALTER TABLE phone_directory_contacts ADD COLUMN IF NOT EXISTS user_id INTEGER",
+        "ALTER TABLE phone_directory_contacts ADD COLUMN IF NOT EXISTS phone_extension VARCHAR(16)",
+        "UPDATE phone_directory_contacts SET phone_mobile = '' WHERE phone_mobile IS NULL",
+        "CREATE UNIQUE INDEX IF NOT EXISTS ix_phone_directory_contacts_user_id ON phone_directory_contacts (user_id) WHERE user_id IS NOT NULL",
     ]
     for sql in patches:
         try:

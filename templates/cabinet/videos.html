@@ -7,6 +7,9 @@
       <h1>Видеоинструкции</h1>
       <p class="page-subtitle">Потоковый просмотр обучающих материалов без скачивания</p>
     </div>
+    <div class="page-header-actions">
+      <a href="{{ url_for('cabinet.tutorials') }}" class="btn btn-outline btn-sm">База знаний</a>
+    </div>
   </div>
   <div class="video-grid">
     {% for v in videos %}

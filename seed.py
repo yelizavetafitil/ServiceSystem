@@ -25,6 +25,8 @@ from servicesystem.models import (
     PluginVersion,
     Ticket,
     NewsPost,
+    PhoneDirectoryContact,
+    PhoneDirectoryDepartment,
     Tutorial,
     User,
     VideoChapter,
@@ -67,6 +69,7 @@ def seed(force: bool = False):
         today = date.today()
 
         orgs_data = [
+            ("УНП «Белнипи»", "belnipi"),
             ("РУП «Брестэнерго»", "brest"),
             ("РУП «Витебскэнерго»", "vitebsk"),
             ("РУП «Минскэнерго»", "minsk"),
@@ -80,10 +83,10 @@ def seed(force: bool = False):
         db.session.flush()
 
         contracts_cfg = [
-            ("060-194-25", orgs[0], "active_warranty", today + timedelta(days=25), "master_brest"),
-            ("060-194-26", orgs[1], "active_post_warranty", date(2027, 8, 1), "master_vitebsk"),
-            ("060-194-27", orgs[2], "suspended", date(2027, 6, 1), "master_minsk"),
-            ("060-194-28", orgs[3], "terminated", date(2025, 1, 1), "master_gomel"),
+            ("060-194-25", orgs[1], "active_warranty", today + timedelta(days=25), "master_brest"),
+            ("060-194-26", orgs[2], "active_post_warranty", date(2027, 8, 1), "master_vitebsk"),
+            ("060-194-27", orgs[3], "suspended", date(2027, 6, 1), "master_minsk"),
+            ("060-194-28", orgs[4], "terminated", date(2025, 1, 1), "master_gomel"),
         ]
         contracts = []
         for num, org, status, end_date, master_login in contracts_cfg:
@@ -131,10 +134,10 @@ def seed(force: bool = False):
         db.session.flush()
 
         customers_cfg = [
-            ("kozlov@brestenergo.by", "Козлов Д.И.", "Инженер ТЭ", orgs[0], contracts[0], "+375 29 111-22-33"),
-            ("ivanova@brestenergo.by", "Иванова О.С.", "Начальник ПТО", orgs[0], contracts[0], "+375 29 222-33-44"),
-            ("sidorov@vitebskenergo.by", "Сидоров М.А.", "Начальник ТС", orgs[1], contracts[1], "+375 29 333-44-55"),
-            ("petrov@minskenergo.by", "Петров А.В.", "Инженер-сметчик", orgs[2], contracts[2], "+375 29 444-55-66"),
+            ("kozlov@brestenergo.by", "Козлов Д.И.", "Инженер ТЭ", orgs[1], contracts[0], "+375 29 111-22-33"),
+            ("ivanova@brestenergo.by", "Иванова О.С.", "Начальник ПТО", orgs[1], contracts[0], "+375 29 222-33-44"),
+            ("sidorov@vitebskenergo.by", "Сидоров М.А.", "Начальник ТС", orgs[2], contracts[1], "+375 29 333-44-55"),
+            ("petrov@minskenergo.by", "Петров А.В.", "Инженер-сметчик", orgs[3], contracts[2], "+375 29 444-55-66"),
         ]
         customers = []
         for email, name, pos, org, contract, phone in customers_cfg:
@@ -275,6 +278,47 @@ def seed(force: bool = False):
             author_id=admin_user.id if admin_user else None,
             published_at=utcnow(),
         ))
+
+        from servicesystem.services.directory_sync import create_contact_from_user
+
+        brest_org = next(o for o in orgs if o.short_name == "brest")
+        vitebsk_org = next(o for o in orgs if o.short_name == "vitebsk")
+        minsk_org = next(o for o in orgs if o.short_name == "minsk")
+        dept_map = [
+            (brest_org.id, "Тепловые сети филиала"),
+            (brest_org.id, "Диспетчерская ОДС"),
+            (vitebsk_org.id, "Служба главного инженера"),
+            (minsk_org.id, "Центр диспетчеризации"),
+        ]
+        for org_id, dept_name in dept_map:
+            db.session.add(PhoneDirectoryDepartment(organization_id=org_id, name=dept_name))
+        db.session.flush()
+
+        customers[0].phone_work = "+375 162 23-45-67"
+        customers[0].phone_extension = "214"
+        for u in customers:
+            create_contact_from_user(u, author_id=admin_user.id if admin_user else None)
+
+        extra_directory = [
+            (brest_org.id, "Диспетчерская ОДС", "Николаев П.Г.", "Диспетчер ОДС", "+375 162 55-12-00", "412", "+375 29 600-11-22", "ods.brest@brestenergo.by"),
+            (brest_org.id, "Тепловые сети филиала", "Морозова Л.В.", "Главный инженер теплосетей", "+375 162 55-10-01", "101", "+375 29 600-33-44", "gip.brest@brestenergo.by"),
+            (vitebsk_org.id, "Служба главного инженера", "Кравцов Д.А.", "Начальник службы эксплуатации ТС", "+375 212 66-20-30", None, "+375 29 700-55-66", "gip.vitebsk@vitebskenergo.by"),
+        ]
+        for org_id, dept, name, pos, internal, ext, mobile, email in extra_directory:
+            db.session.add(
+                PhoneDirectoryContact(
+                    organization_id=org_id,
+                    department=dept,
+                    full_name=name,
+                    position=pos,
+                    phone_internal=internal,
+                    phone_extension=ext,
+                    phone_mobile=mobile,
+                    email=email,
+                    is_published=True,
+                    author_id=admin_user.id if admin_user else None,
+                )
+            )
 
         tutorial_ids = []
         for title, slug, cat, tags, content in tutorials_data:

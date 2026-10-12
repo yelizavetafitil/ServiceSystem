@@ -19,7 +19,20 @@
         </select>
       </div>
       <div class="form-group"><label>Новый пароль (оставьте пустым, чтобы не менять)</label><input type="password" name="password" class="form-control"></div>
-      <label class="check-row"><input type="checkbox" name="is_active" value="1" {% if user.is_active %}checked{% endif %}> Активен</label>
+      <div class="form-group">
+        <span class="form-label">Доступ к системе</span>
+        <label class="toggle-field">
+          <span class="toggle-track">
+            <input type="checkbox" class="toggle-input" name="is_active" value="1" {% if user.is_active %}checked{% endif %}>
+            <span class="toggle-switch" aria-hidden="true"></span>
+          </span>
+          <span class="toggle-labels">
+            <span class="toggle-label-on">Подключён</span>
+            <span class="toggle-label-off">Отключён</span>
+          </span>
+        </label>
+        <p class="hint">Не отображает «онлайн»: при отключении пользователь не может войти в портал.</p>
+      </div>
       <div class="form-actions">
         <button class="btn btn-primary">Сохранить</button>
       </div>

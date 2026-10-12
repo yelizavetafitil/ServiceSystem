@@ -28,6 +28,7 @@ class Config:
         "ORG_LEGAL_FORM",
         "Проектное научно-исследовательское республиканское унитарное предприятие",
     )
+    DIRECTORY_INSTITUTE_SHORT = os.environ.get("DIRECTORY_INSTITUTE_SHORT", "belnipi")
 
     UPLOAD_FOLDER = os.environ.get("UPLOAD_FOLDER", "/app/data/uploads")
     MAX_UPLOAD_MB = int(os.environ.get("MAX_UPLOAD_MB", "100"))

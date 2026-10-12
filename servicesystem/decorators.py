@@ -35,6 +35,18 @@ def admin_required(fn):
     return wrapper
 
 
+def customer_directory_self_required(fn):
+    """Only customers editing their own directory card (not the internal list)."""
+    @wraps(fn)
+    def wrapper(*args, **kwargs):
+        if not current_user.is_authenticated:
+            return redirect(url_for("auth.login"))
+        if not current_user.is_customer:
+            abort(403)
+        return fn(*args, **kwargs)
+    return wrapper
+
+
 def content_cms_required(fn):
     """Admin, auditor, or executor: tutorials and video CMS (not plugins/contracts/users)."""
     @wraps(fn)

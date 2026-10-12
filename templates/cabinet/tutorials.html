@@ -7,6 +7,9 @@
       <h1>База знаний</h1>
       <p class="page-subtitle">Пошаговые инструкции и методические материалы по ЭМСТПН</p>
     </div>
+    <div class="page-header-actions">
+      <a href="{{ url_for('cabinet.videos') }}" class="btn btn-outline btn-sm">Видео</a>
+    </div>
     <form class="search-bar search-bar--header" method="get">
       <input type="search" name="q" value="{{ search }}" placeholder="Поиск по статьям..." class="form-control">
       <button type="submit" class="btn btn-primary">Найти</button>

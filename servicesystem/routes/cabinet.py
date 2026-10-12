@@ -3,7 +3,7 @@ from sqlalchemy import func
 from flask import Blueprint, abort, flash, redirect, render_template, request, send_file, url_for
 from flask_login import current_user, login_required
 
-from servicesystem.decorators import contract_access_required, write_access_required
+from servicesystem.decorators import contract_access_required, customer_directory_self_required, write_access_required
 from servicesystem.extensions import db
 from servicesystem.models import (
     ContractContentAccess,
@@ -173,6 +173,48 @@ def news_detail(slug):
     log_audit(current_user.id, "view", "news", item.id)
     db.session.commit()
     return render_template("cabinet/news_detail.html", item=item, content_html=html)
+
+
+@bp.route("/directory", defaults={"path": ""})
+@bp.route("/directory/<path:path>")
+@login_required
+def directory_blocked(path):
+    """Справочник заказчиков — только внутренний контур Исполнителя (ТЗ)."""
+    abort(404)
+
+
+@bp.route("/my-contact", methods=["GET", "POST"])
+@login_required
+@customer_directory_self_required
+@write_access_required
+def my_contact():
+    from servicesystem.services.directory_sync import contact_for_user, create_contact_from_user, sync_user_to_contact
+
+    contact = contact_for_user(current_user)
+    if request.method == "POST":
+        current_user.full_name = request.form.get("full_name", "").strip()
+        current_user.position = request.form.get("position", "").strip()
+        current_user.phone = request.form.get("phone_mobile", "").strip()
+        current_user.phone_work = (request.form.get("phone_work") or "").strip() or None
+        current_user.phone_extension = (request.form.get("phone_extension") or "").strip() or None
+        if not current_user.phone:
+            flash("Укажите мобильный телефон.", "danger")
+            return redirect(url_for("cabinet.my_contact"))
+        email = request.form.get("email", "").strip().lower()
+        if email and "@" in email:
+            current_user.email = email
+        if contact:
+            sync_user_to_contact(current_user)
+        else:
+            create_contact_from_user(current_user, author_id=current_user.id)
+        db.session.commit()
+        flash("Контактные данные обновлены.", "success")
+        return redirect(url_for("cabinet.my_contact"))
+    if not contact:
+        create_contact_from_user(current_user, author_id=current_user.id)
+        db.session.commit()
+        contact = contact_for_user(current_user)
+    return render_template("cabinet/my_contact.html", contact=contact)
 
 
 @bp.route("/videos")

@@ -91,6 +91,8 @@ class User(UserMixin, db.Model):
     full_name = db.Column(db.String(255), nullable=False)
     position = db.Column(db.String(255))
     phone = db.Column(db.String(32))
+    phone_work = db.Column(db.String(64))
+    phone_extension = db.Column(db.String(16))
     role = db.Column(db.String(32), nullable=False, default="customer")
     contract_id = db.Column(db.Integer, db.ForeignKey("contracts.id"))
     organization_id = db.Column(db.Integer, db.ForeignKey("organizations.id"))
@@ -302,6 +304,48 @@ class Tutorial(db.Model):
     is_published = db.Column(db.Boolean, default=True)
     created_at = db.Column(db.DateTime(timezone=True), default=utcnow)
     updated_at = db.Column(db.DateTime(timezone=True), default=utcnow, onupdate=utcnow)
+
+
+class PhoneDirectoryDepartment(db.Model):
+    """Подразделение для выпадающего списка в CMS справочника."""
+
+    __tablename__ = "phone_directory_departments"
+
+    id = db.Column(db.Integer, primary_key=True)
+    organization_id = db.Column(db.Integer, db.ForeignKey("organizations.id"), nullable=False)
+    name = db.Column(db.String(255), nullable=False)
+    sort_order = db.Column(db.Integer, default=0)
+    is_active = db.Column(db.Boolean, default=True)
+    created_at = db.Column(db.DateTime(timezone=True), default=utcnow)
+
+    organization = db.relationship("Organization", backref=db.backref("directory_departments", lazy="dynamic"))
+
+
+class PhoneDirectoryContact(db.Model):
+    """Справочник представителей Заказчиков (внутренний контур Исполнителя)."""
+
+    __tablename__ = "phone_directory_contacts"
+
+    id = db.Column(db.Integer, primary_key=True)
+    organization_id = db.Column(db.Integer, db.ForeignKey("organizations.id"), nullable=False)
+    user_id = db.Column(db.Integer, db.ForeignKey("users.id"), unique=True, index=True)
+    department = db.Column(db.String(255), nullable=False, default="")
+    full_name = db.Column(db.String(255), nullable=False)
+    position = db.Column(db.String(255))
+    phone_internal = db.Column(db.String(64))
+    phone_extension = db.Column(db.String(16))
+    phone_mobile = db.Column(db.String(64), nullable=False)
+    email = db.Column(db.String(255))
+    sort_order = db.Column(db.Integer, default=0)
+    is_published = db.Column(db.Boolean, default=True)
+    is_active = db.Column(db.Boolean, default=True)
+    author_id = db.Column(db.Integer, db.ForeignKey("users.id"))
+    created_at = db.Column(db.DateTime(timezone=True), default=utcnow)
+    updated_at = db.Column(db.DateTime(timezone=True), default=utcnow, onupdate=utcnow)
+
+    organization = db.relationship("Organization", backref=db.backref("directory_contacts", lazy="dynamic"))
+    author = db.relationship("User", foreign_keys=[author_id])
+    user = db.relationship("User", foreign_keys=[user_id], backref=db.backref("directory_card", uselist=False))
 
 
 class NewsPost(db.Model):
