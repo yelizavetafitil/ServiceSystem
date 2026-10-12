@@ -1,5 +1,6 @@
 {% extends "base.html" %}
 {% from "macros/forms.html" import csrf_field %}
+{% from "macros/live_search.html" import live_search_panel %}
 {% block title %}Новости{% endblock %}
 {% block head %}{% from "macros/editor.html" import cms_editor_assets %}{{ cms_editor_assets() }}{% endblock %}
 {% block content %}
@@ -15,8 +16,11 @@
       <a href="{{ url_for('admin.videos') }}" class="btn btn-outline btn-sm">Видео</a>
     </div>
   </div>
+  <div class="live-search-root mb-md" data-mode="filter">
+    {{ live_search_panel('Поиск по заголовку…') }}
+    <div data-live-search-list>
   {% for n in news_items %}
-  <div class="card mb-md">
+  <div class="card mb-md live-search-item" data-search-text="{{ n.title }} {{ n.summary or '' }}">
     <div class="list-row">
       <div class="list-row-main">
         <strong>{{ n.title }}</strong>
@@ -29,6 +33,9 @@
     </div>
   </div>
   {% endfor %}
+    <p class="live-search-empty muted" hidden>Новости не найдены.</p>
+    </div>
+  </div>
   <div class="card cms-editor-card">
     <h2 class="section-title">Новая новость</h2>
     <form method="post" action="{{ url_for('admin.news_create') }}">

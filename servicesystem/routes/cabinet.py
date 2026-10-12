@@ -131,7 +131,10 @@ def tutorials():
             or q_lower in (t.tags or "").lower()
             or q_lower in (t.category or "").lower()
         ]
-    return render_template("cabinet/tutorials.html", tutorials=items, search=search)
+    ctx = dict(tutorials=items, search=search)
+    if request.args.get("partial") == "1":
+        return render_template("cabinet/tutorials_rows.html", **ctx)
+    return render_template("cabinet/tutorials.html", **ctx)
 
 
 @bp.route("/tutorials/<slug>")

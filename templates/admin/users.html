@@ -1,14 +1,16 @@
 {% extends "base.html" %}
 {% from "macros/forms.html" import csrf_field %}
+{% from "macros/live_search.html" import live_search_panel %}
 {% block title %}Пользователи{% endblock %}
 {% block content %}
 <div class="container">
-  <div class="card">
+  <div class="card live-search-root" data-mode="filter">
     <h2>Пользователи</h2>
+    {{ live_search_panel('Поиск по ФИО, email, роли…') }}
     <div class="table-wrap"><table>
       <thead><tr><th>ФИО</th><th>Email</th><th>Роль</th><th>Должность</th><th>Доступ</th><th></th></tr></thead>
-      <tbody>{% for u in users %}
-      <tr>
+      <tbody data-live-search-list>{% for u in users %}
+      <tr class="live-search-item" data-search-text="{{ u.full_name }} {{ u.email }} {{ ROLES.get(u.role, u.role) }} {{ u.position or '' }}">
         <td>{{ u.full_name }}</td><td>{{ u.email }}</td><td>{{ ROLES.get(u.role, u.role) }}</td><td>{{ u.position }}</td>
         <td>{% if u.is_active %}<span class="badge status-resolved">Подключён</span>{% else %}<span class="badge status-rejected">Отключён</span>{% endif %}</td>
         <td>
@@ -18,7 +20,9 @@
           {% endif %}
         </td>
       </tr>
-      {% endfor %}</tbody>
+      {% endfor %}
+      <tr class="live-search-empty-row" hidden><td colspan="6" class="muted">Пользователи не найдены</td></tr>
+      </tbody>
     </table></div>
     <form method="post" action="{{ url_for('admin.user_create') }}" style="margin-top:16px">
       {{ csrf_field() }}

@@ -1,11 +1,14 @@
 {% extends "base.html" %}
+{% from "macros/live_search.html" import live_search_panel %}
 {% block title %}Плагины{% endblock %}
 {% block content %}
 <div class="container">
   <div class="page-header"><h1>Репозиторий плагинов</h1></div>
-  <div class="plugin-grid">
+  <div class="live-search-root mb-md" data-mode="filter">
+    {{ live_search_panel('Поиск по названию плагина…') }}
+    <div class="plugin-grid" data-live-search-list>
     {% for p in plugins %}
-    <div class="plugin-card">
+    <div class="plugin-card live-search-item" data-search-text="{{ p.name }} {{ p.slug }}">
       <div class="plugin-header">
         <h3>{{ p.name }}</h3>
         <span class="version-badge">v{{ p.current_version or '—' }}</span>
@@ -25,6 +28,8 @@
     {% else %}
     <p class="muted">Плагины недоступны для вашего договора.</p>
     {% endfor %}
+    <p class="live-search-empty muted" hidden>Плагины не найдены.</p>
+    </div>
   </div>
 </div>
 {% endblock %}

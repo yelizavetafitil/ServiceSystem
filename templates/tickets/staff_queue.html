@@ -1,4 +1,5 @@
 {% extends "base.html" %}
+{% from "macros/live_search.html" import live_search_panel %}
 {% block title %}Очередь заявок{% endblock %}
 {% block content %}
 <div class="container">
@@ -11,11 +12,12 @@
       <a href="{{ url_for('tickets.list_tickets') }}" class="btn btn-outline btn-sm">Все заявки</a>
     </div>
   </div>
-  <div class="card card--flush">
+  <div class="live-search-root card card--flush" data-mode="filter">
+    {{ live_search_panel('Поиск по номеру, теме, автору…') }}
     {% if tickets %}
-    <ul class="ticket-list">
+    <ul class="ticket-list" data-live-search-list>
       {% for t in tickets %}
-      <li class="ticket-list-item">
+      <li class="ticket-list-item live-search-item" data-search-text="{{ t.number }} {{ t.subject }} {{ t.author.full_name if t.author else '' }} {{ t.executor.full_name if t.executor else '' }} {{ TICKET_STATUSES.get(t.status, t.status) }}">
         <a href="{{ url_for('tickets.detail', tid=t.id, tab='response') }}" class="ticket-list-link">
           <div class="ticket-list-head">
             <span class="ticket-list-num">{{ t.number }}</span>
@@ -38,6 +40,7 @@
     {% else %}
     <p class="ticket-list-empty muted">Очередь пуста</p>
     {% endif %}
+    <p class="live-search-empty muted ticket-list-empty" hidden>По запросу заявок не найдено.</p>
   </div>
 </div>
 {% endblock %}

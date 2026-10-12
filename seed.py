@@ -108,19 +108,19 @@ def seed(force: bool = False):
 
         admin = User(
             email="admin@belnipi.by", full_name="Администратор Системы",
-            position="Системный администратор", role="admin",
+            position="Системный администратор", role="admin", is_active=True,
         )
         admin.set_password("admin123")
 
         auditor = User(
             email="auditor@belnipi.by", full_name="Иванов А.П.",
-            position="Главный инженер проекта (ГИП)", role="auditor",
+            position="Главный инженер проекта (ГИП)", role="auditor", is_active=True,
         )
         auditor.set_password("auditor123")
 
         executor = User(
             email="executor@belnipi.by", full_name="Петров С.В.",
-            position="Инженер-разработчик модулей", role="executor",
+            position="Инженер-разработчик модулей", role="executor", is_active=True,
         )
         executor.set_password("executor123")
 

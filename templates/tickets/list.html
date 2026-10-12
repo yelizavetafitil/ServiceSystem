@@ -1,6 +1,7 @@
 {% extends "base.html" %}
 
 {% from "macros/tickets.html" import ticket_list_item with context %}
+{% from "macros/live_search.html" import live_search_panel %}
 
 {% block title %}Заявки{% endblock %}
 
@@ -30,11 +31,10 @@
 
   </div>
 
-  <div class="card card--flush">
-
+  <div class="live-search-root card card--flush" data-mode="filter">
+    {{ live_search_panel('Поиск по номеру, теме, автору…') }}
     {% if tickets %}
-
-    <ul class="ticket-list">
+    <ul class="ticket-list" data-live-search-list>
 
       {% for t in tickets %}
 
@@ -58,11 +58,9 @@
     </ul>
 
     {% else %}
-
     <p class="ticket-list-empty muted">Заявок пока нет. Создайте первую заявку, если нужна помощь по ЭМСТПН.</p>
-
     {% endif %}
-
+    <p class="live-search-empty muted ticket-list-empty" hidden>По запросу заявок не найдено.</p>
   </div>
 
 </div>

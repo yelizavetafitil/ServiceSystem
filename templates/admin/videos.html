@@ -1,5 +1,6 @@
 {% extends "base.html" %}
 {% from "macros/forms.html" import csrf_field %}
+{% from "macros/live_search.html" import live_search_panel %}
 {% block title %}Видео{% endblock %}
 {% block content %}
 <div class="container">
@@ -16,8 +17,11 @@
       {% endif %}
     </div>
   </div>
+  <div class="live-search-root mb-md" data-mode="filter">
+    {{ live_search_panel('Поиск по названию, категории…') }}
+    <div data-live-search-list>
   {% for v in videos %}
-  <div class="card mb-md">
+  <div class="card mb-md live-search-item" data-search-text="{{ v.title }} {{ v.category or '' }}">
     <div class="list-row">
       <div class="list-row-main">
         <strong>{{ v.title }}</strong>
@@ -29,6 +33,9 @@
   {% else %}
   <p class="muted mb-md">Видео пока не добавлены.</p>
   {% endfor %}
+    <p class="live-search-empty muted" hidden>Ничего не найдено.</p>
+    </div>
+  </div>
   <div class="card">
     <h3>Новое видео</h3>
     <form method="post" action="{{ url_for('admin.video_create') }}" enctype="multipart/form-data">

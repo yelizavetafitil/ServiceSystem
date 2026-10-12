@@ -1,0 +1,9 @@
+{% for t in tutorials %}
+<a href="{{ url_for('cabinet.tutorial_detail', slug=t.slug) }}" class="kb-item live-search-item" data-live-search-item data-search-text="{{ t.title }} {{ t.category or '' }} {{ t.tags or '' }}">
+  <span class="kb-cat">{{ t.category }}</span>
+  <h3>{{ t.title }}</h3>
+  <span class="kb-tags">{{ t.tags }}</span>
+</a>
+{% else %}
+<p class="muted live-search-empty">Материалы не найдены.</p>
+{% endfor %}

@@ -1,36 +1,33 @@
 {% extends "base.html" %}
 {% from "macros/forms.html" import csrf_field %}
+{% from "macros/live_search.html" import live_search_input, live_search_reset, live_search_status %}
 {% block title %}Журнал аудита{% endblock %}
 {% block content %}
 <div class="container">
   <div class="page-header"><h1>Журнал аудита</h1></div>
-  <div class="card" style="margin-bottom:16px">
+  <div class="live-search-root live-search-panel live-search-panel--kb mb-md" data-mode="fetch"
+       data-url="{{ url_for('admin.audit') }}"
+       data-target="#audit-results"
+       data-live-search-history="1">
     <form method="get" class="form-row">
-      <select name="user_id" class="form-control">
+      {{ live_search_input('Поиск по действию, пользователю, деталям…', search_q|default('')) }}
+      <select name="user_id" class="form-control" data-live-search-field="user_id">
         <option value="">Все пользователи</option>
         {% for u in users %}<option value="{{ u.id }}" {% if filter_user == u.id %}selected{% endif %}>{{ u.full_name }} ({{ u.email }})</option>{% endfor %}
       </select>
-      <select name="action" class="form-control">
+      <select name="action" class="form-control" data-live-search-field="action">
         <option value="">Все действия</option>
         {% for a in actions %}<option value="{{ a }}" {% if filter_action == a %}selected{% endif %}>{{ a }}</option>{% endfor %}
       </select>
-      <button class="btn btn-primary">Фильтр</button>
+      {{ live_search_reset() }}
     </form>
+    {{ live_search_status() }}
   </div>
   <div class="card table-wrap">
     <table>
       <thead><tr><th>Время</th><th>Пользователь</th><th>Действие</th><th>Ресурс</th><th>Детали</th><th>IP</th></tr></thead>
-      <tbody>
-      {% for l in logs %}
-      <tr>
-        <td>{{ l.created_at.strftime('%d.%m.%Y %H:%M') if l.created_at else '' }}</td>
-        <td>{{ l.user.full_name if l.user else '—' }}</td>
-        <td>{{ l.action }}</td>
-        <td>{{ l.resource_type }} #{{ l.resource_id or '' }}</td>
-        <td>{{ l.details or '' }}</td>
-        <td>{{ l.ip_address or '' }}</td>
-      </tr>
-      {% endfor %}
+      <tbody id="audit-results" class="live-search-results">
+        {% include "admin/audit_rows.html" %}
       </tbody>
     </table>
   </div>

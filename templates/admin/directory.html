@@ -1,5 +1,6 @@
 {% extends "base.html" %}
 {% from "macros/forms.html" import csrf_field %}
+{% from "macros/live_search.html" import live_search_input, live_search_reset, live_search_status %}
 {% block title %}Справочник заказчиков{% endblock %}
 {% block content %}
 <div class="container cms-page">
@@ -9,20 +10,24 @@
       <p class="page-subtitle">Внутренний контур Исполнителя (исполнитель, аудитор, админ). Заказчики справочник не видят; при регистрации карточка создаётся автоматически.</p>
     </div>
     <div class="page-header-actions">
-      <a href="{{ url_for('admin.directory_export_vcf', org=filter_org or '', q=search_q) }}" class="btn btn-outline btn-sm">Скачать vCard (фильтр)</a>
+      <a id="directory-export-vcf" href="{{ url_for('admin.directory_export_vcf', org=filter_org or '', q=search_q) }}" class="btn btn-outline btn-sm">Скачать vCard (фильтр)</a>
       {% if current_user.is_admin %}<a href="{{ url_for('admin.audit') }}?action=directory_update" class="btn btn-outline btn-sm">Журнал изменений</a>{% endif %}
     </div>
   </div>
 
-  <form method="get" class="card mb-md directory-filters">
-    <div class="directory-filter-grid">
+  <div class="live-search-root card mb-md directory-filters" data-mode="fetch"
+       data-url="{{ url_for('admin.directory') }}"
+       data-target="#directory-results"
+       data-live-search-history="1"
+       data-live-search-links="#directory-export-vcf">
+    <form method="get" action="{{ url_for('admin.directory') }}" class="directory-filter-grid">
       <div class="form-group">
         <label>Поиск</label>
-        <input type="search" name="q" class="form-control" value="{{ search_q }}" placeholder="ФИО, подразделение…">
+        {{ live_search_input('ФИО, телефон, email, подразделение…', search_q) }}
       </div>
       <div class="form-group">
         <label>Организация</label>
-        <select name="org" class="form-control">
+        <select name="org" class="form-control" data-live-search-field="org">
           <option value="">Все</option>
           {% for o in organizations %}
           <option value="{{ o.id }}" {% if filter_org == o.id %}selected{% endif %}>{{ o.name }}</option>
@@ -30,35 +35,19 @@
         </select>
       </div>
       <div class="form-group directory-filter-actions">
-        <button type="submit" class="btn btn-outline">Фильтр</button>
+        <label class="directory-filter-actions-label" aria-hidden="true">Действие</label>
+        {{ live_search_reset(compact=true) }}
       </div>
-    </div>
-  </form>
-
-  {% for c in contacts %}
-  <div class="card mb-md">
-    <div class="list-row">
-      <div class="list-row-main">
-        <strong>{{ c.full_name }}</strong>
-        <span class="muted">
-          — {{ c.organization.name if c.organization else '—' }}{% if c.department %}, {{ c.department }}{% endif %}
-          {% if c.position %} · {{ c.position }}{% endif %}
-          {% if not c.is_published %} · <em>черновик</em>{% endif %}
-        </span>
-      </div>
-      <span class="directory-row-actions">
-        <a href="{{ url_for('admin.directory_detail', cid=c.id) }}" class="btn btn-outline btn-sm" title="QR-код">QR</a>
-        <a href="{{ url_for('admin.directory_vcf', cid=c.id) }}" class="btn btn-outline btn-sm">.vcf</a>
-        <a href="{{ url_for('admin.directory_edit', cid=c.id) }}" class="btn btn-outline btn-sm">Изменить</a>
-      </span>
-    </div>
-    <p class="muted directory-row-phones">{{ c.phone_mobile }}{% if c.phone_internal %} · раб. {{ c.phone_internal }}{% if c.phone_extension %} доб. {{ c.phone_extension }}{% endif %}{% endif %}</p>
+    </form>
+    {{ live_search_status() }}
   </div>
-  {% endfor %}
+
+  <div id="directory-results" class="directory-results live-search-results">
+    {% include "admin/directory_rows.html" %}
+  </div>
 
   <div class="card cms-editor-card mb-md">
     <h2 class="section-title">Импорт CSV (Excel → «CSV UTF-8»)</h2>
-    <p class="hint">Шаблон колонок: <code>scripts/directory-import-template.csv</code>. Колонка «Организация» необязательна — если пусто, берётся организация по умолчанию ниже.</p>
     <form method="post" action="{{ url_for('admin.directory_import_csv') }}" enctype="multipart/form-data">
       {{ csrf_field() }}
       <div class="cms-meta-grid">

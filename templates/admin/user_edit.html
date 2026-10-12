@@ -19,6 +19,7 @@
         </select>
       </div>
       <div class="form-group"><label>Новый пароль (оставьте пустым, чтобы не менять)</label><input type="password" name="password" class="form-control"></div>
+      {% if user.role != 'admin' %}
       <div class="form-group">
         <span class="form-label">Доступ к системе</span>
         <label class="toggle-field">
@@ -33,6 +34,9 @@
         </label>
         <p class="hint">Не отображает «онлайн»: при отключении пользователь не может войти в портал.</p>
       </div>
+      {% else %}
+      <p class="hint">Учётная запись администратора всегда активна и не отключается через этот переключатель.</p>
+      {% endif %}
       <div class="form-actions">
         <button class="btn btn-primary">Сохранить</button>
       </div>

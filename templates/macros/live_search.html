@@ -1,0 +1,27 @@
+{% macro live_search_input(placeholder='Поиск…', value='') %}
+<input type="search" class="form-control live-search-input live-search-kb-input" value="{{ value }}" placeholder="{{ placeholder }}" autocomplete="off" aria-label="Поиск">
+{% endmacro %}
+
+{% macro live_search_status() %}
+<p class="hint live-search-status" aria-live="polite"></p>
+{% endmacro %}
+
+{% macro live_search_reset(compact=false) %}
+<button type="button" class="btn btn-outline live-search-reset{% if compact %} btn-sm live-search-reset--compact{% else %} live-search-kb-reset{% endif %}">Сбросить</button>
+{% endmacro %}
+
+{% macro live_search_toolbar(placeholder, value='', compact=false) %}
+<div class="live-search-toolbar{% if not compact %} live-search-toolbar--kb{% endif %}">
+  <div class="live-search-toolbar-row">
+    {{ live_search_input(placeholder, value) }}
+    {{ live_search_reset(compact) }}
+  </div>
+  {{ live_search_status() }}
+</div>
+{% endmacro %}
+
+{% macro live_search_panel(placeholder, value='', compact=false) %}
+<div class="live-search-panel{% if not compact %} live-search-panel--kb{% endif %}">
+  {{ live_search_toolbar(placeholder, value, compact) }}
+</div>
+{% endmacro %}

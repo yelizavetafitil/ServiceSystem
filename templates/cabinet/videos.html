@@ -1,4 +1,5 @@
 {% extends "base.html" %}
+{% from "macros/live_search.html" import live_search_panel %}
 {% block title %}Видеоинструкции{% endblock %}
 {% block content %}
 <div class="container">
@@ -11,14 +12,18 @@
       <a href="{{ url_for('cabinet.tutorials') }}" class="btn btn-outline btn-sm">База знаний</a>
     </div>
   </div>
-  <div class="video-grid">
+  <div class="live-search-root mb-md" data-mode="filter">
+    {{ live_search_panel('Поиск по названию, категории…') }}
+    <div class="video-grid" data-live-search-list>
     {% for v in videos %}
-    <a href="{{ url_for('cabinet.video_detail', slug=v.slug) }}" class="video-card">
+    <a href="{{ url_for('cabinet.video_detail', slug=v.slug) }}" class="video-card live-search-item" data-search-text="{{ v.title }} {{ v.category or '' }}">
       <div class="video-thumb"></div>
       <h3>{{ v.title }}</h3>
       <span class="muted">{{ v.category }}{% if v.duration_sec %} · {{ (v.duration_sec // 60) }} мин{% endif %}</span>
     </a>
     {% endfor %}
+    <p class="live-search-empty muted" hidden>Видео не найдены.</p>
+    </div>
   </div>
 </div>
 {% endblock %}

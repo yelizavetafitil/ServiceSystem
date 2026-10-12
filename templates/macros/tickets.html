@@ -1,5 +1,5 @@
 {% macro ticket_list_item(t, href, show_priority=false, meta_line=None) %}
-<li class="ticket-list-item">
+<li class="ticket-list-item live-search-item" data-search-text="{{ t.number }} {{ t.subject }} {{ t.author.full_name if t.author else '' }} {{ t.executor.full_name if t.executor else '' }} {{ TICKET_STATUSES.get(t.status, t.status) }}">
   <a href="{{ href }}" class="ticket-list-link">
     <div class="ticket-list-head">
       <span class="ticket-list-num">{{ t.number }}</span>

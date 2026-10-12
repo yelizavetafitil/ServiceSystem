@@ -1,0 +1,12 @@
+{% for l in logs %}
+<tr class="live-search-item" data-live-search-item data-search-text="{{ l.action }} {{ l.resource_type }} {{ l.details or '' }} {{ l.user.full_name if l.user else '' }} {{ l.user.email if l.user else '' }}">
+  <td>{{ l.created_at.strftime('%d.%m.%Y %H:%M') if l.created_at else '' }}</td>
+  <td>{{ l.user.full_name if l.user else '—' }}</td>
+  <td>{{ l.action }}</td>
+  <td>{{ l.resource_type }} #{{ l.resource_id or '' }}</td>
+  <td>{{ l.details or '' }}</td>
+  <td>{{ l.ip_address or '' }}</td>
+</tr>
+{% else %}
+<tr class="live-search-empty-row"><td colspan="6" class="muted">Записей нет</td></tr>
+{% endfor %}

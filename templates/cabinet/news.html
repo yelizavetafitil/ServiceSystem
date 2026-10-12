@@ -1,4 +1,5 @@
 {% extends "base.html" %}
+{% from "macros/live_search.html" import live_search_panel %}
 {% block title %}Новости{% endblock %}
 {% block content %}
 <div class="container">
@@ -8,9 +9,11 @@
       <p class="page-subtitle">Общие объявления и изменения сервиса — доступны всем пользователям</p>
     </div>
   </div>
-  <div class="news-list">
+  <div class="live-search-root mb-md" data-mode="filter">
+    {{ live_search_panel('Поиск по заголовку…') }}
+    <div class="news-list" data-live-search-list>
     {% for n in news_items %}
-    <a href="{{ url_for('cabinet.news_detail', slug=n.slug) }}" class="news-item">
+    <a href="{{ url_for('cabinet.news_detail', slug=n.slug) }}" class="news-item live-search-item" data-search-text="{{ n.title }} {{ n.summary or '' }}">
       <time class="news-date">{{ (n.published_at or n.created_at).strftime('%d.%m.%Y') if (n.published_at or n.created_at) else '—' }}</time>
       <div class="news-item-body">
         <h3>{{ n.title }}</h3>
@@ -20,6 +23,8 @@
     {% else %}
     <p class="muted">Пока нет опубликованных новостей.</p>
     {% endfor %}
+    <p class="live-search-empty muted" hidden>Новости не найдены.</p>
+    </div>
   </div>
 </div>
 {% endblock %}

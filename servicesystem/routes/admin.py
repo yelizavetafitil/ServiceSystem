@@ -220,7 +220,10 @@ def user_edit(uid):
         user.full_name = request.form["full_name"].strip()
         user.position = request.form.get("position", "")
         user.role = request.form["role"]
-        user.is_active = request.form.get("is_active") == "1"
+        if user.role == "admin":
+            user.is_active = True
+        else:
+            user.is_active = request.form.get("is_active") == "1"
         if request.form.get("password"):
             user.set_password(request.form["password"])
         db.session.commit()
@@ -649,14 +652,16 @@ def directory():
         .order_by(PhoneDirectoryDepartment.organization_id, PhoneDirectoryDepartment.sort_order)
         .all()
     )
-    return render_template(
-        "admin/directory.html",
+    ctx = dict(
         contacts=contacts,
         organizations=orgs,
         departments=departments,
         filter_org=org_id,
         search_q=q,
     )
+    if request.args.get("partial") == "1":
+        return render_template("admin/directory_rows.html", **ctx)
+    return render_template("admin/directory.html", **ctx)
 
 
 @bp.route("/directory/departments", methods=["POST"])
@@ -1026,17 +1031,41 @@ def video_create():
 @login_required
 @admin_required
 def audit():
+    from sqlalchemy import or_
+
     q = AuditLog.query
     user_id = request.args.get("user_id", type=int)
     action = request.args.get("action", "").strip()
+    search = (request.args.get("q") or "").strip()
     if user_id:
         q = q.filter_by(user_id=user_id)
     if action:
         q = q.filter(AuditLog.action == action)
+    if search:
+        term = f"%{search}%"
+        q = q.outerjoin(User, AuditLog.user_id == User.id).filter(
+            or_(
+                AuditLog.action.ilike(term),
+                AuditLog.resource_type.ilike(term),
+                AuditLog.details.ilike(term),
+                User.full_name.ilike(term),
+                User.email.ilike(term),
+            )
+        )
     logs = q.order_by(AuditLog.created_at.desc()).limit(500).all()
     users = User.query.order_by(User.full_name).all()
     actions = [r[0] for r in db.session.query(AuditLog.action).distinct().order_by(AuditLog.action).all()]
-    return render_template("admin/audit.html", logs=logs, users=users, actions=actions, filter_user=user_id, filter_action=action)
+    ctx = dict(
+        logs=logs,
+        users=users,
+        actions=actions,
+        filter_user=user_id,
+        filter_action=action,
+        search_q=search,
+    )
+    if request.args.get("partial") == "1":
+        return render_template("admin/audit_rows.html", **ctx)
+    return render_template("admin/audit.html", **ctx)
 
 
 @bp.route("/organizations/create", methods=["POST"])

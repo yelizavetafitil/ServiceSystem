@@ -1,4 +1,5 @@
 {% extends "base.html" %}
+{% from "macros/live_search.html" import live_search_panel %}
 {% block title %}База знаний{% endblock %}
 {% block content %}
 <div class="container">
@@ -10,21 +11,18 @@
     <div class="page-header-actions">
       <a href="{{ url_for('cabinet.videos') }}" class="btn btn-outline btn-sm">Видео</a>
     </div>
-    <form class="search-bar search-bar--header" method="get">
-      <input type="search" name="q" value="{{ search }}" placeholder="Поиск по статьям..." class="form-control">
-      <button type="submit" class="btn btn-primary">Найти</button>
-    </form>
   </div>
-  <div class="kb-list">
-    {% for t in tutorials %}
-    <a href="{{ url_for('cabinet.tutorial_detail', slug=t.slug) }}" class="kb-item">
-      <span class="kb-cat">{{ t.category }}</span>
-      <h3>{{ t.title }}</h3>
-      <span class="kb-tags">{{ t.tags }}</span>
-    </a>
-    {% else %}
-    <p class="muted">Материалы не найдены.</p>
-    {% endfor %}
+
+  <div class="live-search-root mb-md" data-mode="fetch"
+       data-url="{{ url_for('cabinet.tutorials') }}"
+       data-target="#tutorials-results"
+       data-live-search-history="1">
+    <form method="get" action="{{ url_for('cabinet.tutorials') }}">
+      {{ live_search_panel('Поиск по статьям, тегам, категории…', search) }}
+    </form>
+    <div id="tutorials-results" class="kb-list live-search-results">
+      {% include "cabinet/tutorials_rows.html" %}
+    </div>
   </div>
 </div>
 {% endblock %}

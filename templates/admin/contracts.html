@@ -1,15 +1,17 @@
 {% extends "base.html" %}
 {% from "macros/forms.html" import csrf_field %}
+{% from "macros/live_search.html" import live_search_panel %}
 {% block title %}Договоры{% endblock %}
 {% block content %}
 <div class="container">
   <div class="page-header"><h1>Договоры</h1></div>
-  <div class="card table-wrap">
+  <div class="card table-wrap live-search-root" data-mode="filter">
+    {{ live_search_panel('Поиск по номеру, организации…') }}
     <table>
       <thead><tr><th>№</th><th>Организация</th><th>Статус</th><th>Окончание</th><th>Мастер-ключ до</th><th></th></tr></thead>
-      <tbody>
+      <tbody data-live-search-list>
       {% for c in contracts %}
-      <tr>
+      <tr class="live-search-item" data-search-text="{{ c.number }} {{ c.organization.name }} {{ CONTRACT_STATUSES.get(c.status, c.status) }}">
         <td>{{ c.number }}</td>
         <td>{{ c.organization.name }}</td>
         <td><span class="badge status-{{ c.status }}">{{ CONTRACT_STATUSES.get(c.status, c.status) }}</span></td>
@@ -18,6 +20,7 @@
         <td><a href="{{ url_for('admin.contract_edit', cid=c.id) }}">SLA</a></td>
       </tr>
       {% endfor %}
+      <tr class="live-search-empty-row" hidden><td colspan="6" class="muted">Договоры не найдены</td></tr>
       </tbody>
     </table>
   </div>

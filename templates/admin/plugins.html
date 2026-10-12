@@ -1,5 +1,6 @@
 {% extends "base.html" %}
 {% from "macros/forms.html" import csrf_field %}
+{% from "macros/live_search.html" import live_search_panel %}
 {% block title %}Репозиторий плагинов{% endblock %}
 {% block content %}
 <div class="container">
@@ -9,9 +10,11 @@
       <p class="page-subtitle">Внутренний реестр модулей ЭМСТПН (TZ 3.8.1)</p>
     </div>
   </div>
-  <div class="card">
+  <div class="card live-search-root" data-mode="filter">
+    {{ live_search_panel('Поиск по названию, slug…') }}
+    <div data-live-search-list>
     {% for p in plugins %}
-    <div class="list-divider">
+    <div class="list-divider live-search-item" data-search-text="{{ p.name }} {{ p.slug }}">
       <div class="list-row">
         <div class="list-row-main">
           <strong>{{ p.name }}</strong>
@@ -25,6 +28,8 @@
     {% else %}
     <p class="muted">Плагины не зарегистрированы.</p>
     {% endfor %}
+    <p class="live-search-empty muted" hidden>Плагины не найдены.</p>
+    </div>
 
     <h3 class="mt-lg">Зарегистрировать плагин</h3>
     <form method="post" action="{{ url_for('admin.plugin_create') }}" class="form-row mt-sm">
