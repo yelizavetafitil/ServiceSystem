@@ -55,6 +55,7 @@ class Config:
     UPLOAD_SESSION_TTL_MINUTES = int(os.environ.get("UPLOAD_SESSION_TTL_MINUTES", "5"))
     WTF_CSRF_ENABLED = True
     WTF_CSRF_TIME_LIMIT = None
+    TEMPLATES_AUTO_RELOAD = os.environ.get("TEMPLATES_AUTO_RELOAD", "1") == "1"
 
     STORAGE_BACKEND = os.environ.get("STORAGE_BACKEND", "local")
     S3_BUCKET = os.environ.get("S3_BUCKET", "")

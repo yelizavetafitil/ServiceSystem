@@ -44,6 +44,15 @@ CMS_IMAGE_MAX_BYTES = 8 * 1024 * 1024
 bp = Blueprint("admin", __name__)
 
 
+@bp.after_request
+def admin_html_no_cache(response):
+    ct = (response.content_type or "").lower()
+    if "text/html" in ct:
+        response.headers["Cache-Control"] = "no-store, no-cache, must-revalidate, max-age=0"
+        response.headers["Pragma"] = "no-cache"
+    return response
+
+
 @bp.route("/")
 @login_required
 @admin_required
@@ -644,7 +653,7 @@ def _parse_directory_contact_form(form):
         "phone_extension": phone_extension,
         "phone_mobile": mobile,
         "email": email,
-        "sort_order": int(form.get("sort_order") or 0),
+        "sort_order": max(0, int(form.get("sort_order") or 0)),
         "is_published": True,
     }
 
@@ -662,16 +671,37 @@ def directory():
         .order_by(PhoneDirectoryDepartment.organization_id, PhoneDirectoryDepartment.sort_order)
         .all()
     )
+    archived_count = PhoneDirectoryContact.query.filter_by(is_active=False).count()
     ctx = dict(
         contacts=contacts,
         organizations=orgs,
         departments=departments,
         filter_org=org_id,
         search_q=q,
+        archived_count=archived_count,
     )
     if request.args.get("partial") == "1":
         return render_template("admin/directory_rows.html", **ctx)
     return render_template("admin/directory.html", **ctx)
+
+
+@bp.route("/directory/archive")
+@login_required
+@staff_required
+def directory_archive():
+    org_id = request.args.get("org", type=int)
+    q = (request.args.get("q") or "").strip()
+    contacts = staff_directory_query(org_id=org_id, q=q or None, archived=True).all()
+    orgs = Organization.query.order_by(Organization.name).all()
+    ctx = dict(
+        contacts=contacts,
+        organizations=orgs,
+        filter_org=org_id,
+        search_q=q,
+    )
+    if request.args.get("partial") == "1":
+        return render_template("admin/directory_archive_rows.html", **ctx)
+    return render_template("admin/directory_archive.html", **ctx)
 
 
 @bp.route("/directory/departments", methods=["POST"])
@@ -850,27 +880,83 @@ def _directory_vcard_text(contact: PhoneDirectoryContact) -> str:
     )
 
 
+def _directory_export_contacts():
+    """Same filter as GET /directory list."""
+    org_raw = (request.args.get("org") or "").strip()
+    org_id = int(org_raw) if org_raw.isdigit() else None
+    q = (request.args.get("q") or "").strip() or None
+    return staff_directory_query(org_id=org_id, q=q).all()
+
+
+def _directory_vcard_entries(contacts: list[PhoneDirectoryContact]) -> list[tuple[str, str]]:
+    """(archive_filename, vcard_text) for each exportable contact."""
+    entries: list[tuple[str, str]] = []
+    for i, contact in enumerate(contacts, 1):
+        if not (contact.full_name or "").strip():
+            continue
+        try:
+            text = _directory_vcard_text(contact).strip("\r\n")
+        except ValueError:
+            continue
+        entries.append((f"{i:03d}_{safe_vcf_filename(contact.full_name, contact.id)}", text))
+    return entries
+
+
+def _directory_vcard_bundle(entries: list[tuple[str, str]]) -> str:
+    return "\r\n\r\n".join(text for _, text in entries) + ("\r\n" if entries else "")
+
+
+def _directory_vcard_zip(entries: list[tuple[str, str]]):
+    import zipfile
+    from io import BytesIO
+
+    buf = BytesIO()
+    with zipfile.ZipFile(buf, "w", zipfile.ZIP_DEFLATED) as zf:
+        for name, text in entries:
+            zf.writestr(name, text.encode("utf-8"))
+    buf.seek(0)
+    return buf
+
+
 @bp.route("/directory/export.vcf")
 @login_required
 @staff_required
 def directory_export_vcf():
-    org_id = request.args.get("org", type=int)
+    org_raw = (request.args.get("org") or "").strip()
+    org_id = int(org_raw) if org_raw.isdigit() else None
     q = (request.args.get("q") or "").strip()
-    items = staff_directory_query(org_id=org_id, q=q or None).all()
+    items = _directory_export_contacts()
     if not items:
         flash("Нет контактов для выгрузки.", "warning")
         return redirect(url_for("admin.directory", org=org_id or "", q=q))
     from io import BytesIO
 
-    body = "".join(_directory_vcard_text(c) for c in items)
-    buf = BytesIO(body.encode("utf-8"))
-    buf.seek(0)
-    return send_file(
-        buf,
-        mimetype="text/vcard; charset=utf-8",
-        as_attachment=True,
-        download_name="spravochnik_zakazchikov.vcf",
-    )
+    entries = _directory_vcard_entries(items)
+    card_count = len(entries)
+    if card_count == 0:
+        flash("Нет контактов для выгрузки.", "warning")
+        return redirect(url_for("admin.directory", org=org_id or "", q=q))
+
+    if card_count > 1:
+        buf = _directory_vcard_zip(entries)
+        resp = send_file(
+            buf,
+            mimetype="application/zip",
+            as_attachment=True,
+            download_name=f"spravochnik_{card_count}_kontaktov.zip",
+        )
+    else:
+        body = _directory_vcard_bundle(entries)
+        buf = BytesIO(body.encode("utf-8"))
+        buf.seek(0)
+        resp = send_file(
+            buf,
+            mimetype="text/vcard; charset=utf-8",
+            as_attachment=True,
+            download_name=entries[0][0],
+        )
+    resp.headers["X-Contact-Count"] = str(card_count)
+    return resp
 
 
 @bp.route("/directory/<int:cid>")
@@ -920,6 +1006,30 @@ def directory_vcf(cid):
         as_attachment=True,
         download_name=safe_vcf_filename(contact.full_name, contact.id),
     )
+
+
+@bp.route("/directory/<int:cid>/restore", methods=["POST"])
+@login_required
+@staff_required
+def directory_restore(cid):
+    contact = db.session.get(PhoneDirectoryContact, cid) or abort(404)
+    if contact.is_active:
+        flash("Контакт уже в активном справочнике.", "info")
+        return redirect(url_for("admin.directory"))
+    contact.is_active = True
+    db.session.commit()
+    log_audit(
+        current_user.id,
+        "directory_restore",
+        "phone_contact",
+        cid,
+        contact.full_name,
+    )
+    db.session.commit()
+    flash("Контакт восстановлен в справочник.", "success")
+    org = request.args.get("org", type=int)
+    q = (request.args.get("q") or "").strip()
+    return redirect(url_for("admin.directory_archive", org=org, q=q or None))
 
 
 @bp.route("/directory/<int:cid>/edit", methods=["GET", "POST"])

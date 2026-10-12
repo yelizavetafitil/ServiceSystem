@@ -1,0 +1,46 @@
+{% extends "base.html" %}
+{% from "macros/forms.html" import csrf_field %}
+{% from "macros/live_search.html" import live_search_input, live_search_reset, live_search_status %}
+{% block title %}Архив — справочник{% endblock %}
+{% block content %}
+<div class="container cms-page">
+  <div class="page-header">
+    <div class="page-header-main">
+      <h1>Архив контактов</h1>
+    </div>
+    <div class="page-header-actions">
+      <a href="{{ url_for('admin.directory') }}" class="btn btn-outline btn-sm">← Справочник</a>
+    </div>
+  </div>
+
+  <div class="live-search-root card mb-md directory-filters" data-mode="fetch"
+       data-url="{{ url_for('admin.directory_archive') }}"
+       data-target="#archive-results"
+       data-live-search-history="1">
+    <form method="get" action="{{ url_for('admin.directory_archive') }}" class="directory-filter-grid">
+      <div class="form-group">
+        <label>Поиск</label>
+        {{ live_search_input('ФИО, телефон, email…', search_q) }}
+      </div>
+      <div class="form-group">
+        <label>Организация</label>
+        <select name="org" class="form-control" data-live-search-field="org">
+          <option value="">Все</option>
+          {% for o in organizations %}
+          <option value="{{ o.id }}" {% if filter_org == o.id %}selected{% endif %}>{{ o.name }}</option>
+          {% endfor %}
+        </select>
+      </div>
+      <div class="form-group directory-filter-actions">
+        <label class="directory-filter-actions-label" aria-hidden="true">Действие</label>
+        {{ live_search_reset(compact=true) }}
+      </div>
+    </form>
+    {{ live_search_status() }}
+  </div>
+
+  <div id="archive-results" class="directory-results live-search-results">
+    {% include "admin/directory_archive_rows.html" %}
+  </div>
+</div>
+{% endblock %}

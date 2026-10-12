@@ -1,0 +1,24 @@
+{% from "macros/forms.html" import csrf_field %}
+{% for c in contacts %}
+<div class="card mb-md directory-result-row live-search-item" data-live-search-item>
+  <div class="list-row">
+    <span class="directory-row-num muted" aria-hidden="true">—</span>
+    <div class="list-row-main">
+      <strong class="directory-contact-title">{{ c.full_name|directory_text }}</strong>
+      <span class="muted directory-row-meta">
+        — {{ c.organization.name if c.organization else '—' }}{% if c.department %}, {{ c.department|directory_text }}{% endif %}
+        {% if c.position %} · {{ c.position|directory_text }}{% endif %}
+      </span>
+    </div>
+    <span class="directory-row-actions">
+      <form method="post" action="{{ url_for('admin.directory_restore', cid=c.id, org=filter_org if filter_org else none, q=search_q or none) }}" class="directory-restore-form">
+        {{ csrf_field() }}
+        <button type="submit" class="btn btn-outline btn-sm">Восстановить</button>
+      </form>
+    </span>
+  </div>
+  <p class="muted directory-row-phones">{{ c.phone_mobile }}{% if c.phone_internal or c.phone_extension %} · раб. {{ c|work_phone }}{% endif %}</p>
+</div>
+{% else %}
+<p class="muted directory-empty">В архиве контактов нет{% if search_q or filter_org %}. Сбросьте фильтр{% endif %}.</p>
+{% endfor %}

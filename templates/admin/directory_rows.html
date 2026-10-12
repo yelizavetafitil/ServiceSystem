@@ -1,6 +1,7 @@
 {% for c in contacts %}
 <div class="card mb-md directory-result-row live-search-item" data-live-search-item>
   <div class="list-row">
+    <span class="directory-row-num" aria-label="Номер по порядку">{% if c.sort_order > 0 %}{{ c.sort_order }}{% else %}{{ loop.index }}{% endif %}</span>
     <div class="list-row-main">
       <strong class="directory-contact-title">{{ c.full_name|directory_text }}</strong>
       <span class="muted directory-row-meta">

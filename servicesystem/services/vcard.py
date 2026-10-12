@@ -180,6 +180,13 @@ def _format_name_from_n(n_val: str) -> str:
     return (family or given).strip()
 
 
+def directory_fio_from_n(n_val: str) -> str:
+    """vCard N → «Фамилия Имя Отчество» for directory storage and sorting."""
+    segs = n_val.split(";")
+    parts = [(segs[i] if len(segs) > i else "").strip() for i in range(3)]
+    return " ".join(p for p in parts if p).strip()
+
+
 def repair_quoted_printable_text(text: str | None) -> str:
     """Decode mistaken raw quoted-printable stored in contact fields."""
     if not text or "=" not in text:
@@ -218,10 +225,10 @@ def _parse_property_block(block: str) -> ParsedVCard | None:
         props.setdefault(key_upper, []).append((key_part, decoded))
 
     fn = ""
-    if "FN" in props and props["FN"]:
+    if "N" in props and props["N"]:
+        fn = directory_fio_from_n(props["N"][0][1])
+    elif "FN" in props and props["FN"]:
         fn = props["FN"][0][1].strip()
-    elif "N" in props and props["N"]:
-        fn = _format_name_from_n(props["N"][0][1])
     if not fn:
         return None
 

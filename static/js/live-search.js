@@ -40,15 +40,28 @@
     return { q, params };
   }
 
+  var FILTER_PARAM_KEYS = ['q', 'org', 'user_id', 'action'];
+
+  function applyFilterParams(url, params) {
+    FILTER_PARAM_KEYS.forEach(function (k) {
+      if (params.has(k)) url.searchParams.set(k, params.get(k));
+      else url.searchParams.delete(k);
+    });
+  }
+
   function syncHistory(root, params) {
     if (root.dataset.liveSearchHistory !== '1') return;
     const base = root.dataset.url || window.location.pathname;
     const u = new URL(base, window.location.origin);
-    params.forEach(function (v, k) {
-      u.searchParams.set(k, v);
-    });
-    if (!params.has('q')) u.searchParams.delete('q');
+    applyFilterParams(u, params);
     window.history.replaceState({}, '', u.pathname + u.search);
+  }
+
+  function updateExportVcfLabel(count) {
+    document.querySelectorAll('[data-live-search-export-vcf]').forEach(function (link) {
+      link.textContent =
+        count > 0 ? 'Скачать контакты (' + count + ')' : 'Скачать контакты (фильтр)';
+    });
   }
 
   function syncLinkedHrefs(root, params) {
@@ -57,10 +70,7 @@
     document.querySelectorAll(sel).forEach(function (link) {
       try {
         const u = new URL(link.getAttribute('href'), window.location.origin);
-        ['q', 'org', 'user_id', 'action'].forEach(function (k) {
-          if (params.has(k)) u.searchParams.set(k, params.get(k));
-          else u.searchParams.delete(k);
-        });
+        applyFilterParams(u, params);
         link.setAttribute('href', u.pathname + u.search);
       } catch (_) {
         /* ignore */
@@ -107,6 +117,7 @@
         } else {
           setStatus(root, count ? 'Найдено: ' + count : 'Ничего не найдено');
         }
+        updateExportVcfLabel(count);
       } catch (_) {
         if (id !== seq) return;
         setStatus(root, 'Не удалось обновить список.');
@@ -131,6 +142,15 @@
       e.preventDefault();
       run();
     });
+
+    const { params } = collectParams(root);
+    syncLinkedHrefs(root, params);
+    if (root.dataset.liveSearchLinks) {
+      const n = document.querySelectorAll(
+        (root.dataset.target || '') + ' [data-live-search-item]'
+      ).length;
+      updateExportVcfLabel(n);
+    }
   }
 
   function initFilter(root) {

@@ -8,7 +8,7 @@
   <link rel="icon" href="{{ url_for('static', filename='img/belnipi-logo.png') }}?v=19" type="image/png">
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="{{ url_for('static', filename='css/main.css') }}?v=42">
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/main.css') }}?v=45">
   {% block head %}{% endblock %}
 </head>
 <body class="{% if not current_user.is_authenticated %}auth-body{% endif %}">
@@ -78,7 +78,7 @@
   </main>
 </div>
 <script src="{{ url_for('static', filename='js/app.js') }}?v=7"></script>
-<script src="{{ url_for('static', filename='js/live-search.js') }}?v=7"></script>
+<script src="{{ url_for('static', filename='js/live-search.js') }}?v=9"></script>
 <script>
 document.querySelectorAll('form[method="post"]').forEach(function(form) {
   form.addEventListener('submit', function() {

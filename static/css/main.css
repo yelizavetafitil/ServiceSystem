@@ -1227,7 +1227,17 @@ body.modal-open { overflow: hidden; }
 }
 .directory-dept-list { margin: 12px 0 0; padding-left: 18px; font-size: 13px; }
 .directory-deactivate-form { margin-top: 20px; padding-top: 16px; border-top: 1px solid var(--border); }
-.directory-row-actions { display: flex; flex-wrap: wrap; gap: 6px; }
+.directory-row-num {
+  flex: 0 0 auto;
+  min-width: 2rem;
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--muted);
+  line-height: 1.4;
+  padding-top: 2px;
+}
+.directory-row-actions { display: flex; flex-wrap: wrap; gap: 6px; align-items: flex-start; }
+.directory-restore-form { margin: 0; }
 .directory-row-phones { margin: 8px 0 0; font-size: 13px; padding-left: 2px; }
 .directory-results {
   margin-bottom: 16px;

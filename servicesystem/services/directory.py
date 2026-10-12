@@ -1,15 +1,23 @@
 """Phone directory queries (staff-only internal module)."""
 from __future__ import annotations
 
-from sqlalchemy import or_
+from sqlalchemy import case, func, or_
 
 from servicesystem.models import Organization, PhoneDirectoryContact
 
 
-def staff_directory_query(*, org_id: int | None = None, q: str | None = None, active_only: bool = True):
-    qry = PhoneDirectoryContact.query
-    if active_only:
-        qry = qry.filter_by(is_active=True)
+def _surname_sort_key(column):
+    """First token of full_name (Фамилия Имя …)."""
+    return func.lower(func.trim(func.split_part(column, " ", 1)))
+
+
+def staff_directory_query(
+    *,
+    org_id: int | None = None,
+    q: str | None = None,
+    archived: bool = False,
+):
+    qry = PhoneDirectoryContact.query.filter_by(is_active=not archived)
     if org_id:
         qry = qry.filter(PhoneDirectoryContact.organization_id == org_id)
     if q:
@@ -24,9 +32,14 @@ def staff_directory_query(*, org_id: int | None = None, q: str | None = None, ac
                 PhoneDirectoryContact.phone_mobile.ilike(term),
             )
         )
+    manual_rank = case(
+        (PhoneDirectoryContact.sort_order > 0, PhoneDirectoryContact.sort_order),
+        else_=1_000_000,
+    )
     return qry.order_by(
         PhoneDirectoryContact.organization_id,
-        PhoneDirectoryContact.sort_order,
+        manual_rank,
+        _surname_sort_key(PhoneDirectoryContact.full_name),
         PhoneDirectoryContact.full_name,
     )
 
