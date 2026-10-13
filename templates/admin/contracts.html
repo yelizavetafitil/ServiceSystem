@@ -24,6 +24,7 @@
       </tbody>
     </table>
   </div>
+
   <div class="card" style="margin-top:16px">
     <h3>Новый договор</h3>
     <form method="post" action="{{ url_for('admin.contract_create') }}">
@@ -41,12 +42,55 @@
       </div>
       <button class="btn btn-primary" style="margin-top:10px">Создать</button>
     </form>
+  </div>
+
+  <div class="card" style="margin-top:16px">
+    <h3>Организации</h3>
+    <p class="hint">Добавление и удаление — только у администратора. Организации связаны с договорами и справочником; удалить можно только пустую запись.</p>
+    <div class="table-wrap">
+      <table>
+        <thead>
+          <tr>
+            <th>Название</th>
+            <th>Код</th>
+            <th>Договоров</th>
+            <th></th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for o in orgs %}
+          <tr>
+            <td>{{ o.name }}</td>
+            <td class="muted">{{ o.short_name or '—' }}</td>
+            <td>{{ o.contracts.count() }}</td>
+            <td>
+              {% set blockers = org_blockers.get(o.id, []) %}
+              {% if blockers %}
+              <span class="muted" title="Привязки: {{ blockers|join(', ') }}">Удалить нельзя</span>
+              {% else %}
+              <form method="post" action="{{ url_for('admin.org_delete', oid=o.id) }}" class="inline-form"
+                    data-confirm="Удалить организацию «{{ o.name }}»?"
+                    data-confirm-title="Удаление организации"
+                    data-confirm-ok="Удалить"
+                    data-confirm-danger>
+                {{ csrf_field() }}
+                <button type="submit" class="btn btn-outline btn-sm btn-danger-text">Удалить</button>
+              </form>
+              {% endif %}
+            </td>
+          </tr>
+          {% else %}
+          <tr><td colspan="4" class="muted">Организаций пока нет</td></tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
     <form method="post" action="{{ url_for('admin.org_create') }}" style="margin-top:16px">
       {{ csrf_field() }}
       <div class="form-row">
-        <input name="name" class="form-control" placeholder="Новая организация" required>
-        <input name="short_name" class="form-control" placeholder="short_name">
-        <button class="btn btn-outline">+ Организация</button>
+        <input name="name" class="form-control" placeholder="Название организации" required>
+        <input name="short_name" class="form-control" placeholder="Код (short_name)">
+        <button class="btn btn-outline">Добавить организацию</button>
       </div>
     </form>
   </div>

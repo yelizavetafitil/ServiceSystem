@@ -71,13 +71,36 @@ def dashboard():
     return render_template("admin/dashboard.html", stats=stats, expiring=expiring)
 
 
+def _organization_delete_blockers(org: Organization) -> list[str]:
+    blockers: list[str] = []
+    n_contracts = org.contracts.count()
+    if n_contracts:
+        blockers.append(f"договоров: {n_contracts}")
+    n_contacts = PhoneDirectoryContact.query.filter_by(organization_id=org.id).count()
+    if n_contacts:
+        blockers.append(f"контактов в справочнике: {n_contacts}")
+    n_depts = PhoneDirectoryDepartment.query.filter_by(organization_id=org.id).count()
+    if n_depts:
+        blockers.append(f"подразделений: {n_depts}")
+    n_users = User.query.filter_by(organization_id=org.id).count()
+    if n_users:
+        blockers.append(f"пользователей: {n_users}")
+    return blockers
+
+
 @bp.route("/contracts")
 @login_required
 @admin_required
 def contracts():
     items = Contract.query.join(Organization).order_by(Contract.number).all()
     orgs = Organization.query.order_by(Organization.name).all()
-    return render_template("admin/contracts.html", contracts=items, orgs=orgs)
+    org_blockers = {o.id: _organization_delete_blockers(o) for o in orgs}
+    return render_template(
+        "admin/contracts.html",
+        contracts=items,
+        orgs=orgs,
+        org_blockers=org_blockers,
+    )
 
 
 @bp.route("/contracts/create", methods=["POST"])
@@ -623,6 +646,20 @@ def news_edit(nid):
     return render_template("admin/news_edit.html", item=post)
 
 
+def _directory_form_context(org_id: int | None = None) -> dict:
+    orgs = Organization.query.order_by(Organization.name).all()
+    departments = (
+        PhoneDirectoryDepartment.query.filter_by(is_active=True)
+        .order_by(PhoneDirectoryDepartment.organization_id, PhoneDirectoryDepartment.sort_order)
+        .all()
+    )
+    return {
+        "organizations": orgs,
+        "departments": departments,
+        "filter_org": org_id,
+    }
+
+
 def _directory_departments_for_org(org_id: int):
     return (
         PhoneDirectoryDepartment.query.filter_by(organization_id=org_id, is_active=True)
@@ -666,16 +703,10 @@ def directory():
     q = (request.args.get("q") or "").strip()
     contacts = staff_directory_query(org_id=org_id, q=q or None).all()
     orgs = Organization.query.order_by(Organization.name).all()
-    departments = (
-        PhoneDirectoryDepartment.query.filter_by(is_active=True)
-        .order_by(PhoneDirectoryDepartment.organization_id, PhoneDirectoryDepartment.sort_order)
-        .all()
-    )
     archived_count = PhoneDirectoryContact.query.filter_by(is_active=False).count()
     ctx = dict(
         contacts=contacts,
         organizations=orgs,
-        departments=departments,
         filter_org=org_id,
         search_q=q,
         archived_count=archived_count,
@@ -704,6 +735,40 @@ def directory_archive():
     return render_template("admin/directory_archive.html", **ctx)
 
 
+@bp.route("/directory/import", methods=["GET"])
+@login_required
+@staff_required
+def directory_import():
+    org_id = request.args.get("org", type=int)
+    return render_template("admin/directory_import.html", **_directory_form_context(org_id))
+
+
+@bp.route("/directory/new", methods=["GET", "POST"])
+@login_required
+@staff_required
+def directory_new():
+    org_id = request.args.get("org", type=int) if request.method == "GET" else request.form.get("organization_id", type=int)
+    if request.method == "POST":
+        try:
+            data = _parse_directory_contact_form(request.form)
+        except (ValueError, KeyError) as exc:
+            flash(str(exc) if str(exc) else "Заполните обязательные поля.", "danger")
+            ctx = _directory_form_context(org_id)
+            return render_template("admin/directory_new.html", **ctx)
+        if not data["full_name"]:
+            flash("Укажите ФИО.", "danger")
+            ctx = _directory_form_context(org_id)
+            return render_template("admin/directory_new.html", **ctx)
+        contact = PhoneDirectoryContact(**data, author_id=current_user.id)
+        db.session.add(contact)
+        db.session.commit()
+        log_audit(current_user.id, "directory_create", "phone_contact", contact.id, data["full_name"])
+        db.session.commit()
+        flash("Контакт добавлен.", "success")
+        return redirect(url_for("admin.directory_edit", cid=contact.id))
+    return render_template("admin/directory_new.html", **_directory_form_context(org_id))
+
+
 @bp.route("/directory/departments", methods=["POST"])
 @login_required
 @staff_required
@@ -712,36 +777,15 @@ def directory_department_create():
     name = request.form["name"].strip()
     if not name:
         flash("Укажите название подразделения.", "danger")
-        return redirect(url_for("admin.directory"))
+        return redirect(url_for("admin.directory_import"))
     dept = PhoneDirectoryDepartment(organization_id=org_id, name=name)
     db.session.add(dept)
     db.session.commit()
     flash("Подразделение добавлено.", "success")
-    return redirect(url_for("admin.directory", org=org_id))
+    return redirect(url_for("admin.directory_import", org=org_id))
 
 
-@bp.route("/directory/create", methods=["POST"])
-@login_required
-@staff_required
-def directory_create():
-    try:
-        data = _parse_directory_contact_form(request.form)
-    except (ValueError, KeyError) as exc:
-        flash(str(exc) if str(exc) else "Заполните обязательные поля.", "danger")
-        return redirect(url_for("admin.directory"))
-    if not data["full_name"]:
-        flash("Укажите ФИО.", "danger")
-        return redirect(url_for("admin.directory"))
-    contact = PhoneDirectoryContact(**data, author_id=current_user.id)
-    db.session.add(contact)
-    db.session.commit()
-    log_audit(current_user.id, "directory_create", "phone_contact", contact.id, data["full_name"])
-    db.session.commit()
-    flash("Контакт добавлен.", "success")
-    return redirect(url_for("admin.directory_edit", cid=contact.id))
-
-
-@bp.route("/directory/import", methods=["POST"])
+@bp.route("/directory/import/vcf", methods=["POST"])
 @login_required
 @staff_required
 def directory_import_vcf():
@@ -750,7 +794,7 @@ def directory_import_vcf():
     upload = request.files.get("vcf_file")
     if not org_id or not upload or not upload.filename:
         flash("Выберите организацию и файл .vcf.", "danger")
-        return redirect(url_for("admin.directory"))
+        return redirect(url_for("admin.directory_import"))
     raw = upload.read(2 * 1024 * 1024)
     text = None
     for enc in ("utf-8-sig", "utf-8", "cp1251", "latin-1"):
@@ -764,7 +808,7 @@ def directory_import_vcf():
     parsed = parse_vcf_text(text)
     if not parsed:
         flash("В файле не найдено контактов vCard.", "warning")
-        return redirect(url_for("admin.directory"))
+        return redirect(url_for("admin.directory_import"))
     created = 0
     for item in parsed:
         db.session.add(
@@ -795,6 +839,14 @@ def directory_import_vcf():
     return redirect(url_for("admin.directory", org=org_id))
 
 
+@bp.route("/directory/create", methods=["POST"])
+@login_required
+@staff_required
+def directory_create_legacy():
+    """Старые формы с action=/directory/create."""
+    return directory_new()
+
+
 def _directory_resolve_org_id(name: str | None, default_org_id: int) -> int:
     if not name or not name.strip():
         return default_org_id
@@ -815,7 +867,7 @@ def directory_import_csv():
     upload = request.files.get("csv_file")
     if not org_id or not upload or not upload.filename:
         flash("Выберите организацию по умолчанию и файл CSV.", "danger")
-        return redirect(url_for("admin.directory"))
+        return redirect(url_for("admin.directory_import"))
     raw = upload.read(5 * 1024 * 1024)
     text = None
     for enc in ("utf-8-sig", "utf-8", "cp1251"):
@@ -830,10 +882,10 @@ def directory_import_csv():
         rows = parse_directory_csv(text, default_department=default_department)
     except ValueError as exc:
         flash(str(exc), "danger")
-        return redirect(url_for("admin.directory"))
+        return redirect(url_for("admin.directory_import"))
     if not rows:
         flash("В CSV не найдено строк с ФИО.", "warning")
-        return redirect(url_for("admin.directory"))
+        return redirect(url_for("admin.directory_import"))
     created = 0
     for row in rows:
         target_org = _directory_resolve_org_id(row.organization_name, org_id)
@@ -1200,10 +1252,39 @@ def audit():
 @login_required
 @admin_required
 def org_create():
-    db.session.add(Organization(
-        name=request.form["name"],
-        short_name=request.form.get("short_name"),
-    ))
+    name = (request.form.get("name") or "").strip()
+    short_name = (request.form.get("short_name") or "").strip() or None
+    if not name:
+        flash("Укажите название организации.", "danger")
+        return redirect(url_for("admin.contracts"))
+    if Organization.query.filter(Organization.name.ilike(name)).first():
+        flash("Организация с таким названием уже есть.", "warning")
+        return redirect(url_for("admin.contracts"))
+    org = Organization(name=name, short_name=short_name)
+    db.session.add(org)
+    db.session.commit()
+    log_audit(current_user.id, "organization_create", "organization", org.id, name)
     db.session.commit()
     flash("Организация добавлена.", "success")
+    return redirect(url_for("admin.contracts"))
+
+
+@bp.route("/organizations/<int:oid>/delete", methods=["POST"])
+@login_required
+@admin_required
+def org_delete(oid):
+    org = db.session.get(Organization, oid) or abort(404)
+    blockers = _organization_delete_blockers(org)
+    if blockers:
+        flash(
+            "Нельзя удалить организацию — есть привязки: " + ", ".join(blockers) + ".",
+            "danger",
+        )
+        return redirect(url_for("admin.contracts"))
+    name = org.name
+    db.session.delete(org)
+    db.session.commit()
+    log_audit(current_user.id, "organization_delete", "organization", oid, name)
+    db.session.commit()
+    flash(f"Организация «{name}» удалена.", "success")
     return redirect(url_for("admin.contracts"))

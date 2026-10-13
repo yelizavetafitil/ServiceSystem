@@ -48,7 +48,11 @@
         <a href="{{ url_for('admin.directory_detail', cid=contact.id) }}" class="btn btn-outline">QR / vCard</a>
       </div>
     </form>
-    <form method="post" class="directory-deactivate-form" onsubmit="return confirm('Перенести контакт в архив?');">
+    <form method="post" class="directory-deactivate-form"
+          data-confirm="Перенести контакт в архив?"
+          data-confirm-title="Архив контакта"
+          data-confirm-ok="В архив"
+          data-confirm-danger>
       {{ csrf_field() }}
       <input type="hidden" name="action" value="archive">
       <button type="submit" class="btn btn-outline btn-danger-text">В архив</button>

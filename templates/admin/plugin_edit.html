@@ -59,7 +59,11 @@
           <td class="muted" style="max-width:240px">{{ (v.changelog_md or '')[:80] }}{% if v.changelog_md and v.changelog_md|length > 80 %}…{% endif %}</td>
           <td>
             {% if not v.is_current %}
-            <form method="post" action="{{ url_for('admin.plugin_version_rollback', pid=plugin.id, vid=v.id) }}" style="display:inline" onsubmit="return confirm('Откатить к v{{ v.version }}?')">
+            <form method="post" action="{{ url_for('admin.plugin_version_rollback', pid=plugin.id, vid=v.id) }}" style="display:inline"
+                  data-confirm="Откатить к v{{ v.version }}?"
+                  data-confirm-title="Откат версии"
+                  data-confirm-ok="Откатить"
+                  data-confirm-danger>
               {{ csrf_field() }}
               <button class="btn btn-outline btn-sm">Откатить</button>
             </form>

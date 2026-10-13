@@ -8,7 +8,7 @@
   <link rel="icon" href="{{ url_for('static', filename='img/belnipi-logo.png') }}?v=19" type="image/png">
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="{{ url_for('static', filename='css/main.css') }}?v=45">
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/main.css') }}?v=46">
   {% block head %}{% endblock %}
 </head>
 <body class="{% if not current_user.is_authenticated %}auth-body{% endif %}">
@@ -77,7 +77,18 @@
     {% block content %}{% endblock %}
   </main>
 </div>
+<div class="modal" id="ss-confirm-modal" aria-modal="true" role="dialog" aria-labelledby="ss-confirm-title">
+  <div class="modal-content modal-content--confirm">
+    <h3 id="ss-confirm-title">Подтверждение</h3>
+    <p id="ss-confirm-message" class="ss-confirm-message"></p>
+    <div class="modal-actions">
+      <button type="button" class="btn btn-primary" id="ss-confirm-ok">Подтвердить</button>
+      <button type="button" class="btn btn-outline" id="ss-confirm-cancel">Отмена</button>
+    </div>
+  </div>
+</div>
 <script src="{{ url_for('static', filename='js/app.js') }}?v=7"></script>
+<script src="{{ url_for('static', filename='js/confirm-dialog.js') }}?v=1"></script>
 <script src="{{ url_for('static', filename='js/live-search.js') }}?v=9"></script>
 <script>
 document.querySelectorAll('form[method="post"]').forEach(function(form) {

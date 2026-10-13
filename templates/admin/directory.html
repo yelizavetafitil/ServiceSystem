@@ -1,5 +1,4 @@
 {% extends "base.html" %}
-{% from "macros/forms.html" import csrf_field %}
 {% from "macros/live_search.html" import live_search_input, live_search_reset, live_search_status %}
 {% block title %}Справочник заказчиков{% endblock %}
 {% block content %}
@@ -9,6 +8,8 @@
       <h1>Справочник заказчиков</h1>
     </div>
     <div class="page-header-actions">
+      <a href="{{ url_for('admin.directory_new', org=filter_org if filter_org else none) }}" class="btn btn-primary btn-sm">Добавить контакт</a>
+      <a href="{{ url_for('admin.directory_import') }}" class="btn btn-outline btn-sm">Импорт</a>
       <a id="directory-export-vcf" data-live-search-export-vcf href="{{ url_for('admin.directory_export_vcf', org=filter_org if filter_org else none, q=search_q or none) }}" class="btn btn-outline btn-sm" title="Несколько контактов — ZIP с отдельными .vcf (Windows «Люди» берёт из одного файла только первый). Один контакт — один .vcf.">Скачать контакты ({{ contacts|length }})</a>
       <a href="{{ url_for('admin.directory_archive') }}" class="btn btn-outline btn-sm">Архив{% if archived_count %} ({{ archived_count }}){% endif %}</a>
       {% if current_user.is_admin %}<a href="{{ url_for('admin.audit') }}?action=directory_update" class="btn btn-outline btn-sm">Журнал изменений</a>{% endif %}
@@ -44,148 +45,6 @@
 
   <div id="directory-results" class="directory-results live-search-results">
     {% include "admin/directory_rows.html" %}
-  </div>
-
-  <div class="card cms-editor-card mb-md">
-    <h2 class="section-title">Импорт CSV (Excel → «CSV UTF-8»)</h2>
-    <form method="post" action="{{ url_for('admin.directory_import_csv') }}" enctype="multipart/form-data">
-      {{ csrf_field() }}
-      <div class="cms-meta-grid">
-        <div class="form-group">
-          <label>Организация по умолчанию *</label>
-          <select name="organization_id" class="form-control" required>
-            {% for o in organizations %}
-            <option value="{{ o.id }}" {% if filter_org == o.id %}selected{% endif %}>{{ o.name }}</option>
-            {% endfor %}
-          </select>
-        </div>
-        <div class="form-group">
-          <label>Подразделение по умолчанию</label>
-          <input name="default_department" class="form-control" value="Импорт">
-        </div>
-        <div class="form-group cms-meta-grid-full">
-          <label>Файл .csv *</label>
-          <input type="file" name="csv_file" accept=".csv,text/csv" class="form-control" required>
-        </div>
-      </div>
-      <div class="form-actions">
-        <button class="btn btn-outline">Импортировать CSV</button>
-      </div>
-    </form>
-  </div>
-
-  <div class="card cms-editor-card mb-md">
-    <h2 class="section-title">Импорт vCard (.vcf)</h2>
-    <form method="post" action="{{ url_for('admin.directory_import_vcf') }}" enctype="multipart/form-data">
-      {{ csrf_field() }}
-      <div class="cms-meta-grid">
-        <div class="form-group">
-          <label>Организация для импорта *</label>
-          <select name="organization_id" class="form-control" required>
-            {% for o in organizations %}
-            <option value="{{ o.id }}" {% if filter_org == o.id %}selected{% endif %}>{{ o.name }}</option>
-            {% endfor %}
-          </select>
-        </div>
-        <div class="form-group">
-          <label>Подразделение по умолчанию</label>
-          <input name="default_department" class="form-control" value="Импорт" placeholder="Если в vCard нет ORG">
-        </div>
-        <div class="form-group cms-meta-grid-full">
-          <label>Файл .vcf *</label>
-          <input type="file" name="vcf_file" accept=".vcf,text/vcard,text/x-vcard" class="form-control" required>
-        </div>
-      </div>
-      <div class="form-actions">
-        <button class="btn btn-outline">Импортировать</button>
-      </div>
-    </form>
-  </div>
-
-  <div class="card cms-editor-card mb-md">
-    <h2 class="section-title">Подразделение в справочнике</h2>
-    <form method="post" action="{{ url_for('admin.directory_department_create') }}">
-      {{ csrf_field() }}
-      <div class="cms-meta-grid">
-        <div class="form-group">
-          <label>Организация *</label>
-          <select name="organization_id" class="form-control" required>
-            {% for o in organizations %}
-            <option value="{{ o.id }}">{{ o.name }}</option>
-            {% endfor %}
-          </select>
-        </div>
-        <div class="form-group">
-          <label>Название подразделения *</label>
-          <input name="name" class="form-control" required placeholder="Отдел сопровождения ЭМСТПН">
-        </div>
-      </div>
-      <div class="form-actions">
-        <button class="btn btn-outline btn-sm">Добавить подразделение</button>
-      </div>
-    </form>
-    {% if departments %}
-    <ul class="directory-dept-list muted">
-      {% for d in departments %}
-      <li>{{ d.organization.name if d.organization else '—' }} — {{ d.name }}</li>
-      {% endfor %}
-    </ul>
-    {% endif %}
-  </div>
-
-  <div class="card cms-editor-card">
-    <h2 class="section-title">Новый контакт</h2>
-    <form method="post" action="{{ url_for('admin.directory_create') }}">
-      {{ csrf_field() }}
-      <div class="cms-meta-grid">
-        <div class="form-group">
-          <label>Организация *</label>
-          <select name="organization_id" class="form-control" required id="new-contact-org">
-            {% for o in organizations %}
-            <option value="{{ o.id }}" {% if filter_org == o.id %}selected{% endif %}>{{ o.name }}</option>
-            {% endfor %}
-          </select>
-        </div>
-        <div class="form-group">
-          <label>Подразделение / филиал</label>
-          <input name="department" class="form-control" list="dept-datalist" placeholder="РУП «…» филиал «…»">
-          <datalist id="dept-datalist">
-            {% for d in departments %}
-            <option value="{{ d.name }}">{{ d.organization.name if d.organization else '' }}</option>
-            {% endfor %}
-          </datalist>
-        </div>
-        <div class="form-group cms-meta-grid-full">
-          <label>ФИО *</label>
-          <input name="full_name" class="form-control" required placeholder="Иванов Иван Иванович">
-          <p class="hint">Сначала фамилия — по ней строится список и номер по порядку.</p>
-        </div>
-        <div class="form-group">
-          <label>Должность</label>
-          <input name="position" class="form-control">
-        </div>
-        <div class="form-group cms-meta-grid-full">
-          <label>Рабочий телефон</label>
-          <input name="phone_work" class="form-control" placeholder="+375 17 123-45-67, доб. 123">
-        </div>
-        <div class="form-group">
-          <label>Мобильный телефон *</label>
-          <input name="phone_mobile" class="form-control" required>
-        </div>
-        <div class="form-group">
-          <label>Корпоративный email</label>
-          <input name="email" type="email" class="form-control" placeholder="name@belnipi.by">
-        </div>
-        <div class="form-group">
-          <label>Номер по порядку</label>
-          <input name="sort_order" type="number" min="0" step="1" class="form-control" value="0">
-          <p class="hint">0 — по фамилии; укажите 1, 2… чтобы закрепить место в списке.</p>
-        </div>
-      </div>
-      <div class="form-actions">
-        <button class="btn btn-primary">Добавить контакт</button>
-      </div>
-    </form>
   </div>
 </div>
 {% endblock %}

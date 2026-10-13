@@ -80,7 +80,10 @@
       <h3>Видимость контента для договора</h3>
       <p class="hint">Скрытый контент не отображается в личном кабинете заказчика (TZ 3.3.6).</p>
       {% if org_contracts|length > 1 %}
-      <form method="post" action="{{ url_for('admin.contract_access_copy_org', cid=contract.id) }}" class="mb-md" onsubmit="return confirm('Скопировать настройки видимости на все договоры организации?')">
+      <form method="post" action="{{ url_for('admin.contract_access_copy_org', cid=contract.id) }}" class="mb-md"
+            data-confirm="Скопировать настройки видимости на все договоры организации?"
+            data-confirm-title="Копирование настроек"
+            data-confirm-ok="Скопировать">
         {{ csrf_field() }}
         <button type="submit" class="btn btn-outline btn-sm">Применить ко всем договорам организации ({{ org_contracts|length }})</button>
       </form>

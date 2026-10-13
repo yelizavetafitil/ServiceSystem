@@ -1,0 +1,95 @@
+{% extends "base.html" %}
+{% from "macros/forms.html" import csrf_field %}
+{% block title %}Импорт — справочник{% endblock %}
+{% block content %}
+<div class="container cms-page">
+  <a href="{{ url_for('admin.directory', org=filter_org if filter_org else none) }}" class="back-link">← Справочник</a>
+
+  <div class="card cms-editor-card mb-md">
+    <h2 class="section-title">Импорт CSV (Excel → «CSV UTF-8»)</h2>
+    <form method="post" action="{{ url_for('admin.directory_import_csv') }}" enctype="multipart/form-data">
+      {{ csrf_field() }}
+      <div class="cms-meta-grid">
+        <div class="form-group">
+          <label>Организация по умолчанию *</label>
+          <select name="organization_id" class="form-control" required>
+            {% for o in organizations %}
+            <option value="{{ o.id }}" {% if filter_org == o.id %}selected{% endif %}>{{ o.name }}</option>
+            {% endfor %}
+          </select>
+        </div>
+        <div class="form-group">
+          <label>Подразделение по умолчанию</label>
+          <input name="default_department" class="form-control" value="Импорт">
+        </div>
+        <div class="form-group cms-meta-grid-full">
+          <label>Файл .csv *</label>
+          <input type="file" name="csv_file" accept=".csv,text/csv" class="form-control" required>
+        </div>
+      </div>
+      <div class="form-actions">
+        <button class="btn btn-outline">Импортировать CSV</button>
+      </div>
+    </form>
+  </div>
+
+  <div class="card cms-editor-card mb-md">
+    <h2 class="section-title">Импорт vCard (.vcf)</h2>
+    <form method="post" action="{{ url_for('admin.directory_import_vcf') }}" enctype="multipart/form-data">
+      {{ csrf_field() }}
+      <div class="cms-meta-grid">
+        <div class="form-group">
+          <label>Организация для импорта *</label>
+          <select name="organization_id" class="form-control" required>
+            {% for o in organizations %}
+            <option value="{{ o.id }}" {% if filter_org == o.id %}selected{% endif %}>{{ o.name }}</option>
+            {% endfor %}
+          </select>
+        </div>
+        <div class="form-group">
+          <label>Подразделение по умолчанию</label>
+          <input name="default_department" class="form-control" value="Импорт" placeholder="Если в vCard нет ORG">
+        </div>
+        <div class="form-group cms-meta-grid-full">
+          <label>Файл .vcf *</label>
+          <input type="file" name="vcf_file" accept=".vcf,text/vcard,text/x-vcard" class="form-control" required>
+        </div>
+      </div>
+      <div class="form-actions">
+        <button class="btn btn-outline">Импортировать</button>
+      </div>
+    </form>
+  </div>
+
+  <div class="card cms-editor-card">
+    <h2 class="section-title">Подразделения в справочнике</h2>
+    <form method="post" action="{{ url_for('admin.directory_department_create') }}">
+      {{ csrf_field() }}
+      <div class="cms-meta-grid">
+        <div class="form-group">
+          <label>Организация *</label>
+          <select name="organization_id" class="form-control" required>
+            {% for o in organizations %}
+            <option value="{{ o.id }}">{{ o.name }}</option>
+            {% endfor %}
+          </select>
+        </div>
+        <div class="form-group">
+          <label>Название подразделения *</label>
+          <input name="name" class="form-control" required placeholder="Отдел сопровождения ЭМСТПН">
+        </div>
+      </div>
+      <div class="form-actions">
+        <button class="btn btn-outline btn-sm">Добавить подразделение</button>
+      </div>
+    </form>
+    {% if departments %}
+    <ul class="directory-dept-list muted">
+      {% for d in departments %}
+      <li>{{ d.organization.name if d.organization else '—' }} — {{ d.name }}</li>
+      {% endfor %}
+    </ul>
+    {% endif %}
+  </div>
+</div>
+{% endblock %}

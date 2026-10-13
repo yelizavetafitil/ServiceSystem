@@ -1270,6 +1270,14 @@ body.modal-open { overflow: hidden; }
 }
 .modal-content h3 { margin: 0 0 12px; font-size: 18px; font-weight: 700; color: var(--primary-dark); }
 .modal-actions { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 16px; }
+.modal-content--confirm { max-width: 420px; }
+.ss-confirm-message {
+  margin: 0;
+  font-size: 15px;
+  line-height: 1.5;
+  color: var(--text);
+}
+.inline-form { display: inline; margin: 0; }
 
 .prose .markdown-body h1, .prose .markdown-body h2, .prose .markdown-body h3 { margin: 16px 0 8px; color: var(--primary-dark); }
 .prose .markdown-body p, .prose .markdown-body li { margin-bottom: 8px; line-height: 1.7; }
