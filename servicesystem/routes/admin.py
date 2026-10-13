@@ -27,7 +27,7 @@ from servicesystem.models import (
 )
 from servicesystem.services.audit import log_audit, unique_filename
 from servicesystem.services.storage import get_storage
-from servicesystem.services.directory import staff_directory_query
+from servicesystem.services.directory import find_active_contact_by_mobile, staff_directory_query
 from servicesystem.services.directory_import import parse_directory_csv
 from servicesystem.services.directory_sync import log_directory_field_changes, snapshot_contact, sync_contact_to_user
 from servicesystem.services.phone_format import split_work_phone
@@ -69,6 +69,13 @@ def dashboard():
     ).order_by(Contract.service_end_date).limit(10).all()
     expiring = [c for c in expiring if c.days_until_expiry is not None and c.days_until_expiry <= 60]
     return render_template("admin/dashboard.html", stats=stats, expiring=expiring)
+
+
+def _organization_name_taken(name: str, exclude_id: int | None = None) -> bool:
+    q = Organization.query.filter(Organization.name.ilike(name))
+    if exclude_id is not None:
+        q = q.filter(Organization.id != exclude_id)
+    return q.first() is not None
 
 
 def _organization_delete_blockers(org: Organization) -> list[str]:
@@ -759,6 +766,14 @@ def directory_new():
             flash("Укажите ФИО.", "danger")
             ctx = _directory_form_context(org_id)
             return render_template("admin/directory_new.html", **ctx)
+        dup = find_active_contact_by_mobile(data["phone_mobile"])
+        if dup:
+            flash(
+                f"Контакт с таким мобильным уже есть: {dup.full_name}.",
+                "danger",
+            )
+            ctx = _directory_form_context(org_id)
+            return render_template("admin/directory_new.html", **ctx)
         contact = PhoneDirectoryContact(**data, author_id=current_user.id)
         db.session.add(contact)
         db.session.commit()
@@ -810,7 +825,12 @@ def directory_import_vcf():
         flash("В файле не найдено контактов vCard.", "warning")
         return redirect(url_for("admin.directory_import"))
     created = 0
+    skipped_dup = 0
     for item in parsed:
+        mobile = (item.phone_mobile or "").strip() or "—"
+        if mobile != "—" and find_active_contact_by_mobile(mobile):
+            skipped_dup += 1
+            continue
         db.session.add(
             PhoneDirectoryContact(
                 organization_id=org_id,
@@ -819,7 +839,7 @@ def directory_import_vcf():
                 position=repair_quoted_printable_text(item.position) if item.position else None,
                 phone_internal=item.phone_internal,
                 phone_extension=item.phone_extension,
-                phone_mobile=item.phone_mobile or "—",
+                phone_mobile=mobile,
                 email=item.email,
                 is_published=True,
                 author_id=current_user.id,
@@ -832,10 +852,13 @@ def directory_import_vcf():
         "directory_import",
         "phone_contact",
         None,
-        f"org={org_id}; count={created}; file={upload.filename}",
+        f"org={org_id}; count={created}; skipped_dup={skipped_dup}; file={upload.filename}",
     )
     db.session.commit()
-    flash(f"Импортировано контактов: {created}.", "success")
+    msg = f"Импортировано контактов: {created}."
+    if skipped_dup:
+        msg += f" Пропущено (такой мобильный уже есть): {skipped_dup}."
+    flash(msg, "success")
     return redirect(url_for("admin.directory", org=org_id))
 
 
@@ -887,7 +910,12 @@ def directory_import_csv():
         flash("В CSV не найдено строк с ФИО.", "warning")
         return redirect(url_for("admin.directory_import"))
     created = 0
+    skipped_dup = 0
     for row in rows:
+        mobile = (row.phone_mobile or "").strip() or "—"
+        if mobile != "—" and find_active_contact_by_mobile(mobile):
+            skipped_dup += 1
+            continue
         target_org = _directory_resolve_org_id(row.organization_name, org_id)
         work_main, work_ext = split_work_phone(row.phone_internal)
         db.session.add(
@@ -898,7 +926,7 @@ def directory_import_csv():
                 position=row.position,
                 phone_internal=work_main,
                 phone_extension=work_ext,
-                phone_mobile=row.phone_mobile or "—",
+                phone_mobile=mobile,
                 email=row.email,
                 is_published=True,
                 author_id=current_user.id,
@@ -911,10 +939,13 @@ def directory_import_csv():
         "directory_import_csv",
         "phone_contact",
         None,
-        f"default_org={org_id}; count={created}; file={upload.filename}",
+        f"default_org={org_id}; count={created}; skipped_dup={skipped_dup}; file={upload.filename}",
     )
     db.session.commit()
-    flash(f"Импортировано из CSV: {created}.", "success")
+    msg = f"Импортировано из CSV: {created}."
+    if skipped_dup:
+        msg += f" Пропущено (такой мобильный уже есть): {skipped_dup}."
+    flash(msg, "success")
     return redirect(url_for("admin.directory", org=org_id))
 
 
@@ -1115,6 +1146,13 @@ def directory_edit(cid):
         if not data["full_name"]:
             flash("Укажите ФИО.", "danger")
             return redirect(url_for("admin.directory_edit", cid=cid))
+        dup = find_active_contact_by_mobile(data["phone_mobile"], exclude_contact_id=cid)
+        if dup:
+            flash(
+                f"Контакт с таким мобильным уже есть: {dup.full_name}.",
+                "danger",
+            )
+            return redirect(url_for("admin.directory_edit", cid=cid))
         before = snapshot_contact(contact)
         for key, val in data.items():
             setattr(contact, key, val)
@@ -1257,7 +1295,7 @@ def org_create():
     if not name:
         flash("Укажите название организации.", "danger")
         return redirect(url_for("admin.contracts"))
-    if Organization.query.filter(Organization.name.ilike(name)).first():
+    if _organization_name_taken(name):
         flash("Организация с таким названием уже есть.", "warning")
         return redirect(url_for("admin.contracts"))
     org = Organization(name=name, short_name=short_name)
@@ -1267,6 +1305,37 @@ def org_create():
     db.session.commit()
     flash("Организация добавлена.", "success")
     return redirect(url_for("admin.contracts"))
+
+
+@bp.route("/organizations/<int:oid>/edit", methods=["GET", "POST"])
+@login_required
+@admin_required
+def org_edit(oid):
+    org = db.session.get(Organization, oid) or abort(404)
+    if request.method == "POST":
+        name = (request.form.get("name") or "").strip()
+        short_name = (request.form.get("short_name") or "").strip() or None
+        if not name:
+            flash("Укажите название организации.", "danger")
+            return render_template("admin/org_edit.html", org=org)
+        if _organization_name_taken(name, exclude_id=oid):
+            flash("Организация с таким названием уже есть.", "warning")
+            return render_template("admin/org_edit.html", org=org)
+        before = f"{org.name} ({org.short_name or '—'})"
+        org.name = name
+        org.short_name = short_name
+        db.session.commit()
+        log_audit(
+            current_user.id,
+            "organization_update",
+            "organization",
+            oid,
+            f"{before} → {name} ({short_name or '—'})",
+        )
+        db.session.commit()
+        flash("Организация обновлена.", "success")
+        return redirect(url_for("admin.contracts"))
+    return render_template("admin/org_edit.html", org=org)
 
 
 @bp.route("/organizations/<int:oid>/delete", methods=["POST"])

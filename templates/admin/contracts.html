@@ -46,7 +46,7 @@
 
   <div class="card" style="margin-top:16px">
     <h3>Организации</h3>
-    <p class="hint">Добавление и удаление — только у администратора. Организации связаны с договорами и справочником; удалить можно только пустую запись.</p>
+    <p class="hint">Добавление, изменение и удаление — только у администратора. Удалить можно только организацию без договоров, контактов и пользователей.</p>
     <div class="table-wrap">
       <table>
         <thead>
@@ -63,7 +63,8 @@
             <td>{{ o.name }}</td>
             <td class="muted">{{ o.short_name or '—' }}</td>
             <td>{{ o.contracts.count() }}</td>
-            <td>
+            <td class="directory-row-actions">
+              <a href="{{ url_for('admin.org_edit', oid=o.id) }}" class="btn btn-outline btn-sm">Изменить</a>
               {% set blockers = org_blockers.get(o.id, []) %}
               {% if blockers %}
               <span class="muted" title="Привязки: {{ blockers|join(', ') }}">Удалить нельзя</span>

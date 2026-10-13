@@ -4,6 +4,7 @@ from __future__ import annotations
 from sqlalchemy import case, func, or_
 
 from servicesystem.models import Organization, PhoneDirectoryContact
+from servicesystem.services.phone_format import mobile_keys_match
 
 
 def _surname_sort_key(column):
@@ -42,6 +43,20 @@ def staff_directory_query(
         _surname_sort_key(PhoneDirectoryContact.full_name),
         PhoneDirectoryContact.full_name,
     )
+
+
+def find_active_contact_by_mobile(
+    mobile: str,
+    *,
+    exclude_contact_id: int | None = None,
+) -> PhoneDirectoryContact | None:
+    qry = PhoneDirectoryContact.query.filter_by(is_active=True)
+    if exclude_contact_id is not None:
+        qry = qry.filter(PhoneDirectoryContact.id != exclude_contact_id)
+    for contact in qry:
+        if mobile_keys_match(mobile, contact.phone_mobile):
+            return contact
+    return None
 
 
 def customer_organizations_for_filter():
