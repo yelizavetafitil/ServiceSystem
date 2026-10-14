@@ -1,0 +1,32 @@
+{% extends "base.html" %}
+{% block title %}Проекты — канбан{% endblock %}
+{% block head %}
+<link rel="stylesheet" href="{{ url_for('static', filename='css/projects.css') }}?v=2">
+<script defer src="{{ url_for('static', filename='js/projects-kanban.js') }}?v=2"></script>
+<script defer src="{{ url_for('static', filename='js/projects-sla.js') }}?v=2"></script>
+{% endblock %}
+{% block content %}
+<div class="container cms-page projects-page">
+  {% include "projects/_arm_header.html" %}
+  <div class="projects-kanban" data-kanban-root>
+    {% for col in columns %}
+    <section class="projects-kanban-col" data-kanban-column="{{ col }}">
+      <h2 class="projects-kanban-col-title">{{ kanban_labels[col] }}</h2>
+      <div class="projects-kanban-drop" data-kanban-status="{{ col }}">
+        {% for t in grouped[col] %}
+        <article class="projects-kanban-card{% if t.priority >= 4 %} projects-kanban-card--critical{% elif t.priority >= 3 %} projects-kanban-card--high{% endif %}{% if t.is_critical_path %} projects-kanban-card--sla{% endif %}"
+                 draggable="true" data-task-id="{{ t.id }}" data-kanban-status="{{ col }}">
+          <a class="projects-kanban-card-title" href="{{ url_for('projects.task_detail', tid=t.id) }}">{{ t.title }}</a>
+          {% if t.project %}<p class="projects-kanban-meta">{{ t.project.name }}</p>{% endif %}
+          {% if t.due_date %}<p class="projects-kanban-due">до {{ t.due_date.strftime('%d.%m.%Y') }}{% if t.overdue_days %} · +{{ t.overdue_days }} д.{% endif %}</p>{% endif %}
+          {% if t.ticket and t.ticket.resolution_deadline %}
+          <p class="projects-sla-countdown" data-deadline="{{ t.ticket.resolution_deadline.isoformat() }}">Срок: …</p>
+          {% elif t.ticket_id and t.priority >= 3 %}<span class="projects-kanban-badge">Срочно</span>{% endif %}
+        </article>
+        {% endfor %}
+      </div>
+    </section>
+    {% endfor %}
+  </div>
+</div>
+{% endblock %}

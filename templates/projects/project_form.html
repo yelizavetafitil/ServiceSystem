@@ -1,0 +1,174 @@
+{% extends "base.html" %}
+
+{% from "macros/forms.html" import csrf_field %}
+
+{% block title %}Новый проект{% endblock %}
+
+{% block head %}<link rel="stylesheet" href="{{ url_for('static', filename='css/projects.css') }}?v=20">{% endblock %}
+
+{% block content %}
+
+<div class="container cms-page projects-cms">
+
+  <a href="{{ url_for('projects.manage_list') }}" class="back-link">← Проекты</a>
+
+  <div class="card projects-cms-card">
+
+    <h1 class="projects-cms-title">Новый проект</h1>
+
+    <p class="projects-cms-hint muted">
+
+      <strong>Шаблон проекта:</strong> сохраните типовой набор этапов и задач, затем разверните новый проект в один шаг —
+
+      скопируются этапы, кастомные поля, задачи и связи «блокирует».
+
+    </p>
+
+
+
+    <form method="post" class="projects-cms-form" id="project-create-form">
+
+      {{ csrf_field() }}
+
+
+
+      <fieldset class="projects-create-mode">
+
+        <legend class="projects-cms-subheading">Способ создания</legend>
+
+        <label class="radio-inline">
+
+          <input type="radio" name="create_mode" value="blank" {% if not preset_template_id %}checked{% endif %} data-mode-toggle="blank">
+
+          Пустой проект или новый шаблон
+
+        </label>
+
+        <label class="radio-inline">
+
+          <input type="radio" name="create_mode" value="from_template" {% if preset_template_id %}checked{% endif %} data-mode-toggle="from_template">
+
+          Из шаблона
+
+        </label>
+
+      </fieldset>
+
+
+
+      <div class="form-group projects-template-pick" data-mode-panel="from_template" {% if not preset_template_id %}hidden{% endif %}>
+
+        <label>Шаблон</label>
+
+        <select name="template_id" class="form-control" {% if templates %}required{% endif %}>
+
+          <option value="">— выберите —</option>
+
+          {% for t in templates %}
+
+          <option value="{{ t.id }}" {% if preset_template_id == t.id %}selected{% endif %}>{{ t.name }}</option>
+
+          {% endfor %}
+
+        </select>
+
+        {% if not templates %}
+
+        <p class="muted">Шаблонов пока нет. Создайте проект и отметьте «Сохранить как шаблон» или откройте карточку проекта → «Сделать шаблоном».</p>
+
+        {% endif %}
+
+      </div>
+
+
+
+      <div class="form-group"><label>Название нового проекта</label><input name="name" class="form-control" required placeholder="Например: Разработка ЭМСТПН — объект №…"></div>
+
+      <div class="form-group"><label>Договор</label>
+
+        <select name="contract_id" class="form-control"><option value="">—</option>{% for c in contracts %}<option value="{{ c.id }}">{{ c.number }}</option>{% endfor %}</select>
+
+      </div>
+
+      <div class="form-row">
+
+        <div class="form-group"><label>Старт</label><input type="date" name="planned_start" class="form-control"></div>
+
+        <div class="form-group"><label>Крайний срок</label><input type="date" name="deadline" class="form-control"></div>
+
+      </div>
+
+      <div class="form-group"><label>ГИП</label>
+
+        <select name="curator_auditor_id" class="form-control">{% for u in auditors %}<option value="{{ u.id }}">{{ u.full_name }}</option>{% endfor %}</select>
+
+      </div>
+
+      <div class="form-group"><label>Куратор-заказчик</label>
+
+        <select name="customer_curator_id" class="form-control"><option value="">—</option>{% for u in customers %}<option value="{{ u.id }}">{{ u.full_name }}</option>{% endfor %}</select>
+
+      </div>
+
+      <div class="form-group"><label>Рабочая группа</label>
+
+        {% for u in executors %}<label class="checkbox-inline"><input type="checkbox" name="member_ids" value="{{ u.id }}"> {{ u.full_name }}</label>{% endfor %}
+
+      </div>
+
+
+
+      <div data-mode-panel="blank" {% if preset_template_id %}hidden{% endif %}>
+
+        <label class="checkbox-inline"><input type="checkbox" name="save_as_template" value="1"> Сохранить как шаблон (без договора — только структура)</label>
+
+      </div>
+
+
+
+      <div class="form-actions"><button type="submit" class="btn btn-primary">Создать</button></div>
+
+    </form>
+
+  </div>
+
+</div>
+
+<script>
+
+(function () {
+
+  var form = document.getElementById("project-create-form");
+
+  if (!form) return;
+
+  function sync() {
+
+    var mode = (form.querySelector('input[name="create_mode"]:checked') || {}).value || "blank";
+
+    form.querySelectorAll("[data-mode-panel]").forEach(function (el) {
+
+      el.hidden = el.getAttribute("data-mode-panel") !== mode;
+
+    });
+
+    var sel = form.querySelector('select[name="template_id"]');
+
+    if (sel) sel.required = mode === "from_template" && sel.options.length > 1;
+
+  }
+
+  form.querySelectorAll("[data-mode-toggle]").forEach(function (r) {
+
+    r.addEventListener("change", sync);
+
+  });
+
+  sync();
+
+})();
+
+</script>
+
+{% endblock %}
+

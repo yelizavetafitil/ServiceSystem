@@ -55,11 +55,207 @@ def _reset_db():
     _setup_audit_triggers()
 
 
+def _seed_project_management(auditor, executor, executor2, customers, contracts):
+    """Демо-данные модуля проектов (ТЗ)."""
+    from servicesystem.project_management.models import (
+        Project,
+        ProjectCustomField,
+        ProjectMember,
+        ProjectStage,
+        ProjectTask,
+        ProjectTaskCollaborator,
+        ProjectTaskLink,
+    )
+    from servicesystem.project_management.services import update_customer_curator_window
+
+    if Project.query.filter_by(is_template=False).first():
+        return
+
+    curator = customers[1] if len(customers) > 1 else customers[0]
+    curator.role = "customer_curator"
+    brest_contract = contracts[0]
+
+    today = date.today()
+    tpl = Project(
+        name="Шаблон: типовой проект ЭМСТПН",
+        description="Этапы разработки и актуализации модели",
+        is_template=True,
+        planned_start=today,
+        deadline=today + timedelta(days=180),
+        curator_auditor_id=auditor.id,
+    )
+    db.session.add(tpl)
+    db.session.flush()
+    tpl_stages = []
+    for i, title in enumerate(("Сбор исходных данных", "Построение топологии", "Гидравлический расчёт", "Сдача этапа")):
+        st = ProjectStage(project_id=tpl.id, title=title, sort_order=i, deadline=today + timedelta(days=30 * (i + 1)))
+        db.session.add(st)
+        tpl_stages.append(st)
+    db.session.flush()
+    db.session.add(
+        ProjectCustomField(
+            project_id=tpl.id,
+            name="Бюджет этапа",
+            field_type="budget",
+            visibility="auditor",
+            sort_order=0,
+        )
+    )
+    tpl_tasks = []
+    for i, (title, si) in enumerate(
+        (
+            ("Шаблон: сбор исходных данных", 0),
+            ("Шаблон: построение топологии", 1),
+            ("Шаблон: гидравлический расчёт", 1),
+            ("Шаблон: сдача этапа", 3),
+        )
+    ):
+        t = ProjectTask(
+            project_id=tpl.id,
+            stage_id=tpl_stages[si].id,
+            title=title,
+            priority=2,
+            kanban_status="todo",
+            assignee_id=executor.id,
+            start_date=today,
+            due_date=today + timedelta(days=10 + i * 7),
+            created_by_id=auditor.id,
+        )
+        db.session.add(t)
+        db.session.flush()
+        tpl_tasks.append(t)
+    db.session.add(
+        ProjectTaskLink(from_task_id=tpl_tasks[0].id, to_task_id=tpl_tasks[1].id, link_type="blocks")
+    )
+
+    proj = Project(
+        name="Разработка ЭМСТПН — Брестэнерго",
+        contract_id=brest_contract.id,
+        description="Проект по договору 060-194-25",
+        planned_start=today - timedelta(days=14),
+        deadline=today + timedelta(days=90),
+        curator_auditor_id=auditor.id,
+        customer_curator_id=curator.id,
+    )
+    db.session.add(proj)
+    db.session.flush()
+    update_customer_curator_window(proj)
+    db.session.add(ProjectMember(project_id=proj.id, user_id=executor.id, role="executor"))
+    db.session.add(ProjectMember(project_id=proj.id, user_id=executor2.id, role="executor"))
+
+    stages = []
+    for i, (title, days) in enumerate(
+        (
+            ("Этап 1 — Исходные данные", 30),
+            ("Этап 2 — Модель и расчёт", 60),
+            ("Этап 3 — Сдача заказчику", 90),
+        )
+    ):
+        st = ProjectStage(
+            project_id=proj.id,
+            title=title,
+            deadline=today + timedelta(days=days),
+            responsible_id=executor.id if i % 2 == 0 else auditor.id,
+            sort_order=i,
+        )
+        db.session.add(st)
+        stages.append(st)
+    db.session.flush()
+
+    db.session.add(
+        ProjectCustomField(
+            project_id=proj.id,
+            name="Бюджет этапа",
+            field_type="budget",
+            visibility="auditor",
+            sort_order=0,
+        )
+    )
+    db.session.add(
+        ProjectCustomField(project_id=proj.id, name="Внешняя ссылка на модель", field_type="url", visibility="all", sort_order=1)
+    )
+
+    tasks_cfg = [
+        ("Согласование топологии участка №14", "todo", 3, executor.id, stages[0].id),
+        ("Расчёт давления магистрали", "in_progress", 2, executor.id, stages[1].id),
+        ("Проверка отчёта ГИП", "review", 2, auditor.id, stages[1].id),
+        ("Подготовка исполнительной документации", "todo", 2, executor2.id, stages[2].id),
+    ]
+    created_tasks = []
+    for title, status, prio, assignee, stage_id in tasks_cfg:
+        t = ProjectTask(
+            project_id=proj.id,
+            stage_id=stage_id,
+            title=title,
+            description=f"Демо-задача: {title}",
+            priority=prio,
+            kanban_status=status,
+            assignee_id=assignee,
+            start_date=today - timedelta(days=3),
+            due_date=today + timedelta(days=7 + len(created_tasks)),
+            created_by_id=auditor.id,
+        )
+        db.session.add(t)
+        db.session.flush()
+        created_tasks.append(t)
+
+    sub = ProjectTask(
+        project_id=proj.id,
+        parent_id=created_tasks[1].id,
+        title="Чек-лист: проверка узлов 1–20",
+        priority=2,
+        kanban_status="in_progress",
+        assignee_id=executor2.id,
+        due_date=today + timedelta(days=5),
+        created_by_id=executor.id,
+    )
+    db.session.add(sub)
+    db.session.flush()
+
+    db.session.add(ProjectTaskCollaborator(task_id=created_tasks[1].id, user_id=executor2.id))
+    db.session.add(
+        ProjectTaskLink(
+            from_task_id=created_tasks[0].id,
+            to_task_id=created_tasks[1].id,
+            link_type="blocks",
+        )
+    )
+
+    orphan = ProjectTask(
+        title="Внутренняя задача без проекта (неделя ARM)",
+        priority=1,
+        kanban_status="todo",
+        assignee_id=executor.id,
+        due_date=today + timedelta(days=2),
+        created_by_id=auditor.id,
+    )
+    db.session.add(orphan)
+
+    print("  Projects: demo project + template + tasks seeded")
+
+
+def _apply_project_demo_data():
+    auditor = User.query.filter_by(email="auditor@belnipi.by").first()
+    executor = User.query.filter_by(email="executor@belnipi.by").first()
+    executor2 = User.query.filter_by(email="executor2@belnipi.by").first()
+    customers = User.query.filter(User.role.in_(("customer", "customer_curator"))).order_by(User.id).all()
+    contracts = Contract.query.order_by(Contract.id).all()
+    if not (auditor and executor and contracts and customers):
+        return
+    _seed_project_management(auditor, executor, executor2, customers, contracts)
+    from servicesystem.project_management.services import on_ticket_sync_hook
+
+    for t in Ticket.query.all():
+        on_ticket_sync_hook(t)
+
+
 def seed(force: bool = False):
     app = create_app()
     with app.app_context():
         if User.query.filter_by(email="admin@belnipi.by").first() and not force:
-            print("Database already seeded. Use: python seed.py --force")
+            _apply_project_demo_data()
+            db.session.commit()
+            print("Database already seeded. Use: python seed.py --force for full reset")
             return
 
         if force:
@@ -498,6 +694,8 @@ def seed(force: bool = False):
         log_audit(customers[0].id, "view", "tutorial", tutorial_ids[0])
         log_audit(auditor.id, "ticket_create", "ticket", t_new.id, "seed")
 
+        _apply_project_demo_data()
+
         db.session.commit()
 
         print("\n" + "=" * 60)
@@ -525,6 +723,15 @@ def seed(force: bool = False):
         print("\n--- TICKETS ---")
         for t in Ticket.query.order_by(Ticket.number).all():
             print(f"  {t.number} [{t.status}] P{t.priority} — {t.subject[:50]}")
+
+        from servicesystem.project_management.models import Project, ProjectTask
+
+        print("\n--- PROJECTS ---")
+        print("  Curator-customer: ivanova@brestenergo.by / customer123 (role upgraded in seed)")
+        for p in Project.query.order_by(Project.id).all():
+            kind = "template" if p.is_template else "project"
+            print(f"  [{kind}] {p.name}")
+        print(f"  Tasks total: {ProjectTask.query.count()} (incl. ticket mirrors)")
 
         print("\n--- CONTRACT SCENARIOS ---")
         print("  Brest (060-194-25):  active_warranty, expires in ~25 days → expiry banner")

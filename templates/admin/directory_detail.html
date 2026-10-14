@@ -1,21 +1,22 @@
 {% extends "base.html" %}
+{% from "macros/directory.html" import directory_initials, directory_icon, directory_contact_facts %}
 {% block title %}{{ contact.full_name }}{% endblock %}
 {% block content %}
-<div class="container container-narrow">
+<div class="container container-narrow cms-page">
   <a href="{{ url_for('admin.directory') }}" class="back-link">← Справочник заказчиков</a>
-  <div class="card directory-detail">
-    <h1 class="directory-contact-title">{{ contact.full_name|directory_text }}</h1>
-    {% if contact.position %}<p class="directory-detail-position">{{ contact.position|directory_text }}</p>{% endif %}
-    <dl class="directory-detail-dl">
-      <div><dt>Организация</dt><dd>{{ contact.organization.name if contact.organization else '—' }}</dd></div>
-      {% if contact.department %}<div><dt>Подразделение</dt><dd>{{ contact.department }}</dd></div>{% endif %}
-      {% if contact.phone_internal or contact.phone_extension %}<div><dt>Рабочий телефон</dt><dd>{{ contact|work_phone }}</dd></div>{% endif %}
-      <div><dt>Мобильный</dt><dd><a href="tel:{{ contact.phone_mobile|replace(' ', '') }}">{{ contact.phone_mobile }}</a></dd></div>
-      {% if contact.email %}<div><dt>Email</dt><dd><a href="mailto:{{ contact.email }}">{{ contact.email }}</a></dd></div>{% endif %}
-    </dl>
+  <div class="card directory-detail-card">
+    <header class="directory-detail-hero">
+      <div class="directory-contact-avatar directory-contact-avatar--lg" aria-hidden="true">{{ directory_initials(contact.full_name|directory_text) }}</div>
+      <div class="directory-detail-hero-text">
+        <h1 class="directory-contact-title">{{ contact.full_name|directory_text }}</h1>
+        {% if contact.position %}<p class="directory-detail-position">{{ contact.position|directory_text }}</p>{% endif %}
+      </div>
+    </header>
+
+    {{ directory_contact_facts(contact, show_org=true) }}
 
     <div class="directory-qr-block">
-      <h2 class="section-title">QR → телефон</h2>
+      <h2 class="directory-section-title">{{ directory_icon('qr') }} QR → телефон</h2>
       <p class="hint">Scan-to-Save: vCard в UTF-8 для iOS / Android.</p>
       <div class="directory-qr-wrap">
         <img

@@ -8,7 +8,7 @@
   <link rel="icon" href="{{ url_for('static', filename='img/belnipi-logo.png') }}?v=19" type="image/png">
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="{{ url_for('static', filename='css/main.css') }}?v=46">
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/main.css') }}?v=54">
   {% block head %}{% endblock %}
 </head>
 <body class="{% if not current_user.is_authenticated %}auth-body{% endif %}">
@@ -29,11 +29,15 @@
       {% if current_user.is_customer %}
         <a href="{{ url_for('cabinet.dashboard') }}">Кабинет</a>
         <a href="{{ url_for('tickets.list_tickets') }}">Заявки</a>
+        {% if current_user.is_customer_curator %}
+        <a href="{{ url_for('cabinet.customer_projects') }}">Проекты</a>
+        {% endif %}
         <a href="{{ url_for('cabinet.news_list') }}">Новости</a>
         <a href="{{ url_for('cabinet.tutorials') }}">База</a>
         <a href="{{ url_for('cabinet.plugins') }}">Плагины</a>
       {% elif current_user.is_staff %}
         <a href="{{ url_for('tickets.staff_queue') }}">Очередь</a>
+        <a href="{{ url_for('projects.arm', view='kanban') }}">Проекты</a>
         <a href="{{ url_for('cabinet.news_list') }}">Новости</a>
         <a href="{{ url_for('admin.directory') }}">Контакты</a>
         <a href="{{ url_for('cabinet.tutorials') }}">База</a>

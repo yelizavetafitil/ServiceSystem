@@ -1,0 +1,64 @@
+<div class="page-header projects-arm-header">
+
+  <div class="page-header-main">
+
+    <h1>Управление проектами</h1>
+
+    <div class="projects-view-tabs" role="tablist">
+
+      <a class="projects-view-tab{% if view == 'gantt' %} is-active{% endif %}" href="{{ url_for('projects.arm', view='gantt', project=filter_project) }}">Ганта</a>
+
+      <a class="projects-view-tab{% if view == 'week' %} is-active{% endif %}" href="{{ url_for('projects.arm', view='week', project=filter_project) }}">Неделя</a>
+
+      <a class="projects-view-tab{% if view == 'kanban' %} is-active{% endif %}" href="{{ url_for('projects.arm', view='kanban', project=filter_project) }}">Канбан</a>
+
+      <a class="projects-view-tab{% if view == 'calendar' %} is-active{% endif %}" href="{{ url_for('projects.arm', view='calendar', project=filter_project) }}">Календарь</a>
+
+    </div>
+
+  </div>
+
+  <div class="page-header-actions">
+
+    <form method="get" class="projects-filter-form">
+
+      <input type="hidden" name="view" value="{{ view }}">
+      {% if view == 'gantt' and gantt_scale is defined %}
+      <input type="hidden" name="scale" value="{{ gantt_scale }}">
+      {% if gantt_group is defined %}
+      <input type="hidden" name="group" value="{{ gantt_group }}">
+      {% endif %}
+      {% endif %}
+
+      <select name="project" class="form-control" onchange="this.form.submit()">
+
+        <option value="">Все проекты</option>
+
+        {% for p in projects %}
+
+        <option value="{{ p.id }}" {% if filter_project == p.id %}selected{% endif %}>{{ p.name }}</option>
+
+        {% endfor %}
+
+      </select>
+
+    </form>
+
+    {% if current_user.is_staff %}
+
+    <a href="{{ url_for('projects.calendar_settings') }}" class="btn btn-outline btn-sm">Синхронизация</a>
+
+    {% endif %}
+
+    {% if current_user.is_auditor or current_user.is_admin %}
+
+    <a href="{{ url_for('projects.manage_list') }}" class="btn btn-outline btn-sm">Управление</a>
+
+    <a href="{{ url_for('projects.task_new') }}" class="btn btn-primary btn-sm">Задача</a>
+
+    {% endif %}
+
+  </div>
+
+</div>
+

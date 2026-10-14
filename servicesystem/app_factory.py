@@ -37,6 +37,8 @@ def create_app(config_class=Config):
     from servicesystem.routes.admin import bp as admin_bp
     from servicesystem.routes.api import bp as api_bp
     from servicesystem.routes.uploads import bp as uploads_bp
+    from servicesystem.project_management.routes import bp as projects_bp
+    import servicesystem.project_management.models  # noqa: F401 — register tables
 
     app.register_blueprint(auth_bp)
     app.register_blueprint(cabinet_bp)
@@ -44,6 +46,13 @@ def create_app(config_class=Config):
     app.register_blueprint(admin_bp, url_prefix="/admin")
     app.register_blueprint(api_bp, url_prefix="/api/v1")
     app.register_blueprint(uploads_bp)
+    app.register_blueprint(projects_bp, url_prefix="/projects")
+
+    from servicesystem.project_management.routes import projects_ui_context
+
+    @app.context_processor
+    def _projects_template_labels():
+        return projects_ui_context()
 
     from servicesystem.services.cms_html import render_cms_markdown
 
@@ -197,6 +206,11 @@ def _apply_schema_patches():
         "ALTER TABLE phone_directory_contacts ADD COLUMN IF NOT EXISTS phone_extension VARCHAR(16)",
         "UPDATE phone_directory_contacts SET phone_mobile = '' WHERE phone_mobile IS NULL",
         "CREATE UNIQUE INDEX IF NOT EXISTS ix_phone_directory_contacts_user_id ON phone_directory_contacts (user_id) WHERE user_id IS NOT NULL",
+        "ALTER TABLE project_calendar_feeds ADD COLUMN IF NOT EXISTS email_reminders BOOLEAN DEFAULT TRUE",
+        "ALTER TABLE project_calendar_feeds ADD COLUMN IF NOT EXISTS reminder_minutes INTEGER DEFAULT 60",
+        "ALTER TABLE project_calendar_feeds ADD COLUMN IF NOT EXISTS caldav_username VARCHAR(255)",
+        "ALTER TABLE project_calendar_feeds ADD COLUMN IF NOT EXISTS caldav_password VARCHAR(255)",
+        "ALTER TABLE project_calendar_feeds ADD COLUMN IF NOT EXISTS last_sync_message VARCHAR(512)",
     ]
     for sql in patches:
         try:

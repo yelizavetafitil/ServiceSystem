@@ -1,0 +1,421 @@
+{% extends "base.html" %}
+
+{% from "macros/forms.html" import csrf_field %}
+
+{% block title %}{{ task.title }}{% endblock %}
+
+{% block head %}<link rel="stylesheet" href="{{ url_for('static', filename='css/projects.css') }}?v=26">{% endblock %}
+
+{% block content %}
+
+<div class="container container-wide cms-page">
+
+  <a href="{{ url_for('projects.arm') }}" class="back-link">← К модулю проектов</a>
+
+  <div class="projects-task-tabs">
+
+    {% for key, label in [('main','Карточка'),('files','Файлы'),('links','Связи'),('comments','Комментарии'),('custom','Поля'),('time','Время')] %}
+
+    <a class="projects-view-tab{% if tab == key %} is-active{% endif %}" href="{{ url_for('projects.task_detail', tid=task.id, tab=key, preview=preview_att.id if key == 'files' and preview_att else none) }}">{{ label }}</a>
+
+    {% endfor %}
+
+  </div>
+
+
+
+  {% if blocked %}<p class="alert alert-warning">Задача заблокирована — завершите связанные блокирующие задачи.</p>{% endif %}
+
+
+
+  {% if tab == 'main' %}
+
+  <div class="card projects-task-main-card">
+
+    {% if current_user.is_staff %}
+
+    <form method="post" action="{{ url_for('projects.task_update', tid=task.id) }}">
+
+      {{ csrf_field() }}
+
+      <input type="hidden" name="action" value="save">
+
+      <div class="form-group"><label>Название</label><input name="title" class="form-control" required value="{{ task.title }}"></div>
+
+      <div class="form-group"><label>Описание</label><textarea name="description" class="form-control" rows="5">{{ task.description or '' }}</textarea></div>
+
+      <div class="form-row">
+
+        <div class="form-group"><label>Критичность</label>
+
+          <select name="priority" class="form-control">
+
+            {% for p, lbl in project_priority_labels.items() %}
+
+            <option value="{{ p }}" {% if task.priority == p %}selected{% endif %}>{{ lbl }}</option>
+
+            {% endfor %}
+
+          </select>
+
+        </div>
+
+        <div class="form-group"><label>Статус</label>
+
+          <select name="kanban_status" class="form-control">
+
+            {% for k, lbl in kanban_labels.items() %}
+
+            <option value="{{ k }}" {% if task.kanban_status == k %}selected{% endif %}>{{ lbl }}</option>
+
+            {% endfor %}
+
+          </select>
+
+        </div>
+
+      </div>
+
+      <div class="form-row">
+
+        <div class="form-group"><label>Начало</label><input type="date" name="start_date" class="form-control" value="{{ task.start_date or '' }}"></div>
+
+        <div class="form-group"><label>Дедлайн</label><input type="date" name="due_date" class="form-control" value="{{ task.due_date or '' }}"></div>
+
+      </div>
+
+      <div class="form-group"><label>Исполнитель</label>
+
+        <select name="assignee_id" class="form-control"><option value="">—</option>
+
+          {% for u in executors %}<option value="{{ u.id }}" {% if task.assignee_id == u.id %}selected{% endif %}>{{ u.full_name }}</option>{% endfor %}
+
+        </select>
+
+      </div>
+
+      {% if current_user.is_auditor or current_user.is_admin %}
+
+      <div class="form-group"><label>Соисполнители</label>
+
+        <select name="collaborator_ids" class="form-control" multiple size="4">
+
+          {% for u in executors %}
+
+          <option value="{{ u.id }}" {% if u.id in collaborator_ids %}selected{% endif %}>{{ u.full_name }}</option>
+
+          {% endfor %}
+
+        </select>
+
+      </div>
+
+      {% endif %}
+
+      <button type="submit" class="btn btn-primary">Сохранить</button>
+
+    </form>
+
+    <div class="form-actions projects-task-actions">
+
+      {% if current_user.is_staff %}
+
+      <form method="post" action="{{ url_for('projects.task_update', tid=task.id) }}" class="inline-form">
+
+        {{ csrf_field() }}<input type="hidden" name="action" value="complete">
+
+        <button type="submit" class="btn btn-outline btn-sm" {% if blocked %}disabled{% endif %}>Выполнить</button>
+
+      </form>
+
+      <a href="{{ url_for('projects.task_new', parent=task.id) }}" class="btn btn-outline btn-sm">Подзадача</a>
+
+      <form method="post" action="{{ url_for('projects.task_duplicate', tid=task.id) }}" class="inline-form">
+
+        {{ csrf_field() }}<input type="hidden" name="copy_subtasks" value="1">
+
+        <button type="submit" class="btn btn-outline btn-sm">Дублировать</button>
+
+      </form>
+
+      {% if current_user.is_auditor or current_user.is_admin %}
+
+      <form method="post" action="{{ url_for('projects.task_update', tid=task.id) }}" class="inline-form" onsubmit="return confirm('Удалить безвозвратно?');">
+
+        {{ csrf_field() }}<input type="hidden" name="action" value="delete">
+
+        <button type="submit" class="btn btn-danger btn-sm">Удалить</button>
+
+      </form>
+
+      {% endif %}
+
+      {% endif %}
+
+    </div>
+
+    {% else %}
+
+    <h1>{{ task.title }}</h1>
+
+    <p class="muted">{{ kanban_labels.get(task.kanban_status) }}</p>
+
+    {% if task.description %}<div class="hint">{{ task.description|markdown|safe }}</div>{% endif %}
+
+    {% endif %}
+
+    {% if subtasks %}
+
+    <section class="projects-task-subtasks">
+
+      <h3 class="projects-task-subtasks-title">Подзадачи</h3>
+
+      <ul class="projects-task-subtasks-list">{% for s in subtasks %}<li><a href="{{ url_for('projects.task_detail', tid=s.id) }}">{{ s.title }}</a></li>{% endfor %}</ul>
+
+    </section>
+
+    {% endif %}
+
+    {% if task.ticket %}<p>Заявка: <a href="{{ url_for('tickets.detail', tid=task.ticket_id) }}">{{ task.ticket.number }}</a></p>{% endif %}
+
+    {% if task.overdue_days %}<p class="projects-overdue">Просрочка: {{ task.overdue_days }} д.</p>{% endif %}
+
+  </div>
+
+
+
+  {% elif tab == 'files' %}
+
+  <div class="projects-files-layout">
+    <div class="card projects-files-list-card">
+      <h2>Файлы (до 100 Мб){% if task_files %} · {{ task_files|length }}{% endif %}</h2>
+      {% if current_user.is_staff %}
+      <form method="post" enctype="multipart/form-data" action="{{ url_for('projects.task_update', tid=task.id) }}" class="projects-file-upload-form">
+        {{ csrf_field() }}
+        <input type="hidden" name="action" value="upload">
+        <div class="projects-file-upload-field">
+          <input type="file" name="file" class="form-control projects-file-input" required>
+        </div>
+        <div class="projects-file-upload-actions">
+          <button type="submit" class="btn btn-primary btn-sm">Загрузить</button>
+        </div>
+      </form>
+      {% endif %}
+      <ul class="projects-file-list">
+        {% for f in task_files %}
+        {% set ext = f.original_name.rsplit('.', 1)[-1].lower() if '.' in f.original_name else 'file' %}
+        <li class="projects-file-item{% if preview_att and preview_att.id == f.id %} is-active{% endif %}">
+          <a class="projects-file-item-link" href="{{ url_for('projects.task_detail', tid=task.id, tab='files', preview=f.id) }}" title="Просмотр">
+            <span class="projects-file-ext" aria-hidden="true">{{ ext[:4] }}</span>
+            <span class="projects-file-item-text">
+              <span class="projects-file-name">{{ f.original_name }}</span>
+              <span class="projects-file-sub muted">
+                {% if f.size_bytes >= 1048576 %}{{ (f.size_bytes / 1048576)|round(1) }} Мб{% elif f.size_bytes >= 1024 %}{{ (f.size_bytes / 1024)|round(1) }} Кб{% elif f.size_bytes %}{{ f.size_bytes }} б{% endif %}
+                {% if f.verified_at %} · ✓ утверждён ГИП{% endif %}
+              </span>
+            </span>
+          </a>
+          <div class="projects-file-item-actions">
+            <a href="{{ url_for('projects.task_file_view', tid=task.id, aid=f.id, download=1) }}" class="btn btn-outline btn-xs">Скачать</a>
+            {% if (current_user.is_auditor or current_user.is_admin) and not f.verified_at %}
+            <form method="post" action="{{ url_for('projects.task_file_verify', tid=task.id, aid=f.id) }}" class="projects-file-inline-form">
+              {{ csrf_field() }}
+              <button type="submit" class="btn btn-outline btn-xs">Утвердить</button>
+            </form>
+            {% elif f.verified_at %}
+            <span class="badge badge-success projects-file-badge">ГИП</span>
+            {% endif %}
+            {% if f.id in deletable_file_ids %}
+            <form method="post" action="{{ url_for('projects.task_file_delete', tid=task.id, aid=f.id) }}" class="projects-file-inline-form" onsubmit="return confirm('Удалить этот файл?');">
+              {{ csrf_field() }}
+              <button type="submit" class="btn btn-outline btn-xs btn-danger-text">Удалить</button>
+            </form>
+            {% endif %}
+          </div>
+        </li>
+        {% else %}
+        <li class="muted projects-file-empty">Нет файлов — загрузите документ выше.</li>
+        {% endfor %}
+      </ul>
+    </div>
+    <div class="card projects-files-preview-card">
+      {% if preview_att %}
+      {% set mime = preview_att.mime_type or '' %}
+      {% set pv_url = url_for('projects.task_file_view', tid=task.id, aid=preview_att.id) %}
+      <div class="projects-file-preview-head">
+        <h2 class="projects-file-preview-title">{{ preview_att.original_name }}</h2>
+        <div class="projects-file-preview-toolbar">
+          <a href="{{ pv_url }}" class="btn btn-outline btn-xs" download>Скачать</a>
+          {% if preview_att.id in deletable_file_ids %}
+          <form method="post" action="{{ url_for('projects.task_file_delete', tid=task.id, aid=preview_att.id) }}" class="projects-file-inline-form" onsubmit="return confirm('Удалить этот файл?');">
+            {{ csrf_field() }}
+            <button type="submit" class="btn btn-outline btn-xs btn-danger-text">Удалить</button>
+          </form>
+          {% endif %}
+        </div>
+      </div>
+      {% if mime.startswith('image/') %}
+      <img class="projects-file-preview-img" src="{{ pv_url }}" alt="{{ preview_att.original_name }}">
+      {% elif mime == 'application/pdf' or preview_att.original_name.lower().endswith('.pdf') %}
+      <iframe class="projects-file-preview-frame" src="{{ pv_url }}" title="{{ preview_att.original_name }}"></iframe>
+      {% elif mime.startswith('video/') %}
+      <video class="projects-file-preview-video" controls src="{{ pv_url }}"></video>
+      {% else %}
+      <p class="muted">Предпросмотр недоступен для этого типа. <a href="{{ pv_url }}" target="_blank">Открыть</a> или скачать.</p>
+      {% endif %}
+      {% else %}
+      <h2>Просмотр</h2>
+      <p class="muted">Выберите файл слева для просмотра (изображения, PDF, видео).</p>
+      {% endif %}
+    </div>
+  </div>
+
+
+
+  {% elif tab == 'links' %}
+
+  <div class="card">
+
+    <h2>Связи задач</h2>
+
+    <ul class="projects-link-list">{% for l in link_rows %}
+
+      <li>
+        <span>Задача №{{ l.to_task_id }} — {{ project_link_labels.get(l.link_type, l.link_type) }}</span>
+        {% if current_user.is_staff %}
+        <form method="post" action="{{ url_for('projects.task_update', tid=task.id) }}" class="inline-form">
+          {{ csrf_field() }}<input type="hidden" name="action" value="link_remove"><input type="hidden" name="link_id" value="{{ l.id }}">
+          <button type="submit" class="btn btn-outline btn-icon-xs" title="Удалить связь" aria-label="Удалить связь">×</button>
+        </form>
+        {% endif %}
+      </li>
+
+    {% else %}<li class="muted">Связей нет</li>{% endfor %}</ul>
+
+    {% if current_user.is_staff %}
+
+    <form method="post" action="{{ url_for('projects.task_update', tid=task.id) }}" class="form-row">
+
+      {{ csrf_field() }}<input type="hidden" name="action" value="link_add">
+
+      <input name="other_task_id" type="number" class="form-control" placeholder="Номер задачи" required>
+
+      <select name="link_type" class="form-control">{% for key, lbl in link_type_choices %}<option value="{{ key }}">{{ lbl }}</option>{% endfor %}</select>
+
+      <button type="submit" class="btn btn-outline btn-sm">Добавить</button>
+
+    </form>
+
+    {% endif %}
+
+  </div>
+
+
+
+  {% elif tab == 'comments' %}
+
+  <div class="card">
+
+    <h2>Комментарии</h2>
+
+    <ul>{% for c in task.comments %}<li><strong>{{ c.user.full_name }}</strong> {{ c.created_at.strftime('%d.%m.%Y %H:%M') }}<br>{{ c.body }}</li>{% else %}<li class="muted">Пока нет</li>{% endfor %}</ul>
+
+    {% if current_user.is_staff %}
+
+    <form method="post" action="{{ url_for('projects.task_update', tid=task.id) }}">
+
+      {{ csrf_field() }}<input type="hidden" name="action" value="comment">
+
+      <textarea name="body" class="form-control" rows="3" required></textarea>
+
+      <button type="submit" class="btn btn-primary btn-sm">Отправить</button>
+
+    </form>
+
+    {% endif %}
+
+  </div>
+
+
+
+  {% elif tab == 'custom' %}
+
+  <div class="card">
+
+    <h2>Дополнительные поля</h2>
+
+    <form method="post" action="{{ url_for('projects.task_update', tid=task.id) }}">
+
+      {{ csrf_field() }}<input type="hidden" name="action" value="custom_save">
+
+      {% for field in custom_fields %}
+
+      {% set val = task.custom_values.filter_by(field_id=field.id).first() %}
+
+      <div class="form-group"><label>{{ field.name }}</label>
+
+        <input name="cf_{{ field.id }}" class="form-control" value="{{ val.value_text if val else '' }}">
+
+      </div>
+
+      {% else %}<p class="muted">Поля задаются в карточке проекта (раздел «Управление»).</p>{% endfor %}
+
+      {% if custom_fields %}<button type="submit" class="btn btn-primary btn-sm">Сохранить</button>{% endif %}
+
+    </form>
+
+  </div>
+
+
+
+  {% elif tab == 'time' %}
+
+  <div class="card projects-task-time">
+
+    <h2>Учёт времени</h2>
+
+    <p class="projects-time-total">Всего: {{ (task.time_spent_seconds or 0) // 3600 }} ч {{ ((task.time_spent_seconds or 0) % 3600) // 60 }} мин
+      {% if task.timer_running_since %}<span class="projects-timer-live" data-since="{{ task.timer_running_since.isoformat() }}"> · таймер идёт</span>{% endif %}
+    </p>
+
+    {% if current_user.is_staff %}
+
+    <form method="post" action="{{ url_for('projects.task_update', tid=task.id) }}" class="projects-time-timer">
+
+      {{ csrf_field() }}
+
+      {% if task.timer_running_since %}
+
+      <input type="hidden" name="action" value="timer_stop"><button type="submit" class="btn btn-outline">Стоп</button>
+
+      {% else %}
+
+      <input type="hidden" name="action" value="timer_start"><button type="submit" class="btn btn-primary">Старт таймера</button>
+
+      {% endif %}
+
+    </form>
+
+    <form method="post" action="{{ url_for('projects.task_update', tid=task.id) }}" class="form-row projects-time-manual">
+
+      {{ csrf_field() }}<input type="hidden" name="action" value="time_manual">
+
+      <div class="form-group"><label>Часы</label><input name="hours" type="number" step="0.25" min="0.25" class="form-control" placeholder="0,5" required></div>
+
+      <div class="form-group"><label>Комментарий</label><input name="note" class="form-control" placeholder="Необязательно"></div>
+
+      <div class="form-group form-group--shrink"><label class="projects-cms-label-spacer">&nbsp;</label><button type="submit" class="btn btn-outline btn-sm">Добавить вручную</button></div>
+
+    </form>
+
+    {% endif %}
+
+    <ul class="projects-time-log">{% for log in time_logs %}<li>{{ log.seconds // 60 }} мин — {{ log.user.full_name }} {{ log.created_at.strftime('%d.%m.%Y') }}</li>{% else %}<li class="muted">Записей пока нет</li>{% endfor %}</ul>
+
+  </div>
+
+  {% endif %}
+
+</div>
+
+{% endblock %}

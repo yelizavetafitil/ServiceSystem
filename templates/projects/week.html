@@ -1,0 +1,18 @@
+{% extends "base.html" %}
+{% block title %}Проекты — неделя{% endblock %}
+{% block head %}<link rel="stylesheet" href="{{ url_for('static', filename='css/projects.css') }}?v=2">{% endblock %}
+{% block content %}
+<div class="container cms-page projects-page">
+  {% include "projects/_arm_header.html" %}
+  <div class="projects-week-grid">
+    {% for d, weekday in week_days %}
+    <div class="projects-week-col">
+      <h3>{{ weekday }} {{ d.strftime('%d.%m') }}</h3>
+      {% for t in tasks if t.due_date == d or t.start_date == d %}
+      <a class="projects-week-card p-{{ t.priority }}" href="{{ url_for('projects.task_detail', tid=t.id) }}">{{ t.title }}</a>
+      {% endfor %}
+    </div>
+    {% endfor %}
+  </div>
+</div>
+{% endblock %}

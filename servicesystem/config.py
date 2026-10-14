@@ -22,6 +22,9 @@ class Config:
     SQLALCHEMY_TRACK_MODIFICATIONS = False
     SQLALCHEMY_ENGINE_OPTIONS = {"pool_pre_ping": True}
 
+    # Публичный адрес для ссылок в письмах и подписках (ICS). Пример: http://192.168.3.125:8095
+    PUBLIC_BASE_URL = (os.environ.get("PUBLIC_BASE_URL") or "").strip().rstrip("/")
+
     APP_NAME = os.environ.get("APP_NAME", "Сервис ЭМСТПН")
     ORG_NAME = os.environ.get("ORG_NAME", 'РУП «Белнипиэнергопром»')
     ORG_LEGAL_FORM = os.environ.get(
@@ -145,7 +148,15 @@ class Config:
 
     ROLES = {
         "customer": "Заказчик",
+        "customer_curator": "Куратор-заказчик",
         "executor": "Исполнитель",
         "auditor": "Аудитор",
         "admin": "Администратор",
+    }
+
+    PROJECT_KANBAN = {
+        "todo": "К исполнению",
+        "in_progress": "В работе",
+        "review": "На верификации / Проверке",
+        "done": "Выполнено / Закрыто",
     }

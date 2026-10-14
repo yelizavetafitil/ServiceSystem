@@ -1,0 +1,105 @@
+{% extends "base.html" %}
+
+{% from "macros/forms.html" import csrf_field %}
+
+{% block title %}Синхронизация календаря{% endblock %}
+
+{% block head %}<link rel="stylesheet" href="{{ url_for('static', filename='css/projects.css') }}?v=27">{% endblock %}
+
+{% block content %}
+
+<div class="container container-narrow cms-page projects-cms">
+
+  <a href="{{ url_for('projects.arm', view='calendar') }}" class="back-link">← Календарь</a>
+
+  <div class="card projects-cms-card">
+
+    <h1>Внешние календари</h1>
+
+    <p class="hint">Задачи с датами попадают в календарь ARM и могут синхронизироваться с Google, Яндекс или Apple.</p>
+
+    <div class="projects-calendar-help card-nested">
+      <h2 class="projects-cms-subheading">Как настроить</h2>
+      <ol class="projects-calendar-help-list">
+        <li><strong>Только чтение в Google / Outlook / телефоне</strong> — скопируйте ссылку экспорта ниже и добавьте «Подписку на календарь» / «Calendar by URL» в приложении календаря. Обновление — по расписанию клиента (обычно раз в несколько часов).</li>
+        <li><strong>Двусторонняя синхронизация</strong> — укажите секретный URL ICS или адрес CalDAV-коллекции, логин и пароль, включите «Двусторонняя синхронизация», нажмите «Сохранить», затем «Синхронизировать сейчас». Импорт подтягивает даты задач из календаря; экспорт отправляет события ARM наружу.</li>
+        <li><strong>Google</strong> — в настройках календаря: «Интеграция календаря» → секретный адрес в формате ICS. Для записи нужен CalDAV (логин Google, пароль приложения) и URL коллекции; поддержка PUT зависит от типа аккаунта.</li>
+        <li><strong>Яндекс</strong> — «Экспорт» → ссылка ICS для импорта; для CalDAV — логин Яндекса и пароль приложения, URL вида <code>https://caldav.yandex.ru/calendars/…</code>.</li>
+        <li><strong>Apple (iCloud)</strong> — пароль приложения Apple ID; CalDAV: <code>https://caldav.icloud.com/…</code> (путь к календарю из настроек macOS/iOS).</li>
+      </ol>
+      <p class="muted projects-cms-hint">События задач имеют UID вида <code>project-task-&lt;id&gt;-&lt;user&gt;@servicesystem</code> — по ним при импорте обновляются даты в карточках задач.</p>
+    </div>
+
+    <p><strong>Экспорт ICS (подписка):</strong> <code class="projects-export-url">{{ export_url }}</code></p>
+
+    {% if feed and feed.last_sync_at %}
+
+    <p class="muted">Последняя синхронизация: {{ feed.last_sync_at.strftime('%d.%m.%Y %H:%M') }}{% if feed.last_sync_message %} — {{ feed.last_sync_message }}{% endif %}</p>
+
+    {% endif %}
+
+    <form method="post">
+
+      {{ csrf_field() }}
+
+      <input type="hidden" name="action" value="save">
+
+      <div class="form-group"><label>Сервис</label>
+
+        <select name="provider" class="form-control">
+
+          <option value="caldav" {% if feed and feed.provider == 'caldav' %}selected{% endif %}>CalDAV (универсальный)</option>
+
+          <option value="google" {% if feed and feed.provider == 'google' %}selected{% endif %}>Google Календарь</option>
+
+          <option value="yandex" {% if feed and feed.provider == 'yandex' %}selected{% endif %}>Яндекс.Календарь</option>
+
+          <option value="apple" {% if feed and feed.provider == 'apple' %}selected{% endif %}>Apple Calendar</option>
+
+        </select>
+
+      </div>
+
+      <div class="form-group"><label>URL ICS или CalDAV-коллекции</label>
+
+        <input name="feed_url" class="form-control" value="{{ feed.feed_url if feed else '' }}" placeholder="https://…/calendar.ics или https://…/calendars/user/">
+
+      </div>
+
+      <div class="form-group"><label>Логин CalDAV</label>
+
+        <input name="caldav_username" class="form-control" autocomplete="username" value="{{ feed.caldav_username if feed else '' }}">
+
+      </div>
+
+      <div class="form-group"><label>Пароль CalDAV</label>
+
+        <input type="password" name="caldav_password" class="form-control" autocomplete="new-password" placeholder="{% if feed and feed.caldav_password %}••••••{% else %}не задан{% endif %}">
+
+      </div>
+
+      <label class="checkbox"><input type="checkbox" name="sync_enabled" value="1" {% if feed and feed.sync_enabled %}checked{% endif %}> Включить двустороннюю синхронизацию</label>
+
+      <label class="checkbox"><input type="checkbox" name="email_reminders" value="1" {% if not feed or feed.email_reminders %}checked{% endif %}> Дублировать напоминания на почту</label>
+
+      <div class="form-group"><label>Напоминание за (минут)</label><input type="number" name="reminder_minutes" class="form-control" value="{{ feed.reminder_minutes if feed else 60 }}"></div>
+
+      <button type="submit" class="btn btn-primary">Сохранить</button>
+
+    </form>
+
+    <form method="post" class="projects-sync-now-form">
+
+      {{ csrf_field() }}
+
+      <input type="hidden" name="action" value="sync_now">
+
+      <button type="submit" class="btn btn-outline">Синхронизировать сейчас</button>
+
+    </form>
+
+  </div>
+
+</div>
+
+{% endblock %}

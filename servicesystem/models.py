@@ -128,7 +128,11 @@ class User(UserMixin, db.Model):
 
     @property
     def is_customer(self) -> bool:
-        return self.role == "customer"
+        return self.role in ("customer", "customer_curator")
+
+    @property
+    def is_customer_curator(self) -> bool:
+        return self.role == "customer_curator"
 
 
 class ObjectCategory(db.Model):

@@ -139,6 +139,9 @@ def create():
         db.session.add(ticket)
         db.session.flush()
         wf_details = on_ticket_created(ticket)
+        from servicesystem.project_management.services import on_ticket_created_hook
+
+        on_ticket_created_hook(ticket)
         attachment_ids = request.form.get("attachment_ids", "")
         if attachment_ids:
             for aid in attachment_ids.split(","):
@@ -260,6 +263,9 @@ def respond(tid):
                 old = ticket.executor_id
                 ticket.executor_id = exec_id
                 wf_details = on_assign_executor(ticket)
+                from servicesystem.project_management.services import on_ticket_assign_hook
+
+                on_ticket_assign_hook(ticket)
                 log_ticket_history(
                     ticket.id,
                     current_user.id,
@@ -305,6 +311,9 @@ def respond(tid):
             log_ticket_history(ticket.id, current_user.id, "rejected", details=wf_details)
             flash("Заявка отклонена.", "warning")
 
+    from servicesystem.project_management.services import on_ticket_sync_hook
+
+    on_ticket_sync_hook(ticket)
     db.session.commit()
     return redirect(url_for("tickets.detail", tid=tid))
 
@@ -352,6 +361,9 @@ def change_priority(tid):
         ticket.id,
         f"{priority_label(old_priority)} → {priority_label(new_priority)}; {reason}",
     )
+    from servicesystem.project_management.services import on_ticket_sync_hook
+
+    on_ticket_sync_hook(ticket)
     db.session.commit()
     flash(f"Критичность изменена: {priority_label(old_priority)} → {priority_label(new_priority)}.", "success")
     return redirect(url_for("tickets.detail", tid=tid))

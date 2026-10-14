@@ -1,0 +1,201 @@
+{# Icons and layout for staff phone directory (list + detail). #}
+{% from "macros/forms.html" import csrf_field %}
+
+{% macro directory_initials(full_name) -%}
+  {%- set raw = (full_name or '')|trim -%}
+  {%- set parts = raw.split() if raw else [] -%}
+  {%- if parts|length >= 2 -%}
+    {{- (parts[0][:1] ~ parts[1][:1])|upper -}}
+  {%- elif parts|length == 1 and parts[0] -%}
+    {{- parts[0][:2]|upper -}}
+  {%- else -%}
+    ?
+  {%- endif -%}
+{%- endmacro %}
+
+
+{% macro directory_icon(kind) -%}
+<span class="directory-fact-icon directory-fact-icon--{{ kind }}" aria-hidden="true">
+  {% if kind == 'org' %}
+  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="M4 21V9l8-4 8 4v12"/><path d="M9 21v-6h6v6"/><path d="M9 9h.01M15 9h.01"/></svg>
+  {% elif kind == 'dept' %}
+  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="M3 7v11a1 1 0 0 0 1 1h16a1 1 0 0 0 1-1V7"/><path d="M8 21V5a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v16"/><path d="M12 11h.01M12 15h.01"/></svg>
+  {% elif kind == 'mobile' %}
+  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><rect x="7" y="2" width="10" height="20" rx="2"/><path d="M11 18h2"/></svg>
+  {% elif kind == 'work' %}
+  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="M6 3h4l2 3h6v15H2V6h4V3z"/><path d="M6 8h12"/></svg>
+  {% elif kind == 'email' %}
+  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="5" width="20" height="14" rx="2"/><path d="m2 7 10 7 10-7"/></svg>
+  {% elif kind == 'qr' %}
+  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="M4 4h6v6H4zM14 4h6v6h-6zM4 14h6v6H4z"/><path d="M14 14h2v2h-2zM18 14h2v6h-2zM14 18h2v2h-2z"/></svg>
+  {% elif kind == 'edit' %}
+  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="M12 20h9"/><path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4Z"/></svg>
+  {% elif kind == 'download' %}
+  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3v12"/><path d="m7 10 5 5 5-5"/><path d="M5 21h14"/></svg>
+  {% elif kind == 'user' %}
+  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="8" r="4"/><path d="M4 20c1.5-4 6-6 8-6s6.5 2 8 6"/></svg>
+  {% endif %}
+</span>
+{%- endmacro %}
+
+
+{% macro directory_cell_inline(kind, value_html, empty=false) -%}
+<div class="directory-cell-inline{% if empty %} directory-cell-inline--empty{% endif %}">
+  {{ directory_icon(kind) }}
+  <div class="directory-cell-value">{% if empty %}<span class="directory-cell-empty">—</span>{% else %}{{ value_html }}{% endif %}</div>
+</div>
+{%- endmacro %}
+
+
+{% macro directory_contact_meta(c) -%}
+<p class="directory-contact-meta">
+  <span class="directory-contact-meta-org">{{ c.organization.name if c.organization else '—' }}</span>
+  {%- if c.department -%}
+  <span class="directory-contact-meta-dept">{{ c.department|directory_text }}</span>
+  {%- endif -%}
+</p>
+{%- endmacro %}
+
+
+{% macro directory_table_row(c, index, archived=false, filter_org=none, search_q=none) -%}
+<div class="directory-contact-row{% if archived %} directory-contact-row--archived{% endif %} live-search-item" data-live-search-item role="row">
+  <span class="directory-cell directory-cell--num">
+    {%- if archived -%}
+    <span class="directory-badge directory-badge--archive">Архив</span>
+    {%- else -%}
+    <span class="directory-row-num" aria-label="Номер по порядку">{% if c.sort_order > 0 %}{{ c.sort_order }}{% else %}{{ index }}{% endif %}</span>
+    {%- endif -%}
+  </span>
+  <span class="directory-cell directory-cell--avatar" aria-hidden="true">
+    <span class="directory-contact-avatar{% if archived %} directory-contact-avatar--muted{% endif %}">{{ directory_initials(c.full_name|directory_text) }}</span>
+  </span>
+  <div class="directory-cell directory-cell--name">
+    {%- if archived -%}
+    <span class="directory-contact-title">{{ c.full_name|directory_text }}</span>
+    {%- else -%}
+    <a class="directory-contact-title" href="{{ url_for('admin.directory_detail', cid=c.id) }}">{{ c.full_name|directory_text }}</a>
+    {%- endif -%}
+    {% if c.position %}<span class="directory-contact-position">{{ c.position|directory_text }}</span>{% endif %}
+    {% if not archived and not c.is_published %}<span class="directory-badge directory-badge--draft">Черновик</span>{% endif %}
+  </div>
+  <div class="directory-cell directory-cell--org">
+    <div class="directory-cell-inline{% if not c.organization %} directory-cell-inline--empty{% endif %}">
+      {{ directory_icon('org') }}
+      <div class="directory-cell-value directory-cell-value--stack">
+        {%- if c.organization -%}
+        <span class="directory-cell-text" title="{{ c.organization.name }}">{{ c.organization.name }}</span>
+        {%- if c.department -%}<span class="directory-cell-sub" title="{{ c.department|directory_text }}">{{ c.department|directory_text }}</span>{%- endif -%}
+        {%- else -%}<span class="directory-cell-empty">—</span>{%- endif -%}
+      </div>
+    </div>
+  </div>
+  <div class="directory-cell directory-cell--mobile">
+    {%- if c.phone_mobile and c.phone_mobile != '—' -%}
+    <div class="directory-cell-inline">
+      {{ directory_icon('mobile') }}
+      <div class="directory-cell-value">
+        <a class="directory-fact-link" href="tel:{{ c.phone_mobile|replace(' ', '')|replace('-', '') }}" title="{{ c.phone_mobile }}">{{ c.phone_mobile }}</a>
+      </div>
+    </div>
+    {%- else -%}
+    {{ directory_cell_inline('mobile', '', empty=true) }}
+    {%- endif -%}
+  </div>
+  <div class="directory-cell directory-cell--work">
+    {%- if c.phone_internal or c.phone_extension -%}
+    <div class="directory-cell-inline directory-cell-inline--stack">
+      {{ directory_icon('work') }}
+      <div class="directory-cell-value directory-cell-value--stack directory-cell-value--work">
+        {%- if c.phone_internal -%}
+        <span class="directory-cell-text directory-cell-text--wrap" title="{{ c.phone_internal }}">{{ c.phone_internal }}</span>
+        {%- endif -%}
+        {%- if c.phone_extension -%}
+        <span class="directory-cell-sub directory-cell-sub--ext" title="Добавочный {{ c.phone_extension }}">доб. {{ c.phone_extension }}</span>
+        {%- elif not c.phone_internal -%}
+        <span class="directory-cell-text directory-cell-text--wrap">{{ c|work_phone }}</span>
+        {%- endif -%}
+      </div>
+    </div>
+    {%- else -%}
+    {{ directory_cell_inline('work', '', empty=true) }}
+    {%- endif -%}
+  </div>
+  <div class="directory-cell directory-cell--email">
+    {%- if c.email -%}
+    <div class="directory-cell-inline">
+      {{ directory_icon('email') }}
+      <div class="directory-cell-value">
+        <a class="directory-fact-link" href="mailto:{{ c.email }}" title="{{ c.email }}">{{ c.email }}</a>
+      </div>
+    </div>
+    {%- else -%}
+    {{ directory_cell_inline('email', '', empty=true) }}
+    {%- endif -%}
+  </div>
+  <div class="directory-cell directory-cell--actions">
+    {%- if archived -%}
+    <form method="post" action="{{ url_for('admin.directory_restore', cid=c.id, org=filter_org, q=search_q or none) }}" class="directory-restore-form">
+      {{ csrf_field() }}
+      <button type="submit" class="directory-action-btn directory-action-btn--text" title="Восстановить">Восстановить</button>
+    </form>
+    {%- else -%}
+    <div class="directory-action-group">
+      <a href="{{ url_for('admin.directory_detail', cid=c.id) }}" class="directory-action-btn" title="QR-код">{{ directory_icon('qr') }}<span class="sr-only">QR</span></a>
+      <a href="{{ url_for('admin.directory_vcf', cid=c.id) }}" class="directory-action-btn" title="Скачать .vcf">{{ directory_icon('download') }}<span class="sr-only">.vcf</span></a>
+      <a href="{{ url_for('admin.directory_edit', cid=c.id) }}" class="directory-action-btn" title="Изменить">{{ directory_icon('edit') }}<span class="sr-only">Изменить</span></a>
+    </div>
+    {%- endif -%}
+  </div>
+</div>
+{%- endmacro %}
+
+
+{% macro directory_contact_facts(c, show_org=false, row=false) -%}
+<ul class="directory-contact-facts{% if row %} directory-contact-facts--row{% endif %}">
+  {% if show_org %}
+  <li class="directory-fact">
+    {{ directory_icon('org') }}
+    <span class="directory-fact-body">
+      <span class="directory-fact-label">Организация</span>
+      <span class="directory-fact-value">{{ c.organization.name if c.organization else '—' }}</span>
+    </span>
+  </li>
+  {% if c.department %}
+  <li class="directory-fact">
+    {{ directory_icon('dept') }}
+    <span class="directory-fact-body">
+      <span class="directory-fact-label">Подразделение</span>
+      <span class="directory-fact-value">{{ c.department|directory_text }}</span>
+    </span>
+  </li>
+  {% endif %}
+  {% endif %}
+  {% if c.phone_mobile and c.phone_mobile != '—' %}
+  <li class="directory-fact"{% if row %} title="Мобильный"{% endif %}>
+    {{ directory_icon('mobile') }}
+    <span class="directory-fact-body">
+      <span class="directory-fact-label">Мобильный</span>
+      <a class="directory-fact-value directory-fact-link" href="tel:{{ c.phone_mobile|replace(' ', '')|replace('-', '') }}">{{ c.phone_mobile }}</a>
+    </span>
+  </li>
+  {% endif %}
+  {% if c.phone_internal or c.phone_extension %}
+  <li class="directory-fact"{% if row %} title="Рабочий"{% endif %}>
+    {{ directory_icon('work') }}
+    <span class="directory-fact-body">
+      <span class="directory-fact-label">Рабочий</span>
+      <span class="directory-fact-value">{{ c|work_phone }}</span>
+    </span>
+  </li>
+  {% endif %}
+  {% if c.email %}
+  <li class="directory-fact"{% if row %} title="Email"{% endif %}>
+    {{ directory_icon('email') }}
+    <span class="directory-fact-body">
+      <span class="directory-fact-label">Email</span>
+      <a class="directory-fact-value directory-fact-link" href="mailto:{{ c.email }}">{{ c.email }}</a>
+    </span>
+  </li>
+  {% endif %}
+</ul>
+{%- endmacro %}

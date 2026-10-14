@@ -1,0 +1,51 @@
+{% extends "base.html" %}
+
+{% block title %}Проекты — календарь{% endblock %}
+
+{% block head %}<link rel="stylesheet" href="{{ url_for('static', filename='css/projects.css') }}?v=2">{% endblock %}
+
+{% block content %}
+
+<div class="container cms-page projects-page">
+
+  {% include "projects/_arm_header.html" %}
+
+  <div class="projects-gantt-toolbar">
+
+    {% for m, lbl in [('month','Месяц'),('workweek','Рабочая неделя'),('day','День'),('team','Расписание команды')] %}
+
+    <a class="projects-view-tab{% if cal_mode == m %} is-active{% endif %}" href="{{ url_for('projects.arm', view='calendar', project=filter_project, cal_mode=m) }}">{{ lbl }}</a>
+
+    {% endfor %}
+
+    <a class="projects-view-tab" href="{{ url_for('projects.calendar_settings') }}">Синхронизация</a>
+
+  </div>
+
+  <div class="projects-calendar-grid{% if cal_mode == 'day' %} projects-calendar-grid--day{% elif cal_mode == 'workweek' %} projects-calendar-grid--week{% endif %}">
+
+    {% for d in month_grid %}
+
+    {% set load = team_load.get(d) if team_load else 0 %}
+
+    <div class="projects-calendar-cell{% if d.month != today.month and cal_mode == 'month' %} is-muted{% endif %}{% if load %} projects-load-{{ 'high' if load >= 5 else ('mid' if load >= 3 else 'low') }}{% endif %}">
+
+      <span class="projects-calendar-day">{% if cal_mode == 'month' %}{{ d.day }}{% else %}{% set wd = ('Пн','Вт','Ср','Чт','Пт','Сб','Вс') %}{{ wd[d.weekday()] }} {{ d.strftime('%d.%m') }}{% endif %}</span>
+
+      {% if cal_mode == 'team' %}<span class="projects-calendar-load">{{ load }} задач</span>{% endif %}
+
+      {% for t in tasks if t.due_date == d %}
+
+      <a class="projects-calendar-event p-{{ t.priority }}" href="{{ url_for('projects.task_detail', tid=t.id) }}">{{ t.title[:40] }}</a>
+
+      {% endfor %}
+
+    </div>
+
+    {% endfor %}
+
+  </div>
+
+</div>
+
+{% endblock %}

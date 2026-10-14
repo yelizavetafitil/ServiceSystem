@@ -1,0 +1,28 @@
+{% extends "base.html" %}
+{% block title %}Текущие проекты{% endblock %}
+{% block head %}<link rel="stylesheet" href="{{ url_for('static', filename='css/projects.css') }}?v=1">{% endblock %}
+{% block content %}
+<div class="container cms-page">
+  <h1>Текущие проекты</h1>
+  <p class="hint">Ход работ по отчётным этапам (куратор-заказчик).</p>
+  {% for p in projects %}
+  <div class="card mb-md">
+    <h2>{{ p.name }}</h2>
+    <p class="muted">Срок: {% if p.planned_start %}{{ p.planned_start.strftime('%d.%m.%Y') }}{% endif %} — {{ p.deadline.strftime('%d.%m.%Y') if p.deadline else '—' }}</p>
+    <ol class="projects-timeline">
+      {% for s in stages_by_project[p.id] %}
+      <li class="{% if s.released_at %}is-done{% endif %}">
+        <strong>{{ s.title }}</strong>
+        {% if s.deadline %}<span class="muted">до {{ s.deadline.strftime('%d.%m.%Y') }}</span>{% endif %}
+        {% if s.released_at %}<span class="projects-timeline-badge">Выпущен</span>{% endif %}
+      </li>
+      {% else %}
+      <li class="muted">Этапы не заданы</li>
+      {% endfor %}
+    </ol>
+  </div>
+  {% else %}
+  <p class="muted">Нет назначенных проектов.</p>
+  {% endfor %}
+</div>
+{% endblock %}

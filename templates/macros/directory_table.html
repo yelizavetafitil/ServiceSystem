@@ -1,0 +1,14 @@
+{% from "macros/directory.html" import directory_icon %}
+
+{% macro directory_table_header() -%}
+<div class="directory-table-head" role="row">
+  <span class="directory-cell directory-cell--num">№</span>
+  <span class="directory-cell directory-cell--avatar" aria-hidden="true"></span>
+  <span class="directory-cell directory-cell--name directory-table-head-cell">{{ directory_icon('user') }}<span class="directory-head-label">ФИО</span></span>
+  <span class="directory-cell directory-cell--org directory-table-head-cell">{{ directory_icon('org') }}<span class="directory-head-label">Организация</span></span>
+  <span class="directory-cell directory-cell--mobile directory-table-head-cell">{{ directory_icon('mobile') }}<span class="directory-head-label">Мобильный</span></span>
+  <span class="directory-cell directory-cell--work directory-table-head-cell">{{ directory_icon('work') }}<span class="directory-head-label">Рабочий</span></span>
+  <span class="directory-cell directory-cell--email directory-table-head-cell">{{ directory_icon('email') }}<span class="directory-head-label">Email</span></span>
+  <span class="directory-cell directory-cell--actions directory-table-head-cell directory-table-head-cell--actions"><span class="directory-head-label">Действия</span></span>
+</div>
+{%- endmacro %}

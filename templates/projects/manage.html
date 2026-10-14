@@ -1,0 +1,152 @@
+{% extends "base.html" %}
+
+{% block title %}Управление проектами{% endblock %}
+
+{% block head %}<link rel="stylesheet" href="{{ url_for('static', filename='css/projects.css') }}?v=23">{% endblock %}
+
+{% block content %}
+
+<div class="container cms-page projects-cms">
+
+  <div class="page-header">
+
+    <h1>Управление проектами</h1>
+
+    <div class="page-header-actions">
+
+      <a href="{{ url_for('projects.arm') }}" class="btn btn-outline btn-sm">Рабочее место</a>
+
+      <a href="{{ url_for('projects.manage_new') }}" class="btn btn-primary btn-sm">Новый проект</a>
+
+    </div>
+
+  </div>
+
+
+
+  <p class="projects-cms-hint muted">
+
+    Шаблоны хранят типовые этапы и задачи. Развернуть проект: <strong>Новый проект → Из шаблона</strong>
+
+    или кнопка «Развернуть» в таблице ниже.
+
+  </p>
+
+
+
+  <div class="card projects-cms-card">
+
+    <div class="table-wrap">
+
+      <table class="table">
+
+        <thead>
+
+          <tr><th>Название</th><th>Договор</th><th>Крайний срок</th><th></th></tr>
+
+        </thead>
+
+        <tbody>
+
+          {% for p in projects %}
+
+          <tr>
+
+            <td>{{ p.name }}</td>
+
+            <td>{{ p.contract.number if p.contract else '—' }}</td>
+
+            <td>{{ p.deadline.strftime('%d.%m.%Y') if p.deadline else '—' }}</td>
+
+            <td><a href="{{ url_for('projects.manage_edit', pid=p.id) }}">Карточка</a></td>
+
+          </tr>
+
+          {% else %}
+
+          <tr><td colspan="4" class="muted">Проектов нет</td></tr>
+
+          {% endfor %}
+
+        </tbody>
+
+      </table>
+
+    </div>
+
+  </div>
+
+
+
+  <div class="card projects-cms-card">
+
+    <h2 class="projects-cms-section-title">Шаблоны проектов</h2>
+
+    {% if templates %}
+
+    <div class="table-wrap">
+
+      <table class="table projects-manage-table projects-templates-table">
+
+        <thead>
+
+          <tr>
+
+            <th>Название</th>
+
+            <th class="projects-manage-col-num">Этапы</th>
+
+            <th class="projects-manage-col-num">Задачи</th>
+
+            <th class="projects-manage-col-actions"></th>
+
+          </tr>
+
+        </thead>
+
+        <tbody>
+
+          {% for t in templates %}
+
+          <tr>
+
+            <td class="projects-manage-name">{{ t.name }}</td>
+
+            <td class="projects-manage-col-num">{{ t.stages.count() }}</td>
+
+            <td class="projects-manage-col-num">{{ t.tasks.filter_by(parent_id=None).count() }}</td>
+
+            <td class="projects-manage-col-actions">
+
+              <div class="projects-template-actions">
+
+                <a href="{{ url_for('projects.manage_edit', pid=t.id) }}" class="btn btn-outline btn-xs">Настроить</a>
+
+                <a href="{{ url_for('projects.manage_new', template=t.id) }}" class="btn btn-primary btn-xs">Развернуть</a>
+
+              </div>
+
+            </td>
+
+          </tr>
+
+          {% endfor %}
+
+        </tbody>
+
+      </table>
+
+    </div>
+
+    {% else %}
+
+    <p class="muted">Создайте проект и отметьте «Сохранить как шаблон» или в карточке проекта нажмите «Сделать шаблоном».</p>
+
+    {% endif %}
+
+  </div>
+
+</div>
+
+{% endblock %}
+

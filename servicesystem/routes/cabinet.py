@@ -267,3 +267,36 @@ def stream_video(filename):
     response.headers["Content-Disposition"] = "inline"
     response.headers["Cache-Control"] = "no-store"
     return response
+
+
+@bp.route("/projects")
+@login_required
+@contract_access_required
+def customer_projects():
+    """ЛК куратора-заказчика: текущие проекты (ТЗ 1.3)."""
+    if not current_user.is_customer_curator:
+        abort(403)
+    from servicesystem.project_management.models import Project, ProjectStage
+
+    from datetime import date
+
+    today = date.today()
+    projects = (
+        Project.query.filter_by(customer_curator_id=current_user.id, is_active=True)
+        .filter(
+            db.or_(
+                Project.customer_curator_active_until.is_(None),
+                Project.customer_curator_active_until >= today,
+            )
+        )
+        .order_by(Project.deadline.nulls_last(), Project.name)
+        .all()
+    )
+    stages_by_project = {}
+    for p in projects:
+        stages_by_project[p.id] = p.stages.order_by(ProjectStage.sort_order).all()
+    return render_template(
+        "cabinet/customer_projects.html",
+        projects=projects,
+        stages_by_project=stages_by_project,
+    )

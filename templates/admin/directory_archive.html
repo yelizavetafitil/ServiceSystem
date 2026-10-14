@@ -1,6 +1,7 @@
 {% extends "base.html" %}
 {% from "macros/forms.html" import csrf_field %}
 {% from "macros/live_search.html" import live_search_input, live_search_reset, live_search_status %}
+{% from "macros/directory_table.html" import directory_table_header %}
 {% block title %}Архив — справочник{% endblock %}
 {% block content %}
 <div class="container cms-page">
@@ -39,8 +40,11 @@
     {{ live_search_status() }}
   </div>
 
-  <div id="archive-results" class="directory-results live-search-results">
-    {% include "admin/directory_archive_rows.html" %}
+  <div class="directory-table-shell card">
+    {{ directory_table_header() }}
+    <div id="archive-results" class="directory-contact-list live-search-results">
+      {% include "admin/directory_archive_rows.html" %}
+    </div>
   </div>
 </div>
 {% endblock %}

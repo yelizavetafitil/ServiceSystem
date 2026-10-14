@@ -25,6 +25,9 @@ class StorageBackend(ABC):
     @abstractmethod
     def size(self, rel_path: str) -> int: ...
 
+    @abstractmethod
+    def delete(self, rel_path: str) -> None: ...
+
 
 class LocalStorageBackend(StorageBackend):
     def __init__(self, base_path: str):
@@ -60,6 +63,11 @@ class LocalStorageBackend(StorageBackend):
 
     def size(self, rel_path: str) -> int:
         return os.path.getsize(self._full(rel_path))
+
+    def delete(self, rel_path: str) -> None:
+        path = self._full(rel_path)
+        if os.path.isfile(path):
+            os.remove(path)
 
 
 class S3StorageBackend(StorageBackend):
@@ -131,6 +139,12 @@ class S3StorageBackend(StorageBackend):
     def size(self, rel_path: str) -> int:
         resp = self.client.head_object(Bucket=self.bucket, Key=self._key(rel_path))
         return resp["ContentLength"]
+
+    def delete(self, rel_path: str) -> None:
+        self.client.delete_object(Bucket=self.bucket, Key=self._key(rel_path))
+        local = os.path.join(self._cache_dir, rel_path.replace("/", "_"))
+        if os.path.isfile(local):
+            os.remove(local)
 
 
 _backend: StorageBackend | None = None
