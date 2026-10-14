@@ -4,7 +4,7 @@
 
 {% block title %}{{ task.title }}{% endblock %}
 
-{% block head %}<link rel="stylesheet" href="{{ url_for('static', filename='css/projects.css') }}?v=26">{% endblock %}
+{% block head %}<link rel="stylesheet" href="{{ url_for('static', filename='css/projects.css') }}?v=27">{% endblock %}
 
 {% block content %}
 
@@ -396,7 +396,7 @@
 
     </form>
 
-    <form method="post" action="{{ url_for('projects.task_update', tid=task.id) }}" class="form-row projects-time-manual">
+    <form method="post" action="{{ url_for('projects.task_update', tid=task.id) }}" class="projects-cms-inline-form form-row form-row--align-end projects-time-manual">
 
       {{ csrf_field() }}<input type="hidden" name="action" value="time_manual">
 
@@ -404,7 +404,7 @@
 
       <div class="form-group"><label>Комментарий</label><input name="note" class="form-control" placeholder="Необязательно"></div>
 
-      <div class="form-group form-group--shrink"><label class="projects-cms-label-spacer">&nbsp;</label><button type="submit" class="btn btn-outline btn-sm">Добавить вручную</button></div>
+      <div class="form-group form-group--shrink"><label class="projects-cms-action-label" aria-hidden="true">Добавить</label><button type="submit" class="btn btn-outline btn-sm">Добавить вручную</button></div>
 
     </form>
 

@@ -743,22 +743,38 @@
   padding: 8px 12px;
   font-size: 13px;
 }
-.projects-cms .form-row--align-end { align-items: end; gap: 12px; }
-.projects-cms .form-group--shrink { margin-bottom: 0; min-width: 120px; }
-.projects-cms-label-spacer {
-  display: block;
-  height: 0;
-  overflow: hidden;
-  margin: 0;
-  padding: 0;
-  border: 0;
+.projects-cms-inline-form .form-row--align-end {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  gap: 12px;
 }
-@media (min-width: 641px) {
-  .projects-cms-label-spacer::before {
-    content: "\00a0";
-    display: block;
-    height: 19px;
-  }
+.projects-cms-inline-form .form-row--align-end > .form-group {
+  margin-bottom: 0;
+  flex: 1 1 160px;
+  min-width: 0;
+}
+.projects-cms-inline-form .form-row--align-end > .form-group--shrink {
+  flex: 0 0 auto;
+  min-width: auto;
+}
+.projects-cms-inline-form .form-row--align-end .form-group--shrink .btn {
+  padding: 10px 14px;
+  font-size: inherit;
+  line-height: 1.25;
+  white-space: nowrap;
+}
+.projects-cms-action-label {
+  display: block;
+  font-weight: 600;
+  font-size: 13px;
+  margin-bottom: 6px;
+  color: transparent;
+  user-select: none;
+  line-height: 1.2;
+}
+.projects-cms-action-label::before {
+  content: "\00a0";
 }
 .card-nested { margin-bottom: 12px; padding: 12px; }
 .projects-overdue { color: #dc2626; font-weight: 700; }
