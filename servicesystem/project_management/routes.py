@@ -223,11 +223,15 @@ def manage_new():
             if not tpl or not tpl.is_template:
                 flash("Выберите шаблон из списка.", "warning")
                 return redirect(url_for("projects.manage_new", template=preset_template_id))
+            name = (request.form.get("name") or "").strip()
+            if not name:
+                flash("Укажите название нового проекта.", "warning")
+                return redirect(url_for("projects.manage_new", template=tpl_id or preset_template_id))
             else:
                 member_ids = [int(x) for x in request.form.getlist("member_ids")]
                 proj = project_from_template(
                     tpl,
-                    name=request.form["name"].strip(),
+                    name=name,
                     contract_id=request.form.get("contract_id", type=int) or None,
                     curator_id=request.form.get("curator_auditor_id", type=int) or current_user.id,
                     customer_curator_id=request.form.get("customer_curator_id", type=int) or None,
@@ -240,8 +244,12 @@ def manage_new():
                 flash("Проект развёрнут из шаблона — проверьте сроки и договор.", "success")
                 return redirect(url_for("projects.manage_edit", pid=proj.id))
         else:
+            name = (request.form.get("name") or "").strip()
+            if not name:
+                flash("Укажите название проекта.", "warning")
+                return redirect(url_for("projects.manage_new"))
             proj = Project(
-                name=request.form["name"].strip(),
+                name=name,
                 contract_id=request.form.get("contract_id", type=int) or None,
                 planned_start=_parse_form_date(request.form.get("planned_start")),
                 deadline=_parse_form_date(request.form.get("deadline")),
@@ -388,11 +396,16 @@ def task_new():
     projects = projects_q.order_by(Project.name).all()
     executors = User.query.filter_by(role="executor", is_active=True).all()
     if request.method == "POST":
+        title = (request.form.get("title") or "").strip()
+        project_id = request.form.get("project_id", type=int)
+        if not title or not project_id:
+            flash("Укажите проект и название задачи.", "warning")
+            return redirect(url_for("projects.task_new", project=preset_project_id, parent=parent_id))
         task = ProjectTask(
-            project_id=int(request.form["project_id"]),
+            project_id=project_id,
             stage_id=request.form.get("stage_id", type=int) or None,
             parent_id=request.form.get("parent_id", type=int) or None,
-            title=request.form["title"].strip(),
+            title=title,
             description=(request.form.get("description") or "").strip() or None,
             priority=int(request.form.get("priority") or 2),
             assignee_id=request.form.get("assignee_id", type=int) or None,
