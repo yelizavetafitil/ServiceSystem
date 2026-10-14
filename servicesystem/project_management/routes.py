@@ -870,9 +870,9 @@ def _gantt_milestone_groups(milestones: list[dict], *, min_gap_pct: float = 5.0)
     groups: list[dict] = []
     for m in ordered:
         if not groups or abs(m["center_pct"] - groups[-1]["center_pct"]) > min_gap_pct:
-            groups.append({"center_pct": m["center_pct"], "items": [m]})
+            groups.append({"center_pct": m["center_pct"], "milestones": [m]})
         else:
-            groups[-1]["items"].append(m)
+            groups[-1]["milestones"].append(m)
     return groups
 
 
@@ -982,7 +982,7 @@ def _gantt_layout(
     link_edges = _gantt_link_edges(gantt_bars, links)
     gantt_milestones = _gantt_milestones(task_list, span_start, span_end, scale, n_cols)
     gantt_milestone_groups = _gantt_milestone_groups(gantt_milestones)
-    milestone_stack_max = max((len(g["items"]) for g in gantt_milestone_groups), default=1)
+    milestone_stack_max = max((len(g["milestones"]) for g in gantt_milestone_groups), default=1)
 
     return {
         "gantt_bars": gantt_bars,
