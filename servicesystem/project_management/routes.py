@@ -4,7 +4,7 @@ from __future__ import annotations
 import calendar
 from datetime import date, timedelta
 
-from flask import Blueprint, abort, flash, jsonify, redirect, render_template, request, url_for
+from flask import Blueprint, abort, current_app, flash, jsonify, redirect, render_template, request, url_for
 from sqlalchemy import or_
 from flask_login import current_user, login_required
 
@@ -19,6 +19,7 @@ from servicesystem.project_management.models import (
     ProjectTask,
     ProjectTaskCollaborator,
 )
+from servicesystem.project_management.dates import parse_optional_date as _parse_form_date
 from servicesystem.project_management.services import (
     duplicate_task,
     gantt_sla_breach,
@@ -111,8 +112,12 @@ def arm():
     if view not in ("kanban", "week", "calendar", "gantt"):
         view = "kanban"
     if current_user.is_staff:
-        rollover_overdue_tasks()
-        db.session.commit()
+        try:
+            rollover_overdue_tasks()
+            db.session.commit()
+        except Exception:
+            db.session.rollback()
+            current_app.logger.exception("rollover_overdue_tasks failed")
     project_id = request.args.get("project", type=int)
     gantt_scale = (request.args.get("scale") or "week").lower()
     if gantt_scale not in ("day", "week", "month", "quarter"):
@@ -217,6 +222,7 @@ def manage_new():
             tpl = db.session.get(Project, tpl_id) if tpl_id else None
             if not tpl or not tpl.is_template:
                 flash("Выберите шаблон из списка.", "warning")
+                return redirect(url_for("projects.manage_new", template=preset_template_id))
             else:
                 member_ids = [int(x) for x in request.form.getlist("member_ids")]
                 proj = project_from_template(
@@ -225,8 +231,8 @@ def manage_new():
                     contract_id=request.form.get("contract_id", type=int) or None,
                     curator_id=request.form.get("curator_auditor_id", type=int) or current_user.id,
                     customer_curator_id=request.form.get("customer_curator_id", type=int) or None,
-                    planned_start=request.form.get("planned_start") or None,
-                    deadline=request.form.get("deadline") or None,
+                    planned_start=_parse_form_date(request.form.get("planned_start")),
+                    deadline=_parse_form_date(request.form.get("deadline")),
                     member_ids=member_ids,
                 )
                 update_customer_curator_window(proj)
@@ -237,8 +243,8 @@ def manage_new():
             proj = Project(
                 name=request.form["name"].strip(),
                 contract_id=request.form.get("contract_id", type=int) or None,
-                planned_start=request.form.get("planned_start") or None,
-                deadline=request.form.get("deadline") or None,
+                planned_start=_parse_form_date(request.form.get("planned_start")),
+                deadline=_parse_form_date(request.form.get("deadline")),
                 curator_auditor_id=request.form.get("curator_auditor_id", type=int) or current_user.id,
                 customer_curator_id=request.form.get("customer_curator_id", type=int) or None,
                 description=(request.form.get("description") or "").strip() or None,
@@ -278,7 +284,7 @@ def manage_edit(pid):
             st = ProjectStage(
                 project_id=proj.id,
                 title=request.form["stage_title"].strip(),
-                deadline=request.form.get("stage_deadline") or None,
+                deadline=_parse_form_date(request.form.get("stage_deadline")),
                 responsible_id=request.form.get("stage_responsible_id", type=int),
                 sort_order=proj.stages.count(),
             )
@@ -333,8 +339,8 @@ def manage_edit(pid):
         else:
             proj.name = request.form["name"].strip()
             proj.contract_id = request.form.get("contract_id", type=int) or None
-            proj.planned_start = request.form.get("planned_start") or None
-            proj.deadline = request.form.get("deadline") or None
+            proj.planned_start = _parse_form_date(request.form.get("planned_start"))
+            proj.deadline = _parse_form_date(request.form.get("deadline"))
             proj.curator_auditor_id = request.form.get("curator_auditor_id", type=int)
             proj.customer_curator_id = request.form.get("customer_curator_id", type=int) or None
             proj.description = (request.form.get("description") or "").strip() or None
@@ -390,8 +396,8 @@ def task_new():
             description=(request.form.get("description") or "").strip() or None,
             priority=int(request.form.get("priority") or 2),
             assignee_id=request.form.get("assignee_id", type=int) or None,
-            due_date=request.form.get("due_date") or None,
-            start_date=request.form.get("start_date") or None,
+            due_date=_parse_form_date(request.form.get("due_date")),
+            start_date=_parse_form_date(request.form.get("start_date")),
             kanban_status="todo",
             created_by_id=current_user.id,
         )

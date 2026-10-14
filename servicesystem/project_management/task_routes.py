@@ -18,6 +18,7 @@ from servicesystem.project_management.models import (
     ProjectTaskLink,
     TASK_LINK_TYPES,
 )
+from servicesystem.project_management.dates import parse_optional_date
 from servicesystem.project_management.routes import KANBAN_LABELS, bp
 from servicesystem.project_management.services import (
     add_manual_time,
@@ -143,8 +144,8 @@ def task_update(tid):
     task.priority = int(request.form.get("priority") or 2)
     task.kanban_status = request.form.get("kanban_status") or task.kanban_status
     task.assignee_id = request.form.get("assignee_id", type=int) or None
-    task.due_date = request.form.get("due_date") or None
-    task.start_date = request.form.get("start_date") or None
+    task.due_date = parse_optional_date(request.form.get("due_date"))
+    task.start_date = parse_optional_date(request.form.get("start_date"))
     if current_user.is_auditor or current_user.is_admin:
         from servicesystem.project_management.models import ProjectTaskCollaborator
 
@@ -268,9 +269,9 @@ def api_task_dates(tid):
         abort(403)
     data = request.get_json(silent=True) or {}
     if data.get("start_date"):
-        task.start_date = data["start_date"]
+        task.start_date = parse_optional_date(data["start_date"])
     if data.get("due_date"):
-        task.due_date = data["due_date"]
+        task.due_date = parse_optional_date(data["due_date"])
     sync_calendar_events_for_task(task)
     db.session.commit()
     from servicesystem.project_management.caldav_sync import try_push_task_to_caldav

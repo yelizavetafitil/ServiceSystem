@@ -187,10 +187,19 @@ def create_app(config_class=Config):
     with app.app_context():
         try:
             db.create_all()
+        except Exception:
+            app.logger.exception("db.create_all failed")
+        try:
+            from servicesystem.project_management.schema import ensure_project_tables
+
+            ensure_project_tables()
+        except Exception:
+            app.logger.exception("project schema ensure failed")
+        try:
             _apply_schema_patches()
             _setup_audit_triggers()
-        except Exception as exc:
-            app.logger.warning("Database init deferred: %s", exc)
+        except Exception:
+            app.logger.exception("schema patches / audit triggers failed")
 
     return app
 
@@ -206,11 +215,6 @@ def _apply_schema_patches():
         "ALTER TABLE phone_directory_contacts ADD COLUMN IF NOT EXISTS phone_extension VARCHAR(16)",
         "UPDATE phone_directory_contacts SET phone_mobile = '' WHERE phone_mobile IS NULL",
         "CREATE UNIQUE INDEX IF NOT EXISTS ix_phone_directory_contacts_user_id ON phone_directory_contacts (user_id) WHERE user_id IS NOT NULL",
-        "ALTER TABLE project_calendar_feeds ADD COLUMN IF NOT EXISTS email_reminders BOOLEAN DEFAULT TRUE",
-        "ALTER TABLE project_calendar_feeds ADD COLUMN IF NOT EXISTS reminder_minutes INTEGER DEFAULT 60",
-        "ALTER TABLE project_calendar_feeds ADD COLUMN IF NOT EXISTS caldav_username VARCHAR(255)",
-        "ALTER TABLE project_calendar_feeds ADD COLUMN IF NOT EXISTS caldav_password VARCHAR(255)",
-        "ALTER TABLE project_calendar_feeds ADD COLUMN IF NOT EXISTS last_sync_message VARCHAR(512)",
     ]
     for sql in patches:
         try:
