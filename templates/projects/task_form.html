@@ -1,7 +1,7 @@
 {% extends "base.html" %}
 {% from "macros/forms.html" import csrf_field %}
 {% block title %}{% if parent_task %}Подзадача{% else %}Новая задача{% endif %}{% endblock %}
-{% block head %}<link rel="stylesheet" href="{{ url_for('static', filename='css/projects.css') }}?v=28">{% endblock %}
+{% block head %}<link rel="stylesheet" href="{{ url_for('static', filename='css/projects.css') }}?v=29">{% endblock %}
 {% block content %}
 <div class="container cms-page projects-cms">
   {% if parent_task %}
@@ -38,11 +38,11 @@
             {% endfor %}
           {% elif preset_project_id %}
             {% for s in stages_by_project.get(preset_project_id, []) %}
-            <option value="{{ s.id }}">{{ s.title }}</option>
+            <option value="{{ s.id }}" {% if preset_stage_id == s.id %}selected{% endif %}>{{ s.title }}</option>
             {% endfor %}
           {% elif projects %}
             {% for s in stages_by_project.get(projects[0].id, []) %}
-            <option value="{{ s.id }}">{{ s.title }}</option>
+            <option value="{{ s.id }}" {% if preset_stage_id == s.id %}selected{% endif %}>{{ s.title }}</option>
             {% endfor %}
           {% endif %}
         </select>
@@ -51,11 +51,38 @@
       <div class="form-group"><label>Описание</label><textarea name="description" class="form-control" rows="4"></textarea></div>
       <div class="form-row">
         <div class="form-group"><label>Критичность</label><select name="priority" class="form-control">{% for n, lbl in project_priority_labels.items() %}<option value="{{ n }}">{{ lbl }}</option>{% endfor %}</select></div>
-        <div class="form-group"><label>Исполнитель</label><select name="assignee_id" class="form-control"><option value="">—</option>{% for u in executors %}<option value="{{ u.id }}">{{ u.full_name }}</option>{% endfor %}</select></div>
+        <div class="form-group"><label>Исполнитель</label>
+          <select name="assignee_id" id="task-assignee-id" class="form-control">
+            <option value="">—</option>
+            {% for u in executors %}<option value="{{ u.id }}">{{ u.full_name }}</option>{% endfor %}
+          </select>
+          <p class="muted projects-cms-hint">Только участники выбранного проекта</p>
+        </div>
       </div>
       <div class="form-row">
         <div class="form-group"><label>Начало</label><input type="date" name="start_date" class="form-control"></div>
         <div class="form-group"><label>Дедлайн</label><input type="date" name="due_date" class="form-control"></div>
+      </div>
+      <div class="form-group">
+        <label>Предыдущая задача (предшественник)</label>
+        <select name="predecessor_task_id" id="task-predecessor-id" class="form-control">
+          <option value="">— нет —</option>
+          {% set pid = parent_task.project_id if parent_task else preset_project_id %}
+          {% if parent_task %}
+            {% for t in tasks_by_project.get(parent_task.project_id, []) %}
+            <option value="{{ t.id }}">{{ t.title }}</option>
+            {% endfor %}
+          {% elif preset_project_id %}
+            {% for t in tasks_by_project.get(preset_project_id, []) %}
+            <option value="{{ t.id }}">{{ t.title }}</option>
+            {% endfor %}
+          {% elif projects %}
+            {% for t in tasks_by_project.get(projects[0].id, []) %}
+            <option value="{{ t.id }}">{{ t.title }}</option>
+            {% endfor %}
+          {% endif %}
+        </select>
+        <p class="muted projects-cms-hint">Стрелка на Ганте: конец предыдущей → начало этой задачи</p>
       </div>
       <div class="form-actions">
         <button type="submit" class="btn btn-primary">Создать</button>
@@ -63,17 +90,27 @@
     </form>
   </div>
 </div>
-{% if not parent_task %}
 <script type="application/json" id="stages-by-project-json">{{ stages_by_project | tojson }}</script>
+<script type="application/json" id="tasks-by-project-json">{{ tasks_by_project | tojson }}</script>
+<script type="application/json" id="executors-by-project-json">{{ executors_by_project | default({}) | tojson }}</script>
+{% if not parent_task %}
 <script>
 (function () {
   var sel = document.getElementById("task-project-id");
   var stageSel = document.getElementById("task-stage-id");
+  var predSel = document.getElementById("task-predecessor-id");
+  var assigneeSel = document.getElementById("task-assignee-id");
   var dataEl = document.getElementById("stages-by-project-json");
+  var tasksEl = document.getElementById("tasks-by-project-json");
+  var execEl = document.getElementById("executors-by-project-json");
   if (!sel || !stageSel || !dataEl) return;
   var map = {};
+  var tasksMap = {};
+  var execMap = {};
   try { map = JSON.parse(dataEl.textContent || "{}"); } catch (e) { map = {}; }
-  function fill() {
+  try { if (tasksEl) tasksMap = JSON.parse(tasksEl.textContent || "{}"); } catch (e) { tasksMap = {}; }
+  try { if (execEl) execMap = JSON.parse(execEl.textContent || "{}"); } catch (e) { execMap = {}; }
+  function fillStages() {
     var pid = sel.value;
     var stages = map[pid] || map[String(pid)] || [];
     var cur = stageSel.value;
@@ -85,6 +122,37 @@
       if (String(s.id) === String(cur)) o.selected = true;
       stageSel.appendChild(o);
     });
+  }
+  function fillPredecessors() {
+    if (!predSel) return;
+    var pid = sel.value;
+    var tasks = tasksMap[pid] || tasksMap[String(pid)] || [];
+    predSel.innerHTML = '<option value="">— нет —</option>';
+    tasks.forEach(function (t) {
+      var o = document.createElement("option");
+      o.value = t.id;
+      o.textContent = t.title;
+      predSel.appendChild(o);
+    });
+  }
+  function fillAssignees() {
+    if (!assigneeSel) return;
+    var pid = sel.value;
+    var list = execMap[pid] || execMap[String(pid)] || [];
+    var cur = assigneeSel.value;
+    assigneeSel.innerHTML = '<option value="">—</option>';
+    list.forEach(function (u) {
+      var o = document.createElement("option");
+      o.value = u.id;
+      o.textContent = u.name;
+      if (String(u.id) === String(cur)) o.selected = true;
+      assigneeSel.appendChild(o);
+    });
+  }
+  function fill() {
+    fillStages();
+    fillPredecessors();
+    fillAssignees();
   }
   sel.addEventListener("change", fill);
 })();

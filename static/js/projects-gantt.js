@@ -330,15 +330,99 @@
   var linkFromId = null;
   var linkBtn = document.getElementById("gantt-link-mode-btn");
   var linkHint = document.getElementById("gantt-link-hint");
-  if (linkBtn) {
-    linkBtn.addEventListener("click", function () {
-      linkMode = !linkMode;
-      linkFromId = null;
-      linkBtn.classList.toggle("is-active", linkMode);
-      if (linkHint) linkHint.hidden = !linkMode;
-      chart.classList.toggle("is-link-mode", linkMode);
+  var ctxMenu = document.getElementById("gantt-bar-menu");
+  var ctxTaskId = null;
+
+  function clearLinkSourceMarks() {
+    chart.querySelectorAll(".projects-gantt-bar.is-link-source").forEach(function (el) {
+      el.classList.remove("is-link-source");
     });
   }
+
+  function setLinkMode(on, fromId) {
+    linkMode = !!on;
+    linkFromId = fromId || null;
+    if (linkBtn) linkBtn.classList.toggle("is-active", linkMode);
+    if (linkHint) {
+      linkHint.hidden = !linkMode;
+      linkHint.textContent = linkFromId
+        ? "Теперь выберите последователя (клик или ПКМ)"
+        : "Выберите предшественника, затем последователя";
+    }
+    chart.classList.toggle("is-link-mode", linkMode);
+    clearLinkSourceMarks();
+    if (linkFromId) {
+      var src = chart.querySelector('.projects-gantt-bar[data-task-id="' + linkFromId + '"]');
+      if (src) src.classList.add("is-link-source");
+    }
+  }
+
+  function hideCtxMenu() {
+    if (!ctxMenu) return;
+    ctxMenu.hidden = true;
+    ctxTaskId = null;
+  }
+
+  function showCtxMenu(bar, clientX, clientY) {
+    if (!ctxMenu || !uiFlags.canEdit) return;
+    ctxTaskId = bar.getAttribute("data-task-id");
+    var startBtn = ctxMenu.querySelector('[data-gantt-ctx="start-link"]');
+    var finishBtn = ctxMenu.querySelector('[data-gantt-ctx="finish-link"]');
+    var cancelBtn = ctxMenu.querySelector('[data-gantt-ctx="cancel-link"]');
+    var canFinish = !!(linkMode && linkFromId && String(linkFromId) !== String(ctxTaskId));
+    if (startBtn) startBtn.hidden = false;
+    if (finishBtn) finishBtn.hidden = !canFinish;
+    if (cancelBtn) cancelBtn.hidden = !linkMode;
+    ctxMenu.hidden = false;
+    var pad = 8;
+    var w = ctxMenu.offsetWidth || 240;
+    var h = ctxMenu.offsetHeight || 120;
+    var left = Math.min(clientX, window.innerWidth - w - pad);
+    var top = Math.min(clientY, window.innerHeight - h - pad);
+    ctxMenu.style.left = Math.max(pad, left) + "px";
+    ctxMenu.style.top = Math.max(pad, top) + "px";
+  }
+
+  if (linkBtn) {
+    linkBtn.addEventListener("click", function () {
+      if (linkMode) setLinkMode(false);
+      else setLinkMode(true);
+    });
+  }
+
+  if (ctxMenu) {
+    ctxMenu.addEventListener("click", function (e) {
+      var btn = e.target.closest("[data-gantt-ctx]");
+      if (!btn || !ctxTaskId) return;
+      var action = btn.getAttribute("data-gantt-ctx");
+      if (action === "start-link") {
+        setLinkMode(true, ctxTaskId);
+        hideCtxMenu();
+        return;
+      }
+      if (action === "finish-link" && linkFromId) {
+        createGanttLink(linkFromId, ctxTaskId);
+        hideCtxMenu();
+        return;
+      }
+      if (action === "cancel-link") {
+        setLinkMode(false);
+        hideCtxMenu();
+      }
+    });
+  }
+
+  document.addEventListener("click", function (e) {
+    if (!ctxMenu || ctxMenu.hidden) return;
+    if (ctxMenu.contains(e.target)) return;
+    hideCtxMenu();
+  });
+  document.addEventListener("keydown", function (e) {
+    if (e.key === "Escape") {
+      hideCtxMenu();
+      if (linkMode) setLinkMode(false);
+    }
+  });
 
   var panel = document.getElementById("gantt-task-panel");
   var panelTitle = document.getElementById("gantt-panel-title");
@@ -350,7 +434,74 @@
   var panelOpen = document.getElementById("gantt-panel-open");
   var panelNote = document.getElementById("gantt-panel-readonly-note");
   var panelClose = document.getElementById("gantt-panel-close");
+  var panelLinksWrap = document.getElementById("gantt-panel-links-wrap");
+  var panelLinks = document.getElementById("gantt-panel-links");
   var panelTaskId = null;
+
+  async function deleteGanttLink(linkId) {
+    if (!linkId) return;
+    var ok = true;
+    if (typeof window.ssConfirm === "function") {
+      ok = await window.ssConfirm("Удалить эту связь?", {
+        title: "Удаление связи",
+        confirmLabel: "Удалить",
+        danger: true,
+      });
+    }
+    if (!ok) return;
+    try {
+      var res = await fetch("/projects/gantt/links/" + linkId, {
+        method: "DELETE",
+        headers: { "X-CSRFToken": csrf },
+      });
+      if (res.ok) window.location.reload();
+      else alert("Не удалось удалить связь.");
+    } catch (err) {
+      alert("Ошибка сети.");
+    }
+  }
+
+  function parseBarLinks(bar, attr) {
+    try {
+      return JSON.parse(bar.getAttribute(attr) || "[]") || [];
+    } catch (e) {
+      return [];
+    }
+  }
+
+  function renderPanelLinks(bar, canEdit) {
+    if (!panelLinks || !panelLinksWrap) return;
+    var waits = parseBarLinks(bar, "data-waits");
+    var blocks = parseBarLinks(bar, "data-blocks");
+    panelLinks.innerHTML = "";
+    function addItem(role, item) {
+      if (!item || !item.link_id) return;
+      var li = document.createElement("li");
+      var text = document.createElement("span");
+      var roleEl = document.createElement("span");
+      roleEl.className = "muted";
+      roleEl.textContent = role;
+      text.appendChild(roleEl);
+      text.appendChild(document.createTextNode(item.title || ("№" + item.id)));
+      li.appendChild(text);
+      if (canEdit) {
+        var btn = document.createElement("button");
+        btn.type = "button";
+        btn.className = "btn btn-outline btn-icon-xs";
+        btn.title = "Удалить связь";
+        btn.setAttribute("aria-label", "Удалить связь");
+        btn.textContent = "×";
+        btn.addEventListener("click", function () {
+          deleteGanttLink(item.link_id);
+        });
+        li.appendChild(btn);
+      }
+      panelLinks.appendChild(li);
+    }
+    waits.forEach(function (w) { addItem("Предшественник", w); });
+    blocks.forEach(function (b) { addItem("Последователь", b); });
+    panelLinksWrap.hidden = panelLinks.children.length === 0;
+  }
 
   function closePanel() {
     if (!panel) return;
@@ -395,6 +546,7 @@
       if (openTicket && ticketId) panelOpen.href = "/tickets/" + ticketId;
       else panelOpen.href = "/projects/tasks/" + panelTaskId;
     }
+    renderPanelLinks(bar, canEdit);
     panel.hidden = false;
     panel.setAttribute("aria-hidden", "false");
   }
@@ -437,6 +589,14 @@
     }
   }
 
+  document.querySelectorAll("[data-gantt-link-delete]").forEach(function (btn) {
+    btn.addEventListener("click", function (e) {
+      e.preventDefault();
+      e.stopPropagation();
+      deleteGanttLink(btn.getAttribute("data-gantt-link-delete"));
+    });
+  });
+
   chart.querySelectorAll(".projects-gantt-bar").forEach(function (bar) {
     if (bar.getAttribute("data-can-drag") === "1") {
       bar.addEventListener("pointerdown", function (e) {
@@ -469,6 +629,7 @@
     bar.addEventListener("click", function (e) {
       e.preventDefault();
       e.stopPropagation();
+      hideCtxMenu();
       if (suppressBarClick) {
         suppressBarClick = false;
         return;
@@ -477,9 +638,7 @@
       if (!id) return;
       if (linkMode) {
         if (!linkFromId) {
-          linkFromId = id;
-          bar.classList.add("is-link-source");
-          if (linkHint) linkHint.textContent = "Теперь выберите последователя";
+          setLinkMode(true, id);
           return;
         }
         if (String(linkFromId) === String(id)) return;
@@ -489,6 +648,14 @@
       // После текущего click — иначе document-listener может сразу закрыть панель
       setTimeout(function () { openPanel(bar); }, 0);
     });
+
+    if (uiFlags.canEdit) {
+      bar.addEventListener("contextmenu", function (e) {
+        e.preventDefault();
+        e.stopPropagation();
+        showCtxMenu(bar, e.clientX, e.clientY);
+      });
+    }
   });
 
   // Клик вне панели — закрыть

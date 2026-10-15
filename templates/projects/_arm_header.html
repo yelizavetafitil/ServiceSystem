@@ -6,13 +6,17 @@
 
     <div class="projects-view-tabs" role="tablist">
 
+      {% if current_user.is_admin or current_user.is_auditor %}
       <a class="projects-view-tab{% if view == 'gantt' %} is-active{% endif %}" href="{{ url_for('projects.arm', view='gantt', project=filter_project) }}">Ганта</a>
 
       <a class="projects-view-tab{% if view == 'week' %} is-active{% endif %}" href="{{ url_for('projects.arm', view='week', project=filter_project) }}">Неделя</a>
+      {% endif %}
 
       <a class="projects-view-tab{% if view == 'kanban' %} is-active{% endif %}" href="{{ url_for('projects.arm', view='kanban', project=filter_project) }}">Канбан</a>
 
+      {% if current_user.is_admin or current_user.is_auditor %}
       <a class="projects-view-tab{% if view == 'calendar' %} is-active{% endif %}" href="{{ url_for('projects.arm', view='calendar', project=filter_project) }}">Календарь</a>
+      {% endif %}
 
     </div>
 
@@ -54,11 +58,10 @@
 
     <a href="{{ url_for('projects.manage_list') }}" class="btn btn-outline btn-sm">Управление</a>
 
-    <a href="{{ url_for('projects.task_new') }}" class="btn btn-primary btn-sm">Задача</a>
+    <a href="{% if filter_project %}{{ url_for('projects.task_new', project=filter_project) }}{% else %}{{ url_for('projects.task_new') }}{% endif %}" class="btn btn-primary btn-sm">Задача</a>
 
     {% endif %}
 
   </div>
 
 </div>
-

@@ -46,6 +46,8 @@ def ensure_support_project(contract: Contract) -> Project:
 
 def sync_task_from_ticket(ticket: Ticket, *, kanban_status: str | None = None) -> ProjectTask:
     """ТЗ 3.1–3.2: тикет → задача на Kanban."""
+    from sqlalchemy.exc import IntegrityError
+
     # Ищем по ticket_id явно: backref может быть ещё не подхвачен после assign_hook в том же запросе
     task = ProjectTask.query.filter_by(ticket_id=ticket.id).first()
     if not task and ticket.project_task:
@@ -67,7 +69,14 @@ def sync_task_from_ticket(ticket: Ticket, *, kanban_status: str | None = None) -
             created_by_id=ticket.auditor_id or ticket.author_id,
         )
         db.session.add(task)
-        db.session.flush()
+        try:
+            with db.session.begin_nested():
+                db.session.flush()
+        except IntegrityError:
+            # Гонка/повторный sync: задача с этим ticket_id уже есть
+            task = ProjectTask.query.filter_by(ticket_id=ticket.id).first()
+            if not task:
+                raise
     if kanban_status:
         task.kanban_status = kanban_status
     elif ticket.status == "new":
@@ -111,15 +120,18 @@ def on_ticket_sync_hook(ticket: Ticket) -> None:
 
 
 def task_opens_as_ticket(task: ProjectTask) -> bool:
-    """Зеркальная задача без назначенного исполнителя открывается как тикет."""
-    if not task.ticket_id or not task.ticket:
-        return False
-    return not task.ticket.executor_id or task.ticket.status == "new"
+    """Задача-зеркало заявки всегда открывается в форме тикета (Гант, карточка, ссылки)."""
+    return bool(task.ticket_id and task.ticket)
+
+
+def user_can_view_gantt(user: User) -> bool:
+    """Диаграмма Ганта — только ГИП (auditor) и admin."""
+    return bool(user and (user.is_admin or user.is_auditor))
 
 
 def user_can_reschedule_gantt(user: User, task: ProjectTask | None = None) -> bool:
     """Сроки на Ганте двигают только admin/auditor."""
-    return bool(user and (user.is_admin or user.is_auditor))
+    return user_can_view_gantt(user)
 
 
 def update_customer_curator_window(project: Project) -> None:
@@ -166,6 +178,90 @@ def task_is_completion_blocked(task: ProjectTask) -> bool:
         if src and src.kanban_status != "done":
             return True
     return False
+
+
+def _fs_predecessor_tasks(task: ProjectTask) -> list[ProjectTask]:
+    preds: list[ProjectTask] = []
+    for link in ProjectTaskLink.query.filter_by(to_task_id=task.id, link_type="blocks"):
+        src = db.session.get(ProjectTask, link.from_task_id)
+        if src:
+            preds.append(src)
+    for link in ProjectTaskLink.query.filter_by(from_task_id=task.id, link_type="blocked_by"):
+        src = db.session.get(ProjectTask, link.to_task_id)
+        if src:
+            preds.append(src)
+    return preds
+
+
+def _fs_successor_tasks(task: ProjectTask) -> list[ProjectTask]:
+    succs: list[ProjectTask] = []
+    for link in ProjectTaskLink.query.filter_by(from_task_id=task.id, link_type="blocks"):
+        dst = db.session.get(ProjectTask, link.to_task_id)
+        if dst:
+            succs.append(dst)
+    for link in ProjectTaskLink.query.filter_by(to_task_id=task.id, link_type="blocked_by"):
+        dst = db.session.get(ProjectTask, link.from_task_id)
+        if dst:
+            succs.append(dst)
+    return succs
+
+
+def enforce_task_fs_start(task: ProjectTask) -> bool:
+    """FS: начало задачи не раньше дня после окончания предшественника. Сохраняет длительность."""
+    ends = [p.due_date for p in _fs_predecessor_tasks(task) if p.due_date]
+    if not ends:
+        return False
+    min_start = max(ends) + timedelta(days=1)
+    cur_start = task.start_date or task.due_date
+    if cur_start is None:
+        task.start_date = min_start
+        task.due_date = min_start
+        return True
+    if cur_start >= min_start:
+        return False
+    duration_days = 0
+    if task.start_date and task.due_date:
+        duration_days = max(0, (task.due_date - task.start_date).days)
+    task.start_date = min_start
+    task.due_date = min_start + timedelta(days=duration_days)
+    return True
+
+
+def cascade_fs_schedule(root: ProjectTask) -> list[int]:
+    """Применить FS к задаче и цепочке последователей. Возвращает id изменённых задач."""
+    changed: list[int] = []
+    visited: set[int] = set()
+    queue: list[ProjectTask] = [root]
+    while queue:
+        task = queue.pop(0)
+        if task.id in visited:
+            continue
+        visited.add(task.id)
+        if enforce_task_fs_start(task):
+            changed.append(task.id)
+            sync_calendar_events_for_task(task)
+        for succ in _fs_successor_tasks(task):
+            if succ.id not in visited:
+                queue.append(succ)
+    return changed
+
+
+def cascade_fs_from_task(task: ProjectTask) -> list[int]:
+    """После сдвига сроков: подтянуть саму задачу к предшественникам и сдвинуть последователей."""
+    changed = []
+    if enforce_task_fs_start(task):
+        changed.append(task.id)
+        sync_calendar_events_for_task(task)
+    for succ in _fs_successor_tasks(task):
+        changed.extend(cascade_fs_schedule(succ))
+    # уникальные с сохранением порядка
+    seen: set[int] = set()
+    out: list[int] = []
+    for tid in changed:
+        if tid not in seen:
+            seen.add(tid)
+            out.append(tid)
+    return out
 
 
 def kanban_sort_key(task: ProjectTask) -> tuple:
@@ -286,6 +382,30 @@ def user_can_create_task(user: User, *, parent_id: int | None) -> bool:
     if not parent:
         return False
     return user_can_edit_task(user, parent)
+
+
+def executors_for_project(project_id: int | None) -> list[User]:
+    """Исполнители — участники проекта (project_members), не весь штат."""
+    if not project_id:
+        return []
+    member_ids = db.session.query(ProjectMember.user_id).filter_by(project_id=project_id)
+    return (
+        User.query.filter(
+            User.id.in_(member_ids),
+            User.role == "executor",
+            User.is_active.is_(True),
+        )
+        .order_by(User.full_name)
+        .all()
+    )
+
+
+def is_project_member(project_id: int | None, user_id: int | None) -> bool:
+    if not project_id or not user_id:
+        return False
+    return (
+        ProjectMember.query.filter_by(project_id=project_id, user_id=user_id).first() is not None
+    )
 
 
 def user_can_view_custom_field(user: User, field) -> bool:
@@ -471,6 +591,7 @@ def project_from_template(
             project_id=proj.id,
             title=st.title,
             deadline=st.deadline,
+            cost=st.cost,
             responsible_id=st.responsible_id,
             sort_order=st.sort_order,
         )

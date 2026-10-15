@@ -1,7 +1,7 @@
 {% extends "base.html" %}
 {% from "macros/forms.html" import csrf_field %}
 {% block title %}{{ project.name }}{% endblock %}
-{% block head %}<link rel="stylesheet" href="{{ url_for('static', filename='css/projects.css') }}?v=21">{% endblock %}
+{% block head %}<link rel="stylesheet" href="{{ url_for('static', filename='css/projects.css') }}?v=30">{% endblock %}
 {% block content %}
 <div class="container cms-page projects-cms">
   <a href="{{ url_for('projects.manage_list') }}" class="back-link">← Проекты</a>
@@ -64,9 +64,9 @@
     </form>
   </div>
 
-  {% if project.is_template %}
   <div class="card projects-cms-card">
-    <h2 class="projects-cms-section-title">Задачи шаблона</h2>
+    <h2 class="projects-cms-section-title">{% if project.is_template %}Задачи шаблона{% else %}Задачи проекта{% endif %}</h2>
+    {% if project.is_template %}
     <p class="muted">Эти задачи копируются при развёртывании (статус сбрасывается в «К выполнению»).</p>
     <ul class="projects-cms-list">
       {% for t in template_tasks %}
@@ -75,24 +75,72 @@
       <li class="muted">Задач нет — добавьте типовой набор.</li>
       {% endfor %}
     </ul>
-    <p><a href="{{ url_for('projects.task_new', project=project.id) }}" class="btn btn-outline btn-sm">Добавить задачу в шаблон</a></p>
+    {% else %}
+    <p class="muted">Новая задача будет сразу привязана к этому проекту.</p>
+    {% endif %}
+    <p><a href="{{ url_for('projects.task_new', project=project.id) }}" class="btn btn-outline btn-sm">{% if project.is_template %}Добавить задачу в шаблон{% else %}Добавить задачу{% endif %}</a></p>
   </div>
-  {% endif %}
 
   <div class="card projects-cms-card">
     <h2 class="projects-cms-section-title">Отчётные этапы</h2>
     {% for s in project.stages %}
     <div class="projects-stage-panel">
-      <h3 class="projects-stage-title">
-        {{ s.title }} — до {{ s.deadline.strftime('%d.%m.%Y') if s.deadline else '—' }}
-        {% if s.released_at %}<span class="badge badge-success">Выпущен {{ s.released_at.strftime('%d.%m.%Y') }}</span>{% endif %}
-      </h3>
+      <div class="projects-stage-header">
+        <h3 class="projects-stage-title">
+          {{ s.title }} — до {{ s.deadline.strftime('%d.%m.%Y') if s.deadline else '—' }}
+          {% if s.cost is defined and s.cost is not none %}<span class="muted"> · {{ '%.2f'|format(s.cost|float) }} BYN</span>{% endif %}
+          {% if s.released_at %}<span class="badge badge-success">Выпущен {{ s.released_at.strftime('%d.%m.%Y') }}</span>{% endif %}
+        </h3>
+        <div class="projects-stage-header-actions">
+          <a href="{{ url_for('projects.task_new', project=project.id, stage=s.id) }}" class="btn btn-outline btn-sm">Задача</a>
+          <form method="post" class="inline-form"
+                data-confirm="Удалить этот отчётный этап? Задачи останутся без этапа."
+                data-confirm-title="Удаление этапа"
+                data-confirm-ok="Удалить"
+                data-confirm-danger>
+            {{ csrf_field() }}
+            <input type="hidden" name="action" value="stage_delete">
+            <input type="hidden" name="stage_id" value="{{ s.id }}">
+            <button type="submit" class="btn btn-danger btn-sm">Удалить</button>
+          </form>
+        </div>
+      </div>
       {% if s.release_notes %}<p class="projects-stage-notes">{{ s.release_notes }}</p>{% endif %}
       {% for a in s.attachments %}
       {% if loop.first %}<ul class="projects-stage-files">{% endif %}
       <li>{{ a.original_name }}</li>
       {% if loop.last %}</ul>{% endif %}
       {% endfor %}
+      <form method="post" class="projects-cms-inline-form projects-stage-edit">
+        {{ csrf_field() }}
+        <input type="hidden" name="action" value="stage_update">
+        <input type="hidden" name="stage_id" value="{{ s.id }}">
+        <div class="form-row form-row--align-end">
+          <div class="form-group">
+            <label>Название</label>
+            <input name="stage_title" class="form-control" value="{{ s.title }}" required>
+          </div>
+          <div class="form-group">
+            <label>Срок</label>
+            <input type="date" name="stage_deadline" class="form-control" value="{{ s.deadline.isoformat() if s.deadline else '' }}">
+          </div>
+          <div class="form-group">
+            <label>Стоимость</label>
+            <input type="number" name="stage_cost" class="form-control" min="0" step="0.01" placeholder="0.00" value="{% if s.cost is defined and s.cost is not none %}{{ s.cost }}{% endif %}">
+          </div>
+          <div class="form-group">
+            <label>Ответственный</label>
+            <select name="stage_responsible_id" class="form-control">
+              <option value="">—</option>
+              {% for u in staff %}<option value="{{ u.id }}" {% if s.responsible_id == u.id %}selected{% endif %}>{{ u.full_name }}</option>{% endfor %}
+            </select>
+          </div>
+          <div class="form-group form-group--shrink">
+            <label class="projects-cms-action-label" aria-hidden="true">Сохранить</label>
+            <button type="submit" class="btn btn-outline btn-sm">Сохранить</button>
+          </div>
+        </div>
+      </form>
       {% if not s.released_at %}
       <form method="post" enctype="multipart/form-data" class="projects-stage-release">
         {{ csrf_field() }}
@@ -128,6 +176,10 @@
         <div class="form-group">
           <label>Срок</label>
           <input type="date" name="stage_deadline" class="form-control">
+        </div>
+        <div class="form-group">
+          <label>Стоимость</label>
+          <input type="number" name="stage_cost" class="form-control" min="0" step="0.01" placeholder="0.00">
         </div>
         <div class="form-group">
           <label>Ответственный</label>

@@ -107,24 +107,39 @@ def task_update(tid):
         other_id = request.form.get("other_task_id", type=int)
         link_type = request.form.get("link_type") or "related"
         other = db.session.get(ProjectTask, other_id) if other_id else None
+        # predecessor / blocked_by → другая задача предшествует текущей (blocks: other → current)
+        if link_type in ("predecessor", "blocked_by"):
+            from_id, to_id, store_type = other_id, task.id, "blocks"
+        elif link_type == "blocks":
+            from_id, to_id, store_type = task.id, other_id, "blocks"
+        elif link_type == "related":
+            from_id, to_id, store_type = task.id, other_id, "related"
+        else:
+            from_id = to_id = store_type = None
         if not other_id or not other:
             flash("Выберите задачу для связи.", "warning")
         elif other_id == task.id:
             flash("Нельзя связать задачу саму с собой.", "warning")
         elif other.project_id != task.project_id:
             flash("Связь возможна только внутри одного проекта.", "warning")
-        elif link_type not in TASK_LINK_TYPES:
+        elif store_type is None or store_type not in TASK_LINK_TYPES:
             flash("Неверный тип связи.", "warning")
         else:
             exists = ProjectTaskLink.query.filter_by(
-                from_task_id=task.id, to_task_id=other_id, link_type=link_type
+                from_task_id=from_id, to_task_id=to_id, link_type=store_type
             ).first()
             if exists:
                 flash("Такая связь уже есть.", "warning")
             else:
                 db.session.add(
-                    ProjectTaskLink(from_task_id=task.id, to_task_id=other_id, link_type=link_type)
+                    ProjectTaskLink(from_task_id=from_id, to_task_id=to_id, link_type=store_type)
                 )
+                if store_type == "blocks":
+                    from servicesystem.project_management.services import cascade_fs_schedule
+
+                    succ = db.session.get(ProjectTask, to_id)
+                    if succ:
+                        cascade_fs_schedule(succ)
                 db.session.commit()
                 flash("Связь добавлена.", "success")
         return redirect(url_for("projects.task_detail", tid=tid, tab="links"))
@@ -157,7 +172,13 @@ def task_update(tid):
     task.description = (request.form.get("description") or "").strip() or None
     task.priority = int(request.form.get("priority") or 2)
     task.kanban_status = request.form.get("kanban_status") or task.kanban_status
-    task.assignee_id = request.form.get("assignee_id", type=int) or None
+    assignee_id = request.form.get("assignee_id", type=int) or None
+    from servicesystem.project_management.services import is_project_member
+
+    if assignee_id and not is_project_member(task.project_id, assignee_id):
+        flash("Исполнитель должен быть участником проекта.", "warning")
+        return redirect(url_for("projects.task_detail", tid=tid))
+    task.assignee_id = assignee_id
     task.due_date = parse_optional_date(request.form.get("due_date"))
     task.start_date = parse_optional_date(request.form.get("start_date"))
     stage_id = request.form.get("stage_id", type=int)
@@ -174,8 +195,12 @@ def task_update(tid):
 
         ProjectTaskCollaborator.query.filter_by(task_id=task.id).delete()
         for uid in request.form.getlist("collaborator_ids"):
-            db.session.add(ProjectTaskCollaborator(task_id=task.id, user_id=int(uid)))
+            if is_project_member(task.project_id, int(uid)):
+                db.session.add(ProjectTaskCollaborator(task_id=task.id, user_id=int(uid)))
     sync_calendar_events_for_task(task)
+    from servicesystem.project_management.services import cascade_fs_from_task
+
+    cascade_fs_from_task(task)
     db.session.commit()
     from servicesystem.project_management.caldav_sync import try_push_task_to_caldav
 

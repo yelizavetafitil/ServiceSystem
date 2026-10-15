@@ -12,6 +12,7 @@ def _utcnow():
 
 # Kanban / lifecycle (ТЗ 2.3)
 TASK_KANBAN_COLUMNS = ("todo", "in_progress", "review", "done")
+# blocks = предшественник→последователь (FS); blocked_by — устаревший синоним (обратное направление)
 TASK_LINK_TYPES = ("blocks", "blocked_by", "related")
 
 
@@ -68,6 +69,7 @@ class ProjectStage(db.Model):
     project_id = db.Column(db.Integer, db.ForeignKey("projects.id"), nullable=False)
     title = db.Column(db.String(255), nullable=False)
     deadline = db.Column(db.Date)
+    cost = db.Column(db.Numeric(14, 2))  # стоимость этапа
     responsible_id = db.Column(db.Integer, db.ForeignKey("users.id"))
     sort_order = db.Column(db.Integer, default=0)
     released_at = db.Column(db.DateTime(timezone=True))

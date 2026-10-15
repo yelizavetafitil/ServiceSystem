@@ -21,6 +21,8 @@ from servicesystem.project_management.models import (
 )
 from servicesystem.project_management.dates import parse_optional_date as _parse_form_date
 from servicesystem.project_management.services import (
+    cascade_fs_from_task,
+    cascade_fs_schedule,
     duplicate_task,
     gantt_sla_breach,
     kanban_sort_key,
@@ -31,11 +33,14 @@ from servicesystem.project_management.services import (
     task_opens_as_ticket,
     tasks_for_user_query,
     update_customer_curator_window,
+    executors_for_project,
+    is_project_member,
     user_can_create_task,
     user_can_edit_task,
     user_can_manage_project,
     user_can_reschedule_gantt,
     user_can_view_custom_field,
+    user_can_view_gantt,
 )
 
 bp = Blueprint("projects", __name__)
@@ -47,15 +52,22 @@ KANBAN_LABELS = {
     "done": "Выполнено",
 }
 
+# UI: blocks и blocked_by — одна зависимость «предшественник» (FS); в БД blocked_by остаётся для старых записей
 PROJECT_LINK_LABELS = {
-    "blocks": "Блокирующая",
-    "blocked_by": "Ожидающая",
-    "related": "Связывающая",
+    "blocks": "Предшественник",
+    "blocked_by": "Предшественник",
+    "related": "Связанная",
 }
 
+# Выбор при добавлении связи на карточке: предшественник = другая задача → текущая (blocks)
+PROJECT_LINK_UI_CHOICES = (
+    ("predecessor", "Предшественник"),
+    ("related", "Связанная"),
+)
+
 GANTT_LINK_TYPE_LABELS = {
-    "blocks": "Блокирующая (конец → начало)",
-    "related": "Связывающая",
+    "blocks": "Предшественник (конец → начало)",
+    "related": "Связанная",
 }
 
 PROJECT_FIELD_TYPE_LABELS = {
@@ -98,6 +110,19 @@ def _staff_or_curator():
     abort(403)
 
 
+def _parse_stage_cost(raw) -> object:
+    """Стоимость этапа: пусто → None, иначе Decimal."""
+    from decimal import Decimal, InvalidOperation
+
+    s = (raw or "").strip().replace(" ", "").replace(",", ".")
+    if not s:
+        return None
+    try:
+        return Decimal(s)
+    except (InvalidOperation, ValueError):
+        return None
+
+
 @bp.route("/")
 @login_required
 def index():
@@ -113,6 +138,10 @@ def arm():
     view = (request.args.get("view") or "kanban").lower()
     if view not in ("kanban", "week", "calendar", "gantt"):
         view = "kanban"
+    # Гант / неделя / календарь — планирование ГИП; исполнители — канбан (список/доски)
+    if view in ("gantt", "week", "calendar") and not user_can_view_gantt(current_user):
+        flash("Диаграмма Ганта и планирование доступны только ГИП.", "warning")
+        return redirect(url_for("projects.arm", view="kanban", project=request.args.get("project")))
     if current_user.is_staff:
         try:
             rollover_overdue_tasks()
@@ -362,12 +391,39 @@ def manage_edit(pid):
                 project_id=proj.id,
                 title=request.form["stage_title"].strip(),
                 deadline=_parse_form_date(request.form.get("stage_deadline")),
+                cost=_parse_stage_cost(request.form.get("stage_cost")),
                 responsible_id=request.form.get("stage_responsible_id", type=int),
                 sort_order=proj.stages.count(),
             )
             db.session.add(st)
             db.session.commit()
             flash("Этап добавлен.", "success")
+        elif action == "stage_update":
+            sid = request.form.get("stage_id", type=int)
+            st = db.session.get(ProjectStage, sid) if sid else None
+            if st and st.project_id == proj.id:
+                title = (request.form.get("stage_title") or "").strip()
+                if title:
+                    st.title = title
+                if "stage_deadline" in request.form:
+                    st.deadline = _parse_form_date(request.form.get("stage_deadline"))
+                if "stage_cost" in request.form:
+                    st.cost = _parse_stage_cost(request.form.get("stage_cost"))
+                if "stage_responsible_id" in request.form:
+                    st.responsible_id = request.form.get("stage_responsible_id", type=int) or None
+                db.session.commit()
+                flash("Этап обновлён.", "success")
+        elif action == "stage_delete":
+            sid = request.form.get("stage_id", type=int)
+            st = db.session.get(ProjectStage, sid) if sid else None
+            if st and st.project_id == proj.id:
+                # Задачи отвязываем от этапа, вложения удалятся каскадом
+                ProjectTask.query.filter_by(stage_id=st.id).update(
+                    {ProjectTask.stage_id: None}, synchronize_session=False
+                )
+                db.session.delete(st)
+                db.session.commit()
+                flash("Этап удалён.", "success")
         elif action == "stage_release":
             from datetime import datetime, timezone
 
@@ -451,6 +507,7 @@ def task_new():
     if not user_can_create_task(current_user, parent_id=parent_id):
         abort(403)
     preset_project_id = request.args.get("project", type=int)
+    preset_stage_id = request.args.get("stage", type=int)
     projects_q = Project.query.filter_by(is_active=True)
     if preset_project_id and (current_user.is_admin or current_user.is_auditor):
         tpl = db.session.get(Project, preset_project_id)
@@ -463,21 +520,41 @@ def task_new():
     else:
         projects_q = projects_q.filter_by(is_template=False)
     projects = projects_q.order_by(Project.name).all()
-    executors = User.query.filter_by(role="executor", is_active=True).all()
     parent_task = db.session.get(ProjectTask, parent_id) if parent_id else None
     if parent_task and not preset_project_id:
         preset_project_id = parent_task.project_id
     stages_by_project: dict[int, list] = {}
+    tasks_by_project: dict[int, list] = {}
+    executors_by_project: dict[int, list] = {}
     for p in projects:
         stages_by_project[p.id] = [
             {"id": s.id, "title": s.title}
             for s in p.stages.order_by(ProjectStage.sort_order)
+        ]
+        tasks_by_project[p.id] = [
+            {"id": t.id, "title": t.title}
+            for t in p.tasks.order_by(ProjectTask.id.desc()).limit(200)
+        ]
+        executors_by_project[p.id] = [
+            {"id": u.id, "name": u.full_name} for u in executors_for_project(p.id)
         ]
     if parent_task and parent_task.project_id not in stages_by_project:
         stages_by_project[parent_task.project_id] = [
             {"id": s.id, "title": s.title}
             for s in parent_task.project.stages.order_by(ProjectStage.sort_order)
         ] if parent_task.project else []
+    if parent_task and parent_task.project_id not in tasks_by_project:
+        tasks_by_project[parent_task.project_id] = [
+            {"id": t.id, "title": t.title}
+            for t in ProjectTask.query.filter_by(project_id=parent_task.project_id)
+            .order_by(ProjectTask.id.desc())
+            .limit(200)
+        ]
+    if parent_task and parent_task.project_id not in executors_by_project:
+        executors_by_project[parent_task.project_id] = [
+            {"id": u.id, "name": u.full_name}
+            for u in executors_for_project(parent_task.project_id)
+        ]
     if request.method == "POST":
         title = (request.form.get("title") or "").strip()
         project_id = request.form.get("project_id", type=int)
@@ -489,6 +566,12 @@ def task_new():
         stage_id = request.form.get("stage_id", type=int) or None
         if parent_task and not stage_id:
             stage_id = parent_task.stage_id
+        assignee_id = request.form.get("assignee_id", type=int) or None
+        if assignee_id and not is_project_member(project_id, assignee_id):
+            flash("Исполнитель должен быть участником проекта.", "warning")
+            return redirect(
+                url_for("projects.task_new", project=project_id, parent=parent_id, stage=stage_id)
+            )
         task = ProjectTask(
             project_id=project_id,
             stage_id=stage_id,
@@ -496,7 +579,7 @@ def task_new():
             title=title,
             description=(request.form.get("description") or "").strip() or None,
             priority=int(request.form.get("priority") or 2),
-            assignee_id=request.form.get("assignee_id", type=int) or None,
+            assignee_id=assignee_id,
             due_date=_parse_form_date(request.form.get("due_date")),
             start_date=_parse_form_date(request.form.get("start_date")),
             kanban_status="todo",
@@ -505,13 +588,43 @@ def task_new():
         db.session.add(task)
         db.session.flush()
         for uid in request.form.getlist("collaborator_ids"):
-            db.session.add(ProjectTaskCollaborator(task_id=task.id, user_id=int(uid)))
-        from servicesystem.project_management.services import sync_calendar_events_for_task
+            if is_project_member(project_id, int(uid)):
+                db.session.add(ProjectTaskCollaborator(task_id=task.id, user_id=int(uid)))
+        pred_id = request.form.get("predecessor_task_id", type=int) or None
+        if pred_id:
+            from servicesystem.project_management.models import ProjectTaskLink
 
+            pred = db.session.get(ProjectTask, pred_id)
+            if pred and pred.project_id == project_id and pred.id != task.id:
+                db.session.add(
+                    ProjectTaskLink(
+                        from_task_id=pred.id,
+                        to_task_id=task.id,
+                        link_type="blocks",
+                    )
+                )
+                cascade_fs_schedule(task)
         sync_calendar_events_for_task(task)
         db.session.commit()
         flash("Задача создана.", "success")
         return redirect(url_for("projects.task_detail", tid=task.id))
+    if parent_task:
+        preset_stage_id = parent_task.stage_id or preset_stage_id
+    elif preset_stage_id and preset_project_id:
+        st = db.session.get(ProjectStage, preset_stage_id)
+        if not st or st.project_id != preset_project_id:
+            preset_stage_id = None
+    elif not preset_stage_id and preset_project_id:
+        # Один этап в проекте — подставляем его по умолчанию
+        stages = stages_by_project.get(preset_project_id) or []
+        if len(stages) == 1:
+            preset_stage_id = stages[0]["id"]
+    initial_project_id = (
+        parent_task.project_id
+        if parent_task
+        else (preset_project_id or (projects[0].id if projects else None))
+    )
+    executors = executors_for_project(initial_project_id)
     return render_template(
         "projects/task_form.html",
         task=None,
@@ -521,7 +634,9 @@ def task_new():
         parent_task=parent_task,
         preset_project_id=preset_project_id,
         stages_by_project=stages_by_project,
-        preset_stage_id=parent_task.stage_id if parent_task else None,
+        tasks_by_project=tasks_by_project,
+        executors_by_project=executors_by_project,
+        preset_stage_id=preset_stage_id,
         **projects_ui_context(),
     )
 
@@ -535,7 +650,16 @@ def task_detail(tid):
     if task_opens_as_ticket(task) and task.ticket_id:
         return redirect(url_for("tickets.detail", tid=task.ticket_id))
     tab = request.args.get("tab", "main")
-    executors = User.query.filter_by(role="executor", is_active=True).all()
+    executors = executors_for_project(task.project_id)
+    # Текущий исполнитель/соисполнители вне состава — оставляем в списке, чтобы не потерять
+    seen = {u.id for u in executors}
+    if task.assignee_id and task.assignee_id not in seen and task.assignee:
+        executors = list(executors) + [task.assignee]
+        seen.add(task.assignee_id)
+    for c in task.collaborators:
+        if c.user_id not in seen and c.user:
+            executors = list(executors) + [c.user]
+            seen.add(c.user_id)
     custom_fields = []
     if task.project:
         for f in task.project.custom_fields.order_by("sort_order"):
@@ -617,7 +741,7 @@ def task_detail(tid):
         subtasks=subtasks,
         collaborator_ids=collaborator_ids,
         time_logs=time_logs,
-        link_type_choices=list(PROJECT_LINK_LABELS.items()),
+        link_type_choices=list(PROJECT_LINK_UI_CHOICES),
         **projects_ui_context(),
     )
 
@@ -672,6 +796,7 @@ def gantt_task_dates(tid):
     if sla and task.project:
         task.is_critical_path = True
     sync_calendar_events_for_task(task)
+    shifted = cascade_fs_from_task(task)
     db.session.commit()
     from servicesystem.project_management.caldav_sync import try_push_task_to_caldav
 
@@ -683,6 +808,7 @@ def gantt_task_dates(tid):
             "due_date": task.due_date.isoformat() if task.due_date else None,
             "sla_breach": sla,
             "critical_pulse": sla or bool(task.is_critical_path),
+            "fs_shifted": shifted,
             "label_dates": f"{task.start_date.strftime('%d.%m.%Y')} — {task.due_date.strftime('%d.%m.%Y')}"
             if task.start_date and task.due_date
             else "",
@@ -732,8 +858,9 @@ def gantt_task_panel(tid):
                 return jsonify({"error": "blocked"}), 409
             return jsonify({"error": "bad_status"}), 400
     sync_calendar_events_for_task(task)
+    shifted = cascade_fs_from_task(task)
     db.session.commit()
-    return jsonify({"ok": True})
+    return jsonify({"ok": True, "fs_shifted": shifted})
 
 
 @bp.route("/gantt/links", methods=["POST"])
@@ -758,9 +885,13 @@ def gantt_link_add():
     to_task = db.session.get(ProjectTask, to_id) or abort(404)
     if from_task.project_id != to_task.project_id:
         return jsonify({"error": "different_project"}), 400
-    from servicesystem.project_management.models import TASK_LINK_TYPES, ProjectTaskLink
+    from servicesystem.project_management.models import ProjectTaskLink
 
-    if link_type not in TASK_LINK_TYPES:
+    # На Ганте только FS-предшественник (blocks) или related; blocked_by не создаём
+    if link_type == "blocked_by":
+        from_id, to_id, link_type = to_id, from_id, "blocks"
+        from_task, to_task = to_task, from_task
+    if link_type not in ("blocks", "related"):
         return jsonify({"error": "bad_type"}), 400
     exists = ProjectTaskLink.query.filter_by(
         from_task_id=from_id, to_task_id=to_id, link_type=link_type
@@ -768,6 +899,27 @@ def gantt_link_add():
     if exists:
         return jsonify({"ok": True, "existing": True})
     db.session.add(ProjectTaskLink(from_task_id=from_id, to_task_id=to_id, link_type=link_type))
+    shifted: list[int] = []
+    if link_type == "blocks":
+        # После связи: вторая задача не раньше дня после окончания первой
+        shifted = cascade_fs_schedule(to_task)
+    db.session.commit()
+    return jsonify({"ok": True, "fs_shifted": shifted})
+
+
+@bp.route("/gantt/links/<int:lid>", methods=["DELETE"])
+@login_required
+def gantt_link_remove(lid):
+    """Удаление связи с Ганта (таблица связей / панель задачи)."""
+    _staff_or_curator()
+    if not (current_user.is_admin or current_user.is_auditor):
+        abort(403)
+    from servicesystem.project_management.models import ProjectTaskLink
+
+    link = db.session.get(ProjectTaskLink, lid)
+    if not link:
+        return jsonify({"error": "not_found"}), 404
+    db.session.delete(link)
     db.session.commit()
     return jsonify({"ok": True})
 
@@ -925,8 +1077,8 @@ def _gantt_task_relations(tasks, links) -> tuple[dict[int, list], dict[int, list
     blocks: dict[int, list] = {i: [] for i in title_by_id}
     related_with: dict[int, list] = {i: [] for i in title_by_id}
 
-    def _ref(tid: int) -> dict:
-        return {"id": tid, "title": title_by_id[tid]}
+    def _ref(tid: int, link_id: int) -> dict:
+        return {"id": tid, "title": title_by_id[tid], "link_id": link_id}
 
     for link in links:
         pair = _gantt_link_pair(link)
@@ -936,11 +1088,11 @@ def _gantt_task_relations(tasks, links) -> tuple[dict[int, list], dict[int, list
         if pred_id not in title_by_id or succ_id not in title_by_id:
             continue
         if kind == "blocks":
-            waits_for[succ_id].append(_ref(pred_id))
-            blocks[pred_id].append(_ref(succ_id))
+            waits_for[succ_id].append(_ref(pred_id, link.id))
+            blocks[pred_id].append(_ref(succ_id, link.id))
         else:
-            related_with[pred_id].append(_ref(succ_id))
-            related_with[succ_id].append(_ref(pred_id))
+            related_with[pred_id].append(_ref(succ_id, link.id))
+            related_with[succ_id].append(_ref(pred_id, link.id))
     return waits_for, blocks, related_with
 
 
@@ -959,6 +1111,7 @@ def _gantt_link_edges(bars: list[dict], links) -> list[dict]:
             continue
         edges.append(
             {
+                "id": link.id,
                 "kind": kind,
                 "type_label": GANTT_LINK_TYPE_LABELS.get(kind, kind),
                 "from_title": _gantt_short_title(pb["task"].title, 48),

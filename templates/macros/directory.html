@@ -134,10 +134,20 @@
   </div>
   <div class="directory-cell directory-cell--actions">
     {%- if archived -%}
-    <form method="post" action="{{ url_for('admin.directory_restore', cid=c.id, org=filter_org, q=search_q or none) }}" class="directory-restore-form">
-      {{ csrf_field() }}
-      <button type="submit" class="directory-action-btn directory-action-btn--text" title="Восстановить">Восстановить</button>
-    </form>
+    <div class="directory-archive-actions">
+      <form method="post" action="{{ url_for('admin.directory_restore', cid=c.id, org=filter_org, q=search_q or none) }}" class="directory-restore-form">
+        {{ csrf_field() }}
+        <button type="submit" class="directory-action-btn directory-action-btn--text" title="Восстановить">Восстановить</button>
+      </form>
+      <form method="post" action="{{ url_for('admin.directory_delete', cid=c.id, org=filter_org, q=search_q or none) }}" class="directory-delete-form"
+            data-confirm="Удалить контакт «{{ c.full_name|directory_text }}» безвозвратно?"
+            data-confirm-title="Удаление из архива"
+            data-confirm-ok="Удалить"
+            data-confirm-danger>
+        {{ csrf_field() }}
+        <button type="submit" class="directory-action-btn directory-action-btn--text directory-action-btn--danger" title="Удалить навсегда">Удалить</button>
+      </form>
+    </div>
     {%- else -%}
     <div class="directory-action-group">
       <a href="{{ url_for('admin.directory_detail', cid=c.id) }}" class="directory-action-btn" title="QR-код">{{ directory_icon('qr') }}<span class="sr-only">QR</span></a>

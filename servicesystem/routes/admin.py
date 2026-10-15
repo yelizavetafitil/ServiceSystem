@@ -1115,6 +1115,32 @@ def directory_restore(cid):
     return redirect(url_for("admin.directory_archive", org=org, q=q or None))
 
 
+@bp.route("/directory/<int:cid>/delete", methods=["POST"])
+@login_required
+@staff_required
+def directory_delete(cid):
+    """Безвозвратное удаление только из архива (is_active=False)."""
+    contact = db.session.get(PhoneDirectoryContact, cid) or abort(404)
+    if contact.is_active:
+        flash("Сначала перенесите контакт в архив, затем удалите.", "warning")
+        return redirect(url_for("admin.directory_edit", cid=cid))
+    name = contact.full_name
+    org = request.args.get("org", type=int)
+    q = (request.args.get("q") or "").strip()
+    db.session.delete(contact)
+    db.session.commit()
+    log_audit(
+        current_user.id,
+        "directory_delete",
+        "phone_contact",
+        cid,
+        name,
+    )
+    db.session.commit()
+    flash(f"Контакт «{name}» удалён из архива.", "success")
+    return redirect(url_for("admin.directory_archive", org=org, q=q or None))
+
+
 @bp.route("/directory/<int:cid>/edit", methods=["GET", "POST"])
 @login_required
 @staff_required

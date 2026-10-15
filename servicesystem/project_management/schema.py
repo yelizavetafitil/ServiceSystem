@@ -33,6 +33,7 @@ PROJECT_SCHEMA_PATCHES: tuple[str, ...] = (
     "ALTER TABLE project_stages ADD COLUMN IF NOT EXISTS released_at TIMESTAMPTZ",
     "ALTER TABLE project_stages ADD COLUMN IF NOT EXISTS release_notes TEXT",
     "ALTER TABLE project_stages ADD COLUMN IF NOT EXISTS sort_order INTEGER DEFAULT 0",
+    "ALTER TABLE project_stages ADD COLUMN IF NOT EXISTS cost NUMERIC(14, 2)",
     "ALTER TABLE project_task_attachments ADD COLUMN IF NOT EXISTS verified_at TIMESTAMPTZ",
     "ALTER TABLE project_task_attachments ADD COLUMN IF NOT EXISTS verified_by_id INTEGER",
     "ALTER TABLE project_task_attachments ADD COLUMN IF NOT EXISTS uploaded_at TIMESTAMPTZ DEFAULT NOW()",

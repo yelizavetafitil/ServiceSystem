@@ -1737,10 +1737,70 @@ a.directory-contact-title:hover {
   display: block;
 }
 .directory-cell--num .directory-badge--archive {
-  font-size: 9px;
-  padding: 2px 5px;
+  display: inline-block;
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+  padding: 3px 8px;
+  line-height: 1.25;
+  white-space: nowrap;
+  max-width: none;
+  box-sizing: border-box;
 }
-.directory-restore-form { margin: 0; }
+.directory-table-shell--archive .directory-table-head,
+.directory-table-shell--archive .directory-contact-row {
+  grid-template-columns:
+    4.5rem 36px
+    minmax(0, 1.2fr) minmax(0, 1.45fr)
+    minmax(0, 1.15fr) minmax(0, 1.2fr) minmax(0, 1.3fr)
+    max-content;
+}
+.directory-table-shell--archive .directory-cell--num {
+  overflow: visible;
+}
+.directory-table-shell--archive .directory-cell--actions,
+.directory-table-shell--archive .directory-table-head-cell--actions,
+.directory-table-shell--archive .directory-table-head .directory-cell--actions {
+  min-width: 0;
+  max-width: none;
+  width: max-content;
+  justify-self: end;
+  justify-content: flex-end;
+  padding-left: 10px;
+  margin-left: 0;
+}
+.directory-archive-actions {
+  display: flex;
+  flex-direction: column;
+  flex-wrap: nowrap;
+  gap: 6px;
+  justify-content: flex-start;
+  align-items: stretch;
+  width: max-content;
+  min-width: 7.25rem;
+}
+.directory-table-shell--archive .directory-cell--org .directory-cell-text,
+.directory-table-shell--archive .directory-cell--org .directory-cell-sub,
+.directory-table-shell--archive .directory-cell--email .directory-fact-link,
+.directory-table-shell--archive .directory-cell--mobile .directory-fact-link,
+.directory-table-shell--archive .directory-cell--work .directory-cell-text {
+  white-space: normal;
+  overflow-wrap: anywhere;
+  word-break: break-word;
+}
+.directory-restore-form,
+.directory-delete-form {
+  margin: 0;
+}
+.directory-action-btn--danger {
+  color: #b91c1c;
+  border-color: #fecaca;
+}
+.directory-action-btn--danger:hover {
+  color: #991b1b;
+  border-color: #f87171;
+  background: #fef2f2;
+}
 .directory-results {
   margin-bottom: 16px;
   min-height: 0;

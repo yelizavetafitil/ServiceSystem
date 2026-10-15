@@ -16,12 +16,11 @@
         {% for t in grouped[col] %}
         <article class="projects-kanban-card{% if t.priority >= 4 %} projects-kanban-card--critical{% elif t.priority >= 3 %} projects-kanban-card--high{% endif %}{% if t.is_critical_path %} projects-kanban-card--sla{% endif %}"
                  draggable="true" data-task-id="{{ t.id }}" data-kanban-status="{{ col }}">
-          {% if t.ticket_id and (not t.ticket or not t.ticket.executor_id or t.ticket.status == 'new') %}
+          {% if t.ticket_id %}
           <a class="projects-kanban-card-title" href="{{ url_for('tickets.detail', tid=t.ticket_id) }}">{{ t.title }}</a>
           <span class="projects-kanban-badge">Заявка</span>
           {% else %}
           <a class="projects-kanban-card-title" href="{{ url_for('projects.task_detail', tid=t.id) }}">{{ t.title }}</a>
-          {% if t.ticket_id %}<span class="projects-kanban-badge">Заявка</span>{% endif %}
           {% endif %}
           {% if t.project %}<p class="projects-kanban-meta">{{ t.project.name }}{% if t.stage %} · {{ t.stage.title }}{% endif %}</p>{% endif %}
           {% if t.due_date %}<p class="projects-kanban-due">до {{ t.due_date.strftime('%d.%m.%Y') }}{% if t.overdue_days %} · +{{ t.overdue_days }} д.{% endif %}</p>{% endif %}

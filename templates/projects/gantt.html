@@ -4,9 +4,9 @@
 
 {% block head %}
 
-<link rel="stylesheet" href="{{ url_for('static', filename='css/projects.css') }}?v=28">
+<link rel="stylesheet" href="{{ url_for('static', filename='css/projects.css') }}?v=30">
 
-<script defer src="{{ url_for('static', filename='js/projects-gantt.js') }}?v=11"></script>
+<script defer src="{{ url_for('static', filename='js/projects-gantt.js') }}?v=14"></script>
 
 {% endblock %}
 
@@ -42,11 +42,19 @@
 
     {% if gantt_can_edit %}
     <span class="projects-gantt-toolbar-sep"></span>
-    <button type="button" class="btn btn-outline btn-sm" id="gantt-link-mode-btn" data-gantt-link-toggle>Связать задачи</button>
-    <span class="muted projects-gantt-link-hint" id="gantt-link-hint" hidden>Выберите предшественника, затем последователя</span>
+    <button type="button" class="btn btn-outline btn-sm" id="gantt-link-mode-btn" data-gantt-link-toggle>Связать стрелкой</button>
+    <span class="muted projects-gantt-link-hint" id="gantt-link-hint" hidden>Клик: предшественник, затем последователь (или ПКМ по задаче)</span>
     {% endif %}
 
   </div>
+
+  {% if gantt_can_edit %}
+  <div id="gantt-bar-menu" class="projects-gantt-ctx-menu" hidden role="menu">
+    <button type="button" class="projects-gantt-ctx-item" data-gantt-ctx="start-link" role="menuitem">Сделать предшественником (стрелка)</button>
+    <button type="button" class="projects-gantt-ctx-item" data-gantt-ctx="finish-link" role="menuitem" hidden>Связать сюда как последователя</button>
+    <button type="button" class="projects-gantt-ctx-item" data-gantt-ctx="cancel-link" role="menuitem" hidden>Отменить стрелку</button>
+  </div>
+  {% endif %}
 
 
 
@@ -62,7 +70,7 @@
 
     <span class="projects-gantt-legend-item"><i class="swatch is-sla"></i> SLA / крит. путь</span>
 
-    <span class="projects-gantt-legend-item"><i class="swatch is-fs"></i> конец → начало</span>
+    <span class="projects-gantt-legend-item"><i class="swatch is-fs"></i> конец → начало (2-я не раньше дня после 1-й)</span>
 
     <span class="projects-gantt-legend-item"><i class="swatch is-milestone"></i> веха этапа</span>
 
@@ -257,6 +265,10 @@
 
                      data-ticket-id="{{ grow.ticket_id or '' }}"
 
+                     data-waits="{{ grow.waits_for|tojson|e }}"
+
+                     data-blocks="{{ grow.blocks|tojson|e }}"
+
                      data-title="{{ t.title }}"
 
                      data-start="{{ grow.start_iso }}"
@@ -327,6 +339,8 @@
 
             <th>Последователь (начало)</th>
 
+            {% if gantt_can_edit %}<th></th>{% endif %}
+
           </tr>
 
         </thead>
@@ -335,7 +349,7 @@
 
           {% for edge in gantt_link_edges %}
 
-          <tr>
+          <tr data-link-id="{{ edge.id }}">
 
             <td><span class="projects-gantt-links-kind{% if edge.kind == 'related' %} is-related{% endif %}">{{ edge.type_label }}</span></td>
 
@@ -348,6 +362,12 @@
             <td><a href="#gantt-row-{{ edge.to_row }}">№{{ edge.to_row }}</a></td>
 
             <td><a href="{{ url_for('projects.task_detail', tid=edge.to_task_id) }}">{{ edge.to_title }}</a></td>
+
+            {% if gantt_can_edit %}
+            <td class="projects-gantt-links-actions">
+              <button type="button" class="btn btn-outline btn-icon-xs" data-gantt-link-delete="{{ edge.id }}" title="Удалить связь" aria-label="Удалить связь">×</button>
+            </td>
+            {% endif %}
 
           </tr>
 
@@ -404,6 +424,10 @@
           <option value="{{ k }}">{{ lbl }}</option>
           {% endfor %}
         </select>
+      </div>
+      <div class="form-group" id="gantt-panel-links-wrap" hidden>
+        <label>Связи</label>
+        <ul class="projects-gantt-panel-links" id="gantt-panel-links"></ul>
       </div>
       <div class="form-actions">
         <button type="button" class="btn btn-primary btn-sm" id="gantt-panel-save" hidden>Сохранить</button>

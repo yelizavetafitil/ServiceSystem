@@ -4,7 +4,7 @@
 
 {% block title %}{{ task.title }}{% endblock %}
 
-{% block head %}<link rel="stylesheet" href="{{ url_for('static', filename='css/projects.css') }}?v=28">{% endblock %}
+{% block head %}<link rel="stylesheet" href="{{ url_for('static', filename='css/projects.css') }}?v=29">{% endblock %}
 
 {% block content %}
 
@@ -24,7 +24,7 @@
 
 
 
-  {% if blocked %}<p class="alert alert-warning">Задача заблокирована — завершите связанные блокирующие задачи.</p>{% endif %}
+  {% if blocked %}<p class="alert alert-warning">Задача ждёт предшественника — сначала завершите предыдущую задачу.</p>{% endif %}
 
 
 
@@ -149,7 +149,11 @@
 
       {% if current_user.is_auditor or current_user.is_admin %}
 
-      <form method="post" action="{{ url_for('projects.task_update', tid=task.id) }}" class="inline-form" onsubmit="return confirm('Удалить безвозвратно?');">
+      <form method="post" action="{{ url_for('projects.task_update', tid=task.id) }}" class="inline-form"
+            data-confirm="Удалить задачу безвозвратно?"
+            data-confirm-title="Удаление задачи"
+            data-confirm-ok="Удалить"
+            data-confirm-danger>
 
         {{ csrf_field() }}<input type="hidden" name="action" value="delete">
 
@@ -235,7 +239,11 @@
             <span class="badge badge-success projects-file-badge">ГИП</span>
             {% endif %}
             {% if f.id in deletable_file_ids %}
-            <form method="post" action="{{ url_for('projects.task_file_delete', tid=task.id, aid=f.id) }}" class="projects-file-inline-form" onsubmit="return confirm('Удалить этот файл?');">
+            <form method="post" action="{{ url_for('projects.task_file_delete', tid=task.id, aid=f.id) }}" class="projects-file-inline-form"
+                  data-confirm="Удалить этот файл?"
+                  data-confirm-title="Удаление файла"
+                  data-confirm-ok="Удалить"
+                  data-confirm-danger>
               {{ csrf_field() }}
               <button type="submit" class="btn btn-outline btn-xs btn-danger-text">Удалить</button>
             </form>
@@ -256,7 +264,11 @@
         <div class="projects-file-preview-toolbar">
           <a href="{{ pv_url }}" class="btn btn-outline btn-xs" download>Скачать</a>
           {% if preview_att.id in deletable_file_ids %}
-          <form method="post" action="{{ url_for('projects.task_file_delete', tid=task.id, aid=preview_att.id) }}" class="projects-file-inline-form" onsubmit="return confirm('Удалить этот файл?');">
+          <form method="post" action="{{ url_for('projects.task_file_delete', tid=task.id, aid=preview_att.id) }}" class="projects-file-inline-form"
+                data-confirm="Удалить этот файл?"
+                data-confirm-title="Удаление файла"
+                data-confirm-ok="Удалить"
+                data-confirm-danger>
             {{ csrf_field() }}
             <button type="submit" class="btn btn-outline btn-xs btn-danger-text">Удалить</button>
           </form>
@@ -287,7 +299,7 @@
 
     <h2>Связи задач</h2>
 
-    <h3 class="projects-cms-subheading">Исходящие</h3>
+    <h3 class="projects-cms-subheading">Эта задача предшествует</h3>
     <ul class="projects-link-list">{% for l in link_rows %}
       <li>
         <span>{{ project_link_labels.get(l.link_type, l.link_type) }} →
@@ -302,7 +314,7 @@
       </li>
     {% else %}<li class="muted">Нет</li>{% endfor %}</ul>
 
-    <h3 class="projects-cms-subheading">Входящие</h3>
+    <h3 class="projects-cms-subheading">Предшественники этой задачи</h3>
     <ul class="projects-link-list">{% for l in link_rows_in %}
       <li>
         <span>
