@@ -10,7 +10,7 @@ from flask_login import current_user, login_required
 
 from servicesystem.decorators import staff_required
 from servicesystem.extensions import db
-from servicesystem.models import Contract, User
+from servicesystem.models import Contract, Organization, User
 from servicesystem.project_management.models import (
     TASK_KANBAN_COLUMNS,
     Project,
@@ -28,11 +28,13 @@ from servicesystem.project_management.services import (
     project_from_template,
     rollover_overdue_tasks,
     sync_calendar_events_for_task,
+    task_opens_as_ticket,
     tasks_for_user_query,
     update_customer_curator_window,
     user_can_create_task,
     user_can_edit_task,
     user_can_manage_project,
+    user_can_reschedule_gantt,
     user_can_view_custom_field,
 )
 
@@ -177,7 +179,19 @@ def arm():
         user=current_user,
         project_filter=project_id,
     )
-    return render_template("projects/gantt.html", **ctx, **gantt)
+    gantt_stages = []
+    for p in projects:
+        for st in p.stages.order_by(ProjectStage.sort_order):
+            gantt_stages.append(
+                {"id": st.id, "title": st.title, "project_id": p.id, "project": p.name}
+            )
+    return render_template(
+        "projects/gantt.html",
+        **ctx,
+        **gantt,
+        gantt_stages=gantt_stages,
+        gantt_can_edit=bool(current_user.is_admin or current_user.is_auditor),
+    )
 
 
 def _projects_visible():
@@ -203,6 +217,47 @@ def manage_list():
     return render_template("projects/manage.html", projects=items, templates=templates)
 
 
+def _resolve_contract_from_project_form():
+    """Существующий договор или создание нового (для admin/auditor)."""
+    import secrets
+    import string
+
+    mode = request.form.get("contract_mode") or "existing"
+    if mode == "new":
+        org_id = request.form.get("new_contract_org_id", type=int)
+        number = (request.form.get("new_contract_number") or "").strip()
+        if not org_id or not number:
+            return None, "Для нового договора укажите организацию и номер."
+        if Contract.query.filter_by(number=number).first():
+            return None, f"Договор с номером «{number}» уже существует."
+        org = db.session.get(Organization, org_id)
+        if not org:
+            return None, "Организация не найдена."
+        alphabet = string.ascii_letters + string.digits
+        master_login = f"m_{secrets.token_hex(4)}"
+        master_password = "".join(secrets.choice(alphabet) for _ in range(12))
+        contract = Contract(
+            organization_id=org_id,
+            number=number,
+            signed_at=_parse_form_date(request.form.get("new_contract_signed_at")),
+            service_end_date=_parse_form_date(request.form.get("new_contract_service_end")),
+            master_key_expires_at=_parse_form_date(request.form.get("new_contract_service_end")),
+            status="active_warranty",
+            master_login=master_login,
+        )
+        contract.set_master_password(master_password)
+        db.session.add(contract)
+        db.session.flush()
+        return contract, f"Договор {number} создан. Master-логин: {master_login}, пароль: {master_password}"
+    cid = request.form.get("contract_id", type=int) or None
+    if not cid:
+        return None, None
+    contract = db.session.get(Contract, cid)
+    if not contract:
+        return None, "Выбранный договор не найден."
+    return contract, None
+
+
 @bp.route("/manage/new", methods=["GET", "POST"])
 @login_required
 @staff_required
@@ -210,6 +265,7 @@ def manage_new():
     if not (current_user.is_admin or current_user.is_auditor):
         abort(403)
     contracts = Contract.query.order_by(Contract.number).all()
+    organizations = Organization.query.order_by(Organization.name).all()
     auditors = User.query.filter_by(role="auditor", is_active=True).all()
     executors = User.query.filter_by(role="executor", is_active=True).all()
     customers = User.query.filter(User.role.in_(("customer", "customer_curator")), User.is_active.is_(True)).all()
@@ -217,6 +273,14 @@ def manage_new():
     preset_template_id = request.args.get("template", type=int)
     if request.method == "POST":
         mode = request.form.get("create_mode") or "blank"
+        contract, contract_msg = _resolve_contract_from_project_form()
+        if contract_msg and contract is None and (request.form.get("contract_mode") or "existing") == "new":
+            flash(contract_msg, "warning")
+            return redirect(url_for("projects.manage_new", template=preset_template_id))
+        if contract_msg and contract is None and request.form.get("contract_id"):
+            flash(contract_msg, "warning")
+            return redirect(url_for("projects.manage_new", template=preset_template_id))
+        contract_id = contract.id if contract else None
         if mode == "from_template":
             tpl_id = request.form.get("template_id", type=int)
             tpl = db.session.get(Project, tpl_id) if tpl_id else None
@@ -232,7 +296,7 @@ def manage_new():
                 proj = project_from_template(
                     tpl,
                     name=name,
-                    contract_id=request.form.get("contract_id", type=int) or None,
+                    contract_id=contract_id,
                     curator_id=request.form.get("curator_auditor_id", type=int) or current_user.id,
                     customer_curator_id=request.form.get("customer_curator_id", type=int) or None,
                     planned_start=_parse_form_date(request.form.get("planned_start")),
@@ -242,6 +306,8 @@ def manage_new():
                 update_customer_curator_window(proj)
                 db.session.commit()
                 flash("Проект развёрнут из шаблона — проверьте сроки и договор.", "success")
+                if contract_msg and contract:
+                    flash(contract_msg, "info")
                 return redirect(url_for("projects.manage_edit", pid=proj.id))
         else:
             name = (request.form.get("name") or "").strip()
@@ -250,7 +316,7 @@ def manage_new():
                 return redirect(url_for("projects.manage_new"))
             proj = Project(
                 name=name,
-                contract_id=request.form.get("contract_id", type=int) or None,
+                contract_id=contract_id,
                 planned_start=_parse_form_date(request.form.get("planned_start")),
                 deadline=_parse_form_date(request.form.get("deadline")),
                 curator_auditor_id=request.form.get("curator_auditor_id", type=int) or current_user.id,
@@ -266,11 +332,14 @@ def manage_new():
             update_customer_curator_window(proj)
             db.session.commit()
             flash("Шаблон создан." if proj.is_template else "Проект создан.", "success")
+            if contract_msg and contract and not proj.is_template:
+                flash(contract_msg, "info")
             return redirect(url_for("projects.manage_edit", pid=proj.id))
     return render_template(
         "projects/project_form.html",
         project=None,
         contracts=contracts,
+        organizations=organizations,
         auditors=auditors,
         executors=executors,
         customers=customers,
@@ -395,16 +464,35 @@ def task_new():
         projects_q = projects_q.filter_by(is_template=False)
     projects = projects_q.order_by(Project.name).all()
     executors = User.query.filter_by(role="executor", is_active=True).all()
+    parent_task = db.session.get(ProjectTask, parent_id) if parent_id else None
+    if parent_task and not preset_project_id:
+        preset_project_id = parent_task.project_id
+    stages_by_project: dict[int, list] = {}
+    for p in projects:
+        stages_by_project[p.id] = [
+            {"id": s.id, "title": s.title}
+            for s in p.stages.order_by(ProjectStage.sort_order)
+        ]
+    if parent_task and parent_task.project_id not in stages_by_project:
+        stages_by_project[parent_task.project_id] = [
+            {"id": s.id, "title": s.title}
+            for s in parent_task.project.stages.order_by(ProjectStage.sort_order)
+        ] if parent_task.project else []
     if request.method == "POST":
         title = (request.form.get("title") or "").strip()
         project_id = request.form.get("project_id", type=int)
+        if parent_task:
+            project_id = parent_task.project_id
         if not title or not project_id:
             flash("Укажите проект и название задачи.", "warning")
             return redirect(url_for("projects.task_new", project=preset_project_id, parent=parent_id))
+        stage_id = request.form.get("stage_id", type=int) or None
+        if parent_task and not stage_id:
+            stage_id = parent_task.stage_id
         task = ProjectTask(
             project_id=project_id,
-            stage_id=request.form.get("stage_id", type=int) or None,
-            parent_id=request.form.get("parent_id", type=int) or None,
+            stage_id=stage_id,
+            parent_id=parent_task.id if parent_task else (request.form.get("parent_id", type=int) or None),
             title=title,
             description=(request.form.get("description") or "").strip() or None,
             priority=int(request.form.get("priority") or 2),
@@ -429,8 +517,11 @@ def task_new():
         task=None,
         projects=projects,
         executors=executors,
-        parent_id=request.args.get("parent", type=int),
+        parent_id=parent_id,
+        parent_task=parent_task,
         preset_project_id=preset_project_id,
+        stages_by_project=stages_by_project,
+        preset_stage_id=parent_task.stage_id if parent_task else None,
         **projects_ui_context(),
     )
 
@@ -441,6 +532,8 @@ def task_detail(tid):
     task = db.session.get(ProjectTask, tid) or abort(404)
     if not user_can_edit_task(current_user, task) and current_user.role != "customer_curator":
         abort(403)
+    if task_opens_as_ticket(task) and task.ticket_id:
+        return redirect(url_for("tickets.detail", tid=task.ticket_id))
     tab = request.args.get("tab", "main")
     executors = User.query.filter_by(role="executor", is_active=True).all()
     custom_fields = []
@@ -449,6 +542,22 @@ def task_detail(tid):
             if user_can_view_custom_field(current_user, f):
                 custom_fields.append(f)
     link_rows = list(task.links_out)
+    from servicesystem.project_management.models import ProjectTaskLink
+
+    link_rows_in = ProjectTaskLink.query.filter_by(to_task_id=task.id).all()
+    sibling_tasks = (
+        ProjectTask.query.filter(
+            ProjectTask.project_id == task.project_id,
+            ProjectTask.id != task.id,
+        )
+        .order_by(ProjectTask.title)
+        .all()
+        if task.project_id
+        else []
+    )
+    project_stages = (
+        list(task.project.stages.order_by(ProjectStage.sort_order)) if task.project else []
+    )
     blocked = False
     from servicesystem.project_management.services import task_is_completion_blocked
 
@@ -501,6 +610,9 @@ def task_detail(tid):
         executors=executors,
         custom_fields=custom_fields,
         link_rows=link_rows,
+        link_rows_in=link_rows_in,
+        sibling_tasks=sibling_tasks,
+        project_stages=project_stages,
         blocked=blocked,
         subtasks=subtasks,
         collaborator_ids=collaborator_ids,
@@ -531,10 +643,10 @@ def task_duplicate(tid):
 @bp.route("/gantt/tasks/<int:tid>/dates", methods=["POST"])
 @login_required
 def gantt_task_dates(tid):
-    """Drag-and-drop на Ганте: сдвиг start/due (ТЗ стратегическое планирование)."""
+    """Drag-and-drop на Ганте: сдвиг start/due (только admin/auditor)."""
     _staff_or_curator()
     task = db.session.get(ProjectTask, tid) or abort(404)
-    if not user_can_edit_task(current_user, task):
+    if not user_can_reschedule_gantt(current_user, task):
         abort(403)
     data = request.get_json(silent=True) or {}
     start_s = (data.get("start_date") or "").strip()
@@ -576,6 +688,88 @@ def gantt_task_dates(tid):
             else "",
         }
     )
+
+
+@bp.route("/gantt/tasks/<int:tid>/panel", methods=["POST"])
+@login_required
+def gantt_task_panel(tid):
+    """Быстрое редактирование задачи с Ганта (сроки, этап, статус)."""
+    _staff_or_curator()
+    task = db.session.get(ProjectTask, tid) or abort(404)
+    if not (current_user.is_admin or current_user.is_auditor):
+        abort(403)
+    data = request.get_json(silent=True) or {}
+    start_s = (data.get("start_date") or "").strip()
+    due_s = (data.get("due_date") or "").strip()
+    try:
+        if start_s:
+            task.start_date = date.fromisoformat(start_s)
+        if due_s:
+            task.due_date = date.fromisoformat(due_s)
+    except ValueError:
+        return jsonify({"error": "bad_date"}), 400
+    if task.start_date and task.due_date and task.due_date < task.start_date:
+        task.start_date, task.due_date = task.due_date, task.start_date
+    if "stage_id" in data:
+        stage_id = data.get("stage_id")
+        if stage_id in ("", None):
+            task.stage_id = None
+        else:
+            try:
+                sid = int(stage_id)
+            except (TypeError, ValueError):
+                return jsonify({"error": "bad_stage"}), 400
+            st = db.session.get(ProjectStage, sid)
+            if not st or st.project_id != task.project_id:
+                return jsonify({"error": "bad_stage"}), 400
+            task.stage_id = sid
+    status = data.get("kanban_status")
+    if status:
+        try:
+            move_task_kanban(task, status, task.kanban_sort or 0)
+        except ValueError as exc:
+            if str(exc) == "blocked":
+                return jsonify({"error": "blocked"}), 409
+            return jsonify({"error": "bad_status"}), 400
+    sync_calendar_events_for_task(task)
+    db.session.commit()
+    return jsonify({"ok": True})
+
+
+@bp.route("/gantt/links", methods=["POST"])
+@login_required
+def gantt_link_add():
+    """Связь FS (blocks) между задачами с Ганта."""
+    _staff_or_curator()
+    if not (current_user.is_admin or current_user.is_auditor):
+        abort(403)
+    data = request.get_json(silent=True) or {}
+    from_id = data.get("from_task_id")
+    to_id = data.get("to_task_id")
+    link_type = data.get("link_type") or "blocks"
+    try:
+        from_id = int(from_id)
+        to_id = int(to_id)
+    except (TypeError, ValueError):
+        return jsonify({"error": "bad_ids"}), 400
+    if from_id == to_id:
+        return jsonify({"error": "same"}), 400
+    from_task = db.session.get(ProjectTask, from_id) or abort(404)
+    to_task = db.session.get(ProjectTask, to_id) or abort(404)
+    if from_task.project_id != to_task.project_id:
+        return jsonify({"error": "different_project"}), 400
+    from servicesystem.project_management.models import TASK_LINK_TYPES, ProjectTaskLink
+
+    if link_type not in TASK_LINK_TYPES:
+        return jsonify({"error": "bad_type"}), 400
+    exists = ProjectTaskLink.query.filter_by(
+        from_task_id=from_id, to_task_id=to_id, link_type=link_type
+    ).first()
+    if exists:
+        return jsonify({"ok": True, "existing": True})
+    db.session.add(ProjectTaskLink(from_task_id=from_id, to_task_id=to_id, link_type=link_type))
+    db.session.commit()
+    return jsonify({"ok": True})
 
 
 @bp.route("/api/tasks/<int:tid>/move", methods=["POST"])
@@ -921,7 +1115,15 @@ def _gantt_build_bars(
                 "waits_for": waits_for.get(t.id, []),
                 "blocks": blocks.get(t.id, []),
                 "related_with": related_with.get(t.id, []),
-                "can_drag": user_can_edit_task(user, t) if user else False,
+                "can_drag": user_can_reschedule_gantt(user, t) if user else False,
+                "can_edit_panel": bool(user and (user.is_admin or user.is_auditor)),
+                "open_as_ticket": task_opens_as_ticket(t),
+                "ticket_id": t.ticket_id,
+                "stage_id": t.stage_id,
+                "stage_title": t.stage.title if t.stage else None,
+                "start_iso": s.isoformat(),
+                "due_iso": e.isoformat(),
+                "kanban_status": t.kanban_status,
                 "project_deadline": t.project.deadline.isoformat()
                 if t.project and t.project.deadline
                 else "",

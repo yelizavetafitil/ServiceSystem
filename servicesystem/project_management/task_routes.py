@@ -11,6 +11,7 @@ from servicesystem.models import User
 from servicesystem.project_management.models import (
     ProjectCustomField,
     ProjectCalendarFeed,
+    ProjectStage,
     ProjectTask,
     ProjectTaskAttachment,
     ProjectTaskComment,
@@ -105,22 +106,35 @@ def task_update(tid):
     if action == "link_add":
         other_id = request.form.get("other_task_id", type=int)
         link_type = request.form.get("link_type") or "related"
-        if other_id and link_type in TASK_LINK_TYPES and other_id != task.id:
+        other = db.session.get(ProjectTask, other_id) if other_id else None
+        if not other_id or not other:
+            flash("Выберите задачу для связи.", "warning")
+        elif other_id == task.id:
+            flash("Нельзя связать задачу саму с собой.", "warning")
+        elif other.project_id != task.project_id:
+            flash("Связь возможна только внутри одного проекта.", "warning")
+        elif link_type not in TASK_LINK_TYPES:
+            flash("Неверный тип связи.", "warning")
+        else:
             exists = ProjectTaskLink.query.filter_by(
                 from_task_id=task.id, to_task_id=other_id, link_type=link_type
             ).first()
-            if not exists:
+            if exists:
+                flash("Такая связь уже есть.", "warning")
+            else:
                 db.session.add(
                     ProjectTaskLink(from_task_id=task.id, to_task_id=other_id, link_type=link_type)
                 )
                 db.session.commit()
+                flash("Связь добавлена.", "success")
         return redirect(url_for("projects.task_detail", tid=tid, tab="links"))
     if action == "link_remove":
         lid = request.form.get("link_id", type=int)
         link = db.session.get(ProjectTaskLink, lid) if lid else None
-        if link and link.from_task_id == task.id:
+        if link and (link.from_task_id == task.id or link.to_task_id == task.id):
             db.session.delete(link)
             db.session.commit()
+            flash("Связь удалена.", "success")
         return redirect(url_for("projects.task_detail", tid=tid, tab="links"))
     if action == "custom_save":
         proj = task.project
@@ -146,6 +160,15 @@ def task_update(tid):
     task.assignee_id = request.form.get("assignee_id", type=int) or None
     task.due_date = parse_optional_date(request.form.get("due_date"))
     task.start_date = parse_optional_date(request.form.get("start_date"))
+    stage_id = request.form.get("stage_id", type=int)
+    if stage_id:
+        st = db.session.get(ProjectStage, stage_id)
+        if st and st.project_id == task.project_id:
+            task.stage_id = stage_id
+        else:
+            flash("Этап не принадлежит проекту задачи.", "warning")
+    elif "stage_id" in request.form:
+        task.stage_id = None
     if current_user.is_auditor or current_user.is_admin:
         from servicesystem.project_management.models import ProjectTaskCollaborator
 

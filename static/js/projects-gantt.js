@@ -239,6 +239,7 @@
 
 
   var drag = null;
+  var suppressBarClick = false;
 
 
 
@@ -249,6 +250,8 @@
     var tr = drag.track.getBoundingClientRect();
 
     var dx = e.clientX - drag.startX;
+
+    if (Math.abs(dx) > 4) drag.moved = true;
 
     var dPct = (dx / tr.width) * 100;
 
@@ -264,7 +267,7 @@
 
 
 
-  async function onPointerUp() {
+  async function onPointerUp(e) {
 
     if (!drag) return;
 
@@ -277,6 +280,19 @@
     drag = null;
 
     state.bar.classList.remove("is-dragging");
+
+    var dx = e && typeof e.clientX === "number" ? Math.abs(e.clientX - state.startX) : 0;
+    var moved = state.moved || dx > 4;
+
+    if (!moved) {
+      // Обычный клик: вернуть полоску, панель откроет обработчик click
+      state.slot.style.left = state.origLeft + "%";
+      return;
+    }
+
+    // После drag не открывать панель на синтетическом click
+    suppressBarClick = true;
+    setTimeout(function () { suppressBarClick = false; }, 0);
 
     var left = parseFloat(state.slot.style.left) || state.origLeft;
 
@@ -306,87 +322,194 @@
 
 
 
-  chart.querySelectorAll(".projects-gantt-bar.is-draggable").forEach(function (bar) {
+  var flagsEl = document.getElementById("gantt-ui-flags");
+  var uiFlags = { canEdit: false };
+  try { if (flagsEl) uiFlags = JSON.parse(flagsEl.textContent || "{}"); } catch (e) {}
 
-    bar.addEventListener("pointerdown", function (e) {
-
-      if (bar.getAttribute("data-can-drag") !== "1") return;
-
-      e.preventDefault();
-
-      e.stopPropagation();
-
-      var slot = bar.closest(".projects-gantt-bar-slot");
-
-      var track = bar.closest("[data-gantt-track]");
-
-      if (!slot || !track) return;
-
-      drag = {
-
-        bar: bar,
-
-        slot: slot,
-
-        track: track,
-
-        taskId: bar.getAttribute("data-task-id"),
-
-        startX: e.clientX,
-
-        origLeft: parseFloat(slot.style.left) || 0,
-
-        widthPct: parseFloat(slot.getAttribute("data-width-pct")) || 10,
-
-        projectDeadline: bar.getAttribute("data-project-deadline") || "",
-
-        wasCritical: bar.classList.contains("is-critical-pulse"),
-
-      };
-
-      bar.classList.add("is-dragging");
-
-      bar.setPointerCapture(e.pointerId);
-
-      document.addEventListener("pointermove", onPointerMove);
-
-      document.addEventListener("pointerup", onPointerUp);
-
+  var linkMode = false;
+  var linkFromId = null;
+  var linkBtn = document.getElementById("gantt-link-mode-btn");
+  var linkHint = document.getElementById("gantt-link-hint");
+  if (linkBtn) {
+    linkBtn.addEventListener("click", function () {
+      linkMode = !linkMode;
+      linkFromId = null;
+      linkBtn.classList.toggle("is-active", linkMode);
+      if (linkHint) linkHint.hidden = !linkMode;
+      chart.classList.toggle("is-link-mode", linkMode);
     });
-
-    bar.addEventListener("dblclick", function () {
-
-      var id = bar.getAttribute("data-task-id");
-
-      if (id) window.location.href = "/projects/tasks/" + id;
-
-    });
-
-  });
-
-
-
-  function scheduleDraw() {
-
-    requestAnimationFrame(drawFsLinks);
-
   }
 
+  var panel = document.getElementById("gantt-task-panel");
+  var panelTitle = document.getElementById("gantt-panel-title");
+  var panelStart = document.getElementById("gantt-panel-start");
+  var panelDue = document.getElementById("gantt-panel-due");
+  var panelStage = document.getElementById("gantt-panel-stage");
+  var panelStatus = document.getElementById("gantt-panel-status");
+  var panelSave = document.getElementById("gantt-panel-save");
+  var panelOpen = document.getElementById("gantt-panel-open");
+  var panelNote = document.getElementById("gantt-panel-readonly-note");
+  var panelClose = document.getElementById("gantt-panel-close");
+  var panelTaskId = null;
 
+  function closePanel() {
+    if (!panel) return;
+    panel.hidden = true;
+    panel.setAttribute("aria-hidden", "true");
+    panelTaskId = null;
+  }
+
+  function openPanel(bar) {
+    if (!panel) return;
+    panelTaskId = bar.getAttribute("data-task-id");
+    var canEdit = bar.getAttribute("data-can-edit") === "1";
+    var openTicket = bar.getAttribute("data-open-ticket") === "1";
+    var ticketId = bar.getAttribute("data-ticket-id");
+    if (panelTitle) panelTitle.textContent = bar.getAttribute("data-title") || "Задача";
+    if (panelStart) {
+      panelStart.value = bar.getAttribute("data-start") || "";
+      panelStart.disabled = !canEdit;
+    }
+    if (panelDue) {
+      panelDue.value = bar.getAttribute("data-due") || "";
+      panelDue.disabled = !canEdit;
+    }
+    if (panelStage) {
+      var pid = bar.getAttribute("data-project-id");
+      var sid = bar.getAttribute("data-stage-id") || "";
+      Array.prototype.forEach.call(panelStage.options, function (opt) {
+        if (!opt.value) return;
+        var op = opt.getAttribute("data-project-id");
+        opt.hidden = !!(op && pid && String(op) !== String(pid));
+      });
+      panelStage.value = sid;
+      panelStage.disabled = !canEdit;
+    }
+    if (panelStatus) {
+      panelStatus.value = bar.getAttribute("data-status") || "todo";
+      panelStatus.disabled = !canEdit;
+    }
+    if (panelSave) panelSave.hidden = !canEdit;
+    if (panelNote) panelNote.hidden = canEdit;
+    if (panelOpen) {
+      if (openTicket && ticketId) panelOpen.href = "/tickets/" + ticketId;
+      else panelOpen.href = "/projects/tasks/" + panelTaskId;
+    }
+    panel.hidden = false;
+    panel.setAttribute("aria-hidden", "false");
+  }
+
+  if (panelClose) panelClose.addEventListener("click", closePanel);
+  if (panelSave) {
+    panelSave.addEventListener("click", async function () {
+      if (!panelTaskId) return;
+      try {
+        var res = await fetch("/projects/gantt/tasks/" + panelTaskId + "/panel", {
+          method: "POST",
+          headers: { "Content-Type": "application/json", "X-CSRFToken": csrf },
+          body: JSON.stringify({
+            start_date: panelStart ? panelStart.value : "",
+            due_date: panelDue ? panelDue.value : "",
+            stage_id: panelStage ? panelStage.value : "",
+            kanban_status: panelStatus ? panelStatus.value : "",
+          }),
+        });
+        if (res.ok) window.location.reload();
+        else if (res.status === 409) alert("Нельзя сменить статус: есть блокирующие связи.");
+        else alert("Не удалось сохранить.");
+      } catch (err) {
+        alert("Ошибка сети.");
+      }
+    });
+  }
+
+  async function createGanttLink(fromId, toId) {
+    try {
+      var res = await fetch("/projects/gantt/links", {
+        method: "POST",
+        headers: { "Content-Type": "application/json", "X-CSRFToken": csrf },
+        body: JSON.stringify({ from_task_id: fromId, to_task_id: toId, link_type: "blocks" }),
+      });
+      if (res.ok) window.location.reload();
+      else alert("Не удалось создать связь.");
+    } catch (err) {
+      alert("Ошибка сети.");
+    }
+  }
+
+  chart.querySelectorAll(".projects-gantt-bar").forEach(function (bar) {
+    if (bar.getAttribute("data-can-drag") === "1") {
+      bar.addEventListener("pointerdown", function (e) {
+        if (linkMode) return;
+        if (bar.getAttribute("data-can-drag") !== "1") return;
+        e.preventDefault();
+        e.stopPropagation();
+        var slot = bar.closest(".projects-gantt-bar-slot");
+        var track = bar.closest("[data-gantt-track]");
+        if (!slot || !track) return;
+        drag = {
+          bar: bar,
+          slot: slot,
+          track: track,
+          taskId: bar.getAttribute("data-task-id"),
+          startX: e.clientX,
+          origLeft: parseFloat(slot.style.left) || 0,
+          widthPct: parseFloat(slot.getAttribute("data-width-pct")) || 10,
+          projectDeadline: bar.getAttribute("data-project-deadline") || "",
+          wasCritical: bar.classList.contains("is-critical-pulse"),
+          moved: false,
+        };
+        bar.classList.add("is-dragging");
+        bar.setPointerCapture(e.pointerId);
+        document.addEventListener("pointermove", onPointerMove);
+        document.addEventListener("pointerup", onPointerUp);
+      });
+    }
+
+    bar.addEventListener("click", function (e) {
+      e.preventDefault();
+      e.stopPropagation();
+      if (suppressBarClick) {
+        suppressBarClick = false;
+        return;
+      }
+      var id = bar.getAttribute("data-task-id");
+      if (!id) return;
+      if (linkMode) {
+        if (!linkFromId) {
+          linkFromId = id;
+          bar.classList.add("is-link-source");
+          if (linkHint) linkHint.textContent = "Теперь выберите последователя";
+          return;
+        }
+        if (String(linkFromId) === String(id)) return;
+        createGanttLink(linkFromId, id);
+        return;
+      }
+      // После текущего click — иначе document-listener может сразу закрыть панель
+      setTimeout(function () { openPanel(bar); }, 0);
+    });
+  });
+
+  // Клик вне панели — закрыть
+  document.addEventListener("click", function (e) {
+    if (!panel || panel.hidden) return;
+    if (panel.contains(e.target)) return;
+    if (e.target.closest && e.target.closest(".projects-gantt-bar")) return;
+    closePanel();
+  });
+
+  function scheduleDraw() {
+    requestAnimationFrame(drawFsLinks);
+  }
 
   scheduleDraw();
-
   window.addEventListener("resize", scheduleDraw);
-
   window.addEventListener("load", scheduleDraw);
-
   var host = chart.querySelector(".projects-gantt-hscroll");
-
   if (host) host.addEventListener("scroll", scheduleDraw);
-
   if (body && window.ResizeObserver) {
     new ResizeObserver(scheduleDraw).observe(body);
   }
-
 })();
 

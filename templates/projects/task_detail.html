@@ -4,7 +4,7 @@
 
 {% block title %}{{ task.title }}{% endblock %}
 
-{% block head %}<link rel="stylesheet" href="{{ url_for('static', filename='css/projects.css') }}?v=27">{% endblock %}
+{% block head %}<link rel="stylesheet" href="{{ url_for('static', filename='css/projects.css') }}?v=28">{% endblock %}
 
 {% block content %}
 
@@ -82,6 +82,15 @@
 
         <div class="form-group"><label>Дедлайн</label><input type="date" name="due_date" class="form-control" value="{{ task.due_date or '' }}"></div>
 
+      </div>
+
+      <div class="form-group"><label>Этап (надзадача)</label>
+        <select name="stage_id" class="form-control">
+          <option value="">— без этапа —</option>
+          {% for s in project_stages %}
+          <option value="{{ s.id }}" {% if task.stage_id == s.id %}selected{% endif %}>{{ s.title }}</option>
+          {% endfor %}
+        </select>
       </div>
 
       <div class="form-group"><label>Исполнитель</label>
@@ -278,10 +287,12 @@
 
     <h2>Связи задач</h2>
 
+    <h3 class="projects-cms-subheading">Исходящие</h3>
     <ul class="projects-link-list">{% for l in link_rows %}
-
       <li>
-        <span>Задача №{{ l.to_task_id }} — {{ project_link_labels.get(l.link_type, l.link_type) }}</span>
+        <span>{{ project_link_labels.get(l.link_type, l.link_type) }} →
+          <a href="{{ url_for('projects.task_detail', tid=l.to_task_id) }}">{% if l.to_task %}{{ l.to_task.title }}{% else %}№{{ l.to_task_id }}{% endif %}</a>
+        </span>
         {% if current_user.is_staff %}
         <form method="post" action="{{ url_for('projects.task_update', tid=task.id) }}" class="inline-form">
           {{ csrf_field() }}<input type="hidden" name="action" value="link_remove"><input type="hidden" name="link_id" value="{{ l.id }}">
@@ -289,20 +300,49 @@
         </form>
         {% endif %}
       </li>
+    {% else %}<li class="muted">Нет</li>{% endfor %}</ul>
 
-    {% else %}<li class="muted">Связей нет</li>{% endfor %}</ul>
+    <h3 class="projects-cms-subheading">Входящие</h3>
+    <ul class="projects-link-list">{% for l in link_rows_in %}
+      <li>
+        <span>
+          <a href="{{ url_for('projects.task_detail', tid=l.from_task_id) }}">{% if l.from_task %}{{ l.from_task.title }}{% else %}№{{ l.from_task_id }}{% endif %}</a>
+          → {{ project_link_labels.get(l.link_type, l.link_type) }}
+        </span>
+        {% if current_user.is_staff %}
+        <form method="post" action="{{ url_for('projects.task_update', tid=task.id) }}" class="inline-form">
+          {{ csrf_field() }}<input type="hidden" name="action" value="link_remove"><input type="hidden" name="link_id" value="{{ l.id }}">
+          <button type="submit" class="btn btn-outline btn-icon-xs" title="Удалить связь" aria-label="Удалить связь">×</button>
+        </form>
+        {% endif %}
+      </li>
+    {% else %}<li class="muted">Нет</li>{% endfor %}</ul>
 
     {% if current_user.is_staff %}
 
-    <form method="post" action="{{ url_for('projects.task_update', tid=task.id) }}" class="form-row">
+    <form method="post" action="{{ url_for('projects.task_update', tid=task.id) }}" class="form-row form-row--align-end projects-cms-inline-form">
 
       {{ csrf_field() }}<input type="hidden" name="action" value="link_add">
 
-      <input name="other_task_id" type="number" class="form-control" placeholder="Номер задачи" required>
+      <div class="form-group">
+        <label>Задача</label>
+        <select name="other_task_id" class="form-control" required>
+          <option value="">— выберите —</option>
+          {% for ot in sibling_tasks %}
+          <option value="{{ ot.id }}">{{ ot.title }}</option>
+          {% endfor %}
+        </select>
+      </div>
 
-      <select name="link_type" class="form-control">{% for key, lbl in link_type_choices %}<option value="{{ key }}">{{ lbl }}</option>{% endfor %}</select>
+      <div class="form-group">
+        <label>Тип</label>
+        <select name="link_type" class="form-control">{% for key, lbl in link_type_choices %}<option value="{{ key }}">{{ lbl }}</option>{% endfor %}</select>
+      </div>
 
-      <button type="submit" class="btn btn-outline btn-sm">Добавить</button>
+      <div class="form-group form-group--shrink">
+        <label class="projects-cms-action-label" aria-hidden="true">Добавить</label>
+        <button type="submit" class="btn btn-outline btn-sm">Добавить</button>
+      </div>
 
     </form>
 

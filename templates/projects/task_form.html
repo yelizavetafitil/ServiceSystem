@@ -1,38 +1,93 @@
-{% extends "base.html" %}
-{% from "macros/forms.html" import csrf_field %}
-{% block title %}Новая задача{% endblock %}
-{% block head %}<link rel="stylesheet" href="{{ url_for('static', filename='css/projects.css') }}?v=27">{% endblock %}
-{% block content %}
-<div class="container cms-page projects-cms">
-  {% if parent_id %}
-  <a href="{{ url_for('projects.task_detail', tid=parent_id) }}" class="back-link">← К задаче</a>
-  {% elif preset_project_id %}
-  <a href="{{ url_for('projects.manage_edit', pid=preset_project_id) }}" class="back-link">← К карточке проекта</a>
-  {% else %}
-  <a href="{{ url_for('projects.arm') }}" class="back-link">← К модулю проектов</a>
-  {% endif %}
-  <div class="card projects-cms-card">
-    <h1 class="projects-cms-title">{% if parent_id %}Подзадача{% else %}Задача верхнего уровня{% endif %}</h1>
-    <form method="post" class="projects-cms-form">
-      {{ csrf_field() }}
-      <input type="hidden" name="parent_id" value="{{ parent_id or '' }}">
-      <div class="form-group"><label>Проект</label>
-        <select name="project_id" class="form-control" required>{% for p in projects %}<option value="{{ p.id }}" {% if preset_project_id == p.id %}selected{% endif %}>{{ p.name }}{% if p.is_template %} (шаблон){% endif %}</option>{% endfor %}</select>
-      </div>
-      <div class="form-group"><label>Название</label><input name="title" class="form-control" required></div>
-      <div class="form-group"><label>Описание</label><textarea name="description" class="form-control" rows="4"></textarea></div>
-      <div class="form-row">
-        <div class="form-group"><label>Критичность</label><select name="priority" class="form-control">{% for n, lbl in project_priority_labels.items() %}<option value="{{ n }}">{{ lbl }}</option>{% endfor %}</select></div>
-        <div class="form-group"><label>Исполнитель</label><select name="assignee_id" class="form-control"><option value="">—</option>{% for u in executors %}<option value="{{ u.id }}">{{ u.full_name }}</option>{% endfor %}</select></div>
-      </div>
-      <div class="form-row">
-        <div class="form-group"><label>Начало</label><input type="date" name="start_date" class="form-control"></div>
-        <div class="form-group"><label>Дедлайн</label><input type="date" name="due_date" class="form-control"></div>
-      </div>
-      <div class="form-actions">
-        <button type="submit" class="btn btn-primary">Создать</button>
-      </div>
-    </form>
-  </div>
-</div>
-{% endblock %}
+{% extends "base.html" %}
+{% from "macros/forms.html" import csrf_field %}
+{% block title %}{% if parent_task %}Подзадача{% else %}Новая задача{% endif %}{% endblock %}
+{% block head %}<link rel="stylesheet" href="{{ url_for('static', filename='css/projects.css') }}?v=28">{% endblock %}
+{% block content %}
+<div class="container cms-page projects-cms">
+  {% if parent_task %}
+  <a href="{{ url_for('projects.task_detail', tid=parent_task.id) }}" class="back-link">← К задаче «{{ parent_task.title }}»</a>
+  {% elif preset_project_id %}
+  <a href="{{ url_for('projects.manage_edit', pid=preset_project_id) }}" class="back-link">← К карточке проекта</a>
+  {% else %}
+  <a href="{{ url_for('projects.arm') }}" class="back-link">← К модулю проектов</a>
+  {% endif %}
+  <div class="card projects-cms-card">
+    <h1 class="projects-cms-title">{% if parent_task %}Подзадача к «{{ parent_task.title }}»{% else %}Задача верхнего уровня{% endif %}</h1>
+    <form method="post" class="projects-cms-form" id="task-create-form">
+      {{ csrf_field() }}
+      <input type="hidden" name="parent_id" value="{{ parent_task.id if parent_task else '' }}">
+      {% if parent_task %}
+      <input type="hidden" name="project_id" value="{{ parent_task.project_id }}">
+      <p class="projects-cms-hint muted">Проект: <strong>{{ parent_task.project.name if parent_task.project else '—' }}</strong> (родитель задан автоматически)</p>
+      {% else %}
+      <div class="form-group"><label>Проект</label>
+        <select name="project_id" id="task-project-id" class="form-control" required>
+          {% for p in projects %}
+          <option value="{{ p.id }}" {% if preset_project_id == p.id %}selected{% endif %}>{{ p.name }}{% if p.is_template %} (шаблон){% endif %}</option>
+          {% endfor %}
+        </select>
+      </div>
+      {% endif %}
+      <div class="form-group"><label>Этап (надзадача)</label>
+        <select name="stage_id" id="task-stage-id" class="form-control">
+          <option value="">— без этапа —</option>
+          {% set pid = parent_task.project_id if parent_task else preset_project_id %}
+          {% if parent_task %}
+            {% for s in stages_by_project.get(parent_task.project_id, []) %}
+            <option value="{{ s.id }}" {% if preset_stage_id == s.id %}selected{% endif %}>{{ s.title }}</option>
+            {% endfor %}
+          {% elif preset_project_id %}
+            {% for s in stages_by_project.get(preset_project_id, []) %}
+            <option value="{{ s.id }}">{{ s.title }}</option>
+            {% endfor %}
+          {% elif projects %}
+            {% for s in stages_by_project.get(projects[0].id, []) %}
+            <option value="{{ s.id }}">{{ s.title }}</option>
+            {% endfor %}
+          {% endif %}
+        </select>
+      </div>
+      <div class="form-group"><label>Название</label><input name="title" class="form-control" required></div>
+      <div class="form-group"><label>Описание</label><textarea name="description" class="form-control" rows="4"></textarea></div>
+      <div class="form-row">
+        <div class="form-group"><label>Критичность</label><select name="priority" class="form-control">{% for n, lbl in project_priority_labels.items() %}<option value="{{ n }}">{{ lbl }}</option>{% endfor %}</select></div>
+        <div class="form-group"><label>Исполнитель</label><select name="assignee_id" class="form-control"><option value="">—</option>{% for u in executors %}<option value="{{ u.id }}">{{ u.full_name }}</option>{% endfor %}</select></div>
+      </div>
+      <div class="form-row">
+        <div class="form-group"><label>Начало</label><input type="date" name="start_date" class="form-control"></div>
+        <div class="form-group"><label>Дедлайн</label><input type="date" name="due_date" class="form-control"></div>
+      </div>
+      <div class="form-actions">
+        <button type="submit" class="btn btn-primary">Создать</button>
+      </div>
+    </form>
+  </div>
+</div>
+{% if not parent_task %}
+<script type="application/json" id="stages-by-project-json">{{ stages_by_project | tojson }}</script>
+<script>
+(function () {
+  var sel = document.getElementById("task-project-id");
+  var stageSel = document.getElementById("task-stage-id");
+  var dataEl = document.getElementById("stages-by-project-json");
+  if (!sel || !stageSel || !dataEl) return;
+  var map = {};
+  try { map = JSON.parse(dataEl.textContent || "{}"); } catch (e) { map = {}; }
+  function fill() {
+    var pid = sel.value;
+    var stages = map[pid] || map[String(pid)] || [];
+    var cur = stageSel.value;
+    stageSel.innerHTML = '<option value="">— без этапа —</option>';
+    stages.forEach(function (s) {
+      var o = document.createElement("option");
+      o.value = s.id;
+      o.textContent = s.title;
+      if (String(s.id) === String(cur)) o.selected = true;
+      stageSel.appendChild(o);
+    });
+  }
+  sel.addEventListener("change", fill);
+})();
+</script>
+{% endif %}
+{% endblock %}

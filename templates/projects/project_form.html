@@ -4,7 +4,7 @@
 
 {% block title %}Новый проект{% endblock %}
 
-{% block head %}<link rel="stylesheet" href="{{ url_for('static', filename='css/projects.css') }}?v=20">{% endblock %}
+{% block head %}<link rel="stylesheet" href="{{ url_for('static', filename='css/projects.css') }}?v=28">{% endblock %}
 
 {% block content %}
 
@@ -84,10 +84,42 @@
 
       <div class="form-group"><label>Название нового проекта</label><input name="name" class="form-control" required placeholder="Например: Разработка ЭМСТПН — объект №…"></div>
 
-      <div class="form-group"><label>Договор</label>
+      <fieldset class="projects-create-mode">
+        <legend class="projects-cms-subheading">Договор</legend>
+        <label class="radio-inline">
+          <input type="radio" name="contract_mode" value="existing" checked data-contract-toggle="existing">
+          Существующий
+        </label>
+        <label class="radio-inline">
+          <input type="radio" name="contract_mode" value="new" data-contract-toggle="new">
+          Создать новый
+        </label>
+      </fieldset>
 
+      <div class="form-group" data-contract-panel="existing">
+        <label>Договор</label>
         <select name="contract_id" class="form-control"><option value="">—</option>{% for c in contracts %}<option value="{{ c.id }}">{{ c.number }}</option>{% endfor %}</select>
+      </div>
 
+      <div data-contract-panel="new" hidden>
+        <div class="form-group">
+          <label>Организация</label>
+          <select name="new_contract_org_id" class="form-control">
+            <option value="">— выберите —</option>
+            {% for o in organizations %}
+            <option value="{{ o.id }}">{{ o.name }}</option>
+            {% endfor %}
+          </select>
+        </div>
+        <div class="form-group">
+          <label>Номер договора</label>
+          <input name="new_contract_number" class="form-control" placeholder="Например: 12/2026-ЭМСТПН">
+        </div>
+        <div class="form-row">
+          <div class="form-group"><label>Дата подписания</label><input type="date" name="new_contract_signed_at" class="form-control"></div>
+          <div class="form-group"><label>Срок обслуживания</label><input type="date" name="new_contract_service_end" class="form-control"></div>
+        </div>
+        <p class="muted projects-cms-hint">Master-логин и пароль сгенерируются автоматически и будут показаны один раз после создания.</p>
       </div>
 
       <div class="form-row">
@@ -164,7 +196,18 @@
 
   });
 
+  function syncContract() {
+    var mode = (form.querySelector('input[name="contract_mode"]:checked') || {}).value || "existing";
+    form.querySelectorAll("[data-contract-panel]").forEach(function (el) {
+      el.hidden = el.getAttribute("data-contract-panel") !== mode;
+    });
+  }
+  form.querySelectorAll("[data-contract-toggle]").forEach(function (r) {
+    r.addEventListener("change", syncContract);
+  });
+
   sync();
+  syncContract();
 
 })();
 

@@ -93,7 +93,7 @@ def staff_queue():
 @login_required
 @contract_access_required
 @write_access_required
-@role_required("customer")
+@role_required("customer", "customer_curator")
 def create():
     contract = current_user.contract
     objects = ObjectCategory.query.filter_by(is_active=True).order_by(ObjectCategory.sort_order).all()

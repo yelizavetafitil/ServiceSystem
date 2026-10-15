@@ -790,6 +790,43 @@
 .projects-timeline-badge { font-size: 11px; font-weight: 700; margin-left: 8px; color: var(--green); }
 .projects-kanban-drop.is-drag-over { outline: 2px dashed var(--primary-soft); border-radius: 8px; }
 
+.projects-gantt-page { position: relative; }
+.projects-gantt-panel {
+  position: fixed;
+  top: 72px;
+  right: 16px;
+  width: min(360px, calc(100vw - 32px));
+  max-height: calc(100vh - 96px);
+  overflow: auto;
+  z-index: 40;
+  background: #fff;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  box-shadow: 0 12px 40px rgba(15, 23, 42, 0.14);
+}
+.projects-gantt-panel-inner { padding: 16px 18px 18px; }
+.projects-gantt-panel-title { margin: 0 28px 12px 0; font-size: 16px; }
+.projects-gantt-panel-close {
+  position: absolute;
+  top: 10px;
+  right: 12px;
+  border: 0;
+  background: transparent;
+  font-size: 22px;
+  line-height: 1;
+  cursor: pointer;
+  color: var(--muted);
+}
+.projects-gantt-panel .form-group { margin-bottom: 12px; }
+.projects-gantt-panel .form-actions { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 8px; }
+.projects-gantt-toolbar #gantt-link-mode-btn.is-active {
+  border-color: var(--primary);
+  color: var(--primary);
+}
+.projects-gantt-link-hint { font-size: 13px; margin-left: 8px; }
+.projects-gantt-chart.is-link-mode .projects-gantt-bar { cursor: crosshair; }
+.projects-gantt-bar.is-link-source { outline: 2px solid var(--primary); outline-offset: 2px; }
+
 /* Карточка задачи — вкладки */
 .projects-task-time h2 { margin: 0 0 12px; }
 .projects-time-total { margin: 0 0 18px; line-height: 1.5; }

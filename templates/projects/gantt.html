@@ -4,9 +4,9 @@
 
 {% block head %}
 
-<link rel="stylesheet" href="{{ url_for('static', filename='css/projects.css') }}?v=27">
+<link rel="stylesheet" href="{{ url_for('static', filename='css/projects.css') }}?v=28">
 
-<script defer src="{{ url_for('static', filename='js/projects-gantt.js') }}?v=9"></script>
+<script defer src="{{ url_for('static', filename='js/projects-gantt.js') }}?v=11"></script>
 
 {% endblock %}
 
@@ -38,6 +38,12 @@
 
     {% endfor %}
 
+    {% endif %}
+
+    {% if gantt_can_edit %}
+    <span class="projects-gantt-toolbar-sep"></span>
+    <button type="button" class="btn btn-outline btn-sm" id="gantt-link-mode-btn" data-gantt-link-toggle>Связать задачи</button>
+    <span class="muted projects-gantt-link-hint" id="gantt-link-hint" hidden>Выберите предшественника, затем последователя</span>
     {% endif %}
 
   </div>
@@ -186,7 +192,12 @@
 
               <div class="projects-gantt-side-text">
 
+                {% if grow.open_as_ticket and grow.ticket_id %}
+                <a href="{{ url_for('tickets.detail', tid=grow.ticket_id) }}" class="projects-gantt-label" title="{{ t.title }}">{{ t.title }}</a>
+                <span class="projects-kanban-badge">Заявка</span>
+                {% else %}
                 <a href="{{ url_for('projects.task_detail', tid=t.id) }}" class="projects-gantt-label" title="{{ t.title }}">{{ t.title }}</a>
+                {% endif %}
 
                 <div class="projects-gantt-side-meta">
 
@@ -239,6 +250,24 @@
                      data-project-deadline="{{ grow.project_deadline }}"
 
                      data-can-drag="{{ '1' if grow.can_drag else '0' }}"
+
+                     data-can-edit="{{ '1' if grow.can_edit_panel else '0' }}"
+
+                     data-open-ticket="{{ '1' if grow.open_as_ticket else '0' }}"
+
+                     data-ticket-id="{{ grow.ticket_id or '' }}"
+
+                     data-title="{{ t.title }}"
+
+                     data-start="{{ grow.start_iso }}"
+
+                     data-due="{{ grow.due_iso }}"
+
+                     data-stage-id="{{ grow.stage_id or '' }}"
+
+                     data-status="{{ grow.kanban_status }}"
+
+                     data-project-id="{{ t.project_id }}"
 
                      title="{{ t.title }} · {{ grow.label_dates }}">
 
@@ -346,7 +375,46 @@
 
   {% endif %}
 
+  <aside class="projects-gantt-panel" id="gantt-task-panel" hidden aria-hidden="true">
+    <div class="projects-gantt-panel-inner">
+      <button type="button" class="projects-gantt-panel-close" id="gantt-panel-close" aria-label="Закрыть">×</button>
+      <h3 class="projects-gantt-panel-title" id="gantt-panel-title">Задача</h3>
+      <p class="muted" id="gantt-panel-readonly-note" hidden>Только просмотр. Изменять сроки на Ганте могут ГИП и администратор.</p>
+      <div class="form-group">
+        <label>Начало</label>
+        <input type="date" id="gantt-panel-start" class="form-control">
+      </div>
+      <div class="form-group">
+        <label>Дедлайн</label>
+        <input type="date" id="gantt-panel-due" class="form-control">
+      </div>
+      <div class="form-group">
+        <label>Этап</label>
+        <select id="gantt-panel-stage" class="form-control">
+          <option value="">— без этапа —</option>
+          {% for s in gantt_stages|default([]) %}
+          <option value="{{ s.id }}" data-project-id="{{ s.project_id }}">{{ s.title }}{% if not filter_project %} ({{ s.project }}){% endif %}</option>
+          {% endfor %}
+        </select>
+      </div>
+      <div class="form-group">
+        <label>Статус</label>
+        <select id="gantt-panel-status" class="form-control">
+          {% for k, lbl in kanban_labels.items() %}
+          <option value="{{ k }}">{{ lbl }}</option>
+          {% endfor %}
+        </select>
+      </div>
+      <div class="form-actions">
+        <button type="button" class="btn btn-primary btn-sm" id="gantt-panel-save" hidden>Сохранить</button>
+        <a class="btn btn-outline btn-sm" id="gantt-panel-open" href="#">Открыть</a>
+      </div>
+    </div>
+  </aside>
+
 </div>
+
+<script type="application/json" id="gantt-ui-flags">{{ {"canEdit": gantt_can_edit|default(false)}|tojson }}</script>
 
 {% endblock %}
 

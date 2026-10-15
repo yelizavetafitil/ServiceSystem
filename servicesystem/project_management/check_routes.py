@@ -29,6 +29,14 @@ def _login(client, email: str):
 
 
 def _delete_project_cascade(proj: Project) -> None:
+    from servicesystem.project_management.models import (
+        ProjectTaskAttachment,
+        ProjectTaskCollaborator,
+        ProjectTaskComment,
+        ProjectTaskCustomValue,
+        ProjectTimeLog,
+    )
+
     pid = proj.id
     task_ids = [
         tid for (tid,) in db.session.query(ProjectTask.id).filter(ProjectTask.project_id == pid).all()
@@ -43,6 +51,21 @@ def _delete_project_cascade(proj: Project) -> None:
                 ProjectTaskLink.to_task_id.in_(task_ids),
             )
         ).delete(synchronize_session=False)
+        ProjectTaskCollaborator.query.filter(ProjectTaskCollaborator.task_id.in_(task_ids)).delete(
+            synchronize_session=False
+        )
+        ProjectTaskAttachment.query.filter(ProjectTaskAttachment.task_id.in_(task_ids)).delete(
+            synchronize_session=False
+        )
+        ProjectTaskComment.query.filter(ProjectTaskComment.task_id.in_(task_ids)).delete(
+            synchronize_session=False
+        )
+        ProjectTaskCustomValue.query.filter(ProjectTaskCustomValue.task_id.in_(task_ids)).delete(
+            synchronize_session=False
+        )
+        ProjectTimeLog.query.filter(ProjectTimeLog.task_id.in_(task_ids)).delete(
+            synchronize_session=False
+        )
         ProjectTask.query.filter(ProjectTask.project_id == pid).delete(synchronize_session=False)
     ProjectStage.query.filter_by(project_id=pid).delete(synchronize_session=False)
     ProjectMember.query.filter_by(project_id=pid).delete(synchronize_session=False)
@@ -60,6 +83,7 @@ def _smoke_create_project_and_task(client, auditor: User) -> list[str]:
     app.config["WTF_CSRF_ENABLED"] = False
     errors: list[str] = []
     proj: Project | None = None
+    name: str | None = None
     try:
         name = f"__check_routes_{uuid.uuid4().hex[:12]}"
         r = client.post(
@@ -121,13 +145,17 @@ def _smoke_create_project_and_task(client, auditor: User) -> list[str]:
                     r_tpl_edit = client.get(f"/projects/manage/{tpl_proj.id}")
                     if r_tpl_edit.status_code >= 500:
                         errors.append(f"GET manage after from_template -> {r_tpl_edit.status_code}")
-                    _delete_project_cascade(tpl_proj)
-                    proj = None
+                    try:
+                        _delete_project_cascade(tpl_proj)
+                    except Exception:
+                        db.session.rollback()
     finally:
         app.config["WTF_CSRF_ENABLED"] = prev_csrf
-        if proj:
+        # всегда удаляем blank-проект smoke (раньше при from_template обнуляли proj)
+        leftover = Project.query.filter_by(name=name).first() if name else None
+        if leftover:
             try:
-                _delete_project_cascade(proj)
+                _delete_project_cascade(leftover)
             except Exception:
                 db.session.rollback()
     return errors
@@ -156,8 +184,16 @@ def main() -> int:
             for tab in ("main", "files", "links", "comments", "custom", "time"):
                 base_paths.append(f"/projects/tasks/{t.id}?tab={tab}")
 
+        from servicesystem.project_management.services import user_can_reschedule_gantt
+
         auditor = User.query.filter_by(email="auditor@belnipi.by").first()
         assert auditor
+        executor = User.query.filter_by(email="executor@belnipi.by").first()
+        if executor and user_can_reschedule_gantt(executor):
+            errors.append("executor must not reschedule gantt")
+        if not user_can_reschedule_gantt(auditor):
+            errors.append("auditor must be able to reschedule gantt")
+
         _login(client, auditor.email)
         errors.extend(_smoke_create_project_and_task(client, auditor))
 

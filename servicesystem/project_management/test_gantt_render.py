@@ -28,6 +28,8 @@ def main():
                 "gantt_scale": scale,
                 "gantt_group": "project",
                 "cal_mode": "month",
+                "gantt_stages": [],
+                "gantt_can_edit": True,
                 **projects_ui_context(),
             }
             ctx.update(gantt)

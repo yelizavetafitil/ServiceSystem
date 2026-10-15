@@ -46,9 +46,11 @@ def ensure_support_project(contract: Contract) -> Project:
 
 def sync_task_from_ticket(ticket: Ticket, *, kanban_status: str | None = None) -> ProjectTask:
     """ТЗ 3.1–3.2: тикет → задача на Kanban."""
-    if ticket.project_task:
+    # Ищем по ticket_id явно: backref может быть ещё не подхвачен после assign_hook в том же запросе
+    task = ProjectTask.query.filter_by(ticket_id=ticket.id).first()
+    if not task and ticket.project_task:
         task = ticket.project_task
-    else:
+    if not task:
         proj = ensure_support_project(ticket.contract)
         priority = ticket.priority
         if priority >= 3:
@@ -84,16 +86,21 @@ def sync_task_from_ticket(ticket: Ticket, *, kanban_status: str | None = None) -
 
 
 def on_ticket_created_hook(ticket: Ticket) -> None:
-    sync_task_from_ticket(ticket, kanban_status="todo")
+    """Задача в канбане создаётся только после назначения исполнителя (не при создании заявки)."""
+    return
 
 
 def on_ticket_assign_hook(ticket: Ticket) -> None:
+    if not ticket.executor_id:
+        return
     task = sync_task_from_ticket(ticket, kanban_status="in_progress")
     sync_calendar_events_for_task(task)
 
 
 def on_ticket_sync_hook(ticket: Ticket) -> None:
-    """Синхронизация Kanban при любом изменении статуса тикета (ТЗ 3.1)."""
+    """Синхронизация Kanban при изменении статуса — только если задача уже есть или есть исполнитель."""
+    if not ticket.project_task and not ticket.executor_id:
+        return
     task = sync_task_from_ticket(ticket)
     if ticket.priority >= 3:
         task.is_critical_path = True
@@ -101,6 +108,18 @@ def on_ticket_sync_hook(ticket: Ticket) -> None:
     if ticket.resolution_deadline:
         task.due_date = ticket.resolution_deadline.date()
     sync_calendar_events_for_task(task)
+
+
+def task_opens_as_ticket(task: ProjectTask) -> bool:
+    """Зеркальная задача без назначенного исполнителя открывается как тикет."""
+    if not task.ticket_id or not task.ticket:
+        return False
+    return not task.ticket.executor_id or task.ticket.status == "new"
+
+
+def user_can_reschedule_gantt(user: User, task: ProjectTask | None = None) -> bool:
+    """Сроки на Ганте двигают только admin/auditor."""
+    return bool(user and (user.is_admin or user.is_auditor))
 
 
 def update_customer_curator_window(project: Project) -> None:
