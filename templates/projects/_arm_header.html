@@ -58,7 +58,16 @@
 
     <a href="{{ url_for('projects.manage_list') }}" class="btn btn-outline btn-sm">Управление</a>
 
-    <a href="{% if filter_project %}{{ url_for('projects.task_new', project=filter_project) }}{% else %}{{ url_for('projects.task_new') }}{% endif %}" class="btn btn-primary btn-sm">Задача</a>
+    {% if filter_project %}
+    {% set fp_name = (projects|selectattr('id', 'equalto', filter_project)|map(attribute='name')|first) or ('№' ~ filter_project) %}
+    <a href="{{ url_for('projects.task_new', project=filter_project) }}"
+       class="btn btn-primary btn-sm"
+       title="Задача верхнего уровня в проекте «{{ fp_name }}» (не подзадача)">Новая задача</a>
+    {% else %}
+    <a href="{{ url_for('projects.task_new') }}"
+       class="btn btn-primary btn-sm"
+       title="Задача верхнего уровня — выберите проект в форме">Новая задача</a>
+    {% endif %}
 
     {% endif %}
 

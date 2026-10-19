@@ -1,15 +1,19 @@
 {% extends "base.html" %}
 {% block title %}Проекты — неделя{% endblock %}
-{% block head %}<link rel="stylesheet" href="{{ url_for('static', filename='css/projects.css') }}?v=2">{% endblock %}
+{% block head %}<link rel="stylesheet" href="{{ url_for('static', filename='css/projects.css') }}?v=35">{% endblock %}
 {% block content %}
 <div class="container cms-page projects-page">
   {% include "projects/_arm_header.html" %}
   <div class="projects-week-grid">
     {% for d, weekday in week_days %}
+    {% set day_tasks = tasks_by_day.get(d, []) if tasks_by_day is defined else [] %}
     <div class="projects-week-col">
       <h3>{{ weekday }} {{ d.strftime('%d.%m') }}</h3>
-      {% for t in tasks if t.due_date == d or t.start_date == d %}
-      <a class="projects-week-card p-{{ t.priority }}" href="{{ url_for('projects.task_detail', tid=t.id) }}">{{ t.title }}</a>
+      {% for t in day_tasks %}
+      {% set s = t.start_date or t.due_date %}
+      {% set e = t.due_date or t.start_date %}
+      <a class="projects-week-card p-{{ t.priority }}" href="{{ url_for('projects.task_detail', tid=t.id) }}"
+         title="{% if s and e %}{{ s.strftime('%d.%m') }}—{{ e.strftime('%d.%m.%Y') }}{% endif %}">{{ t.title }}</a>
       {% endfor %}
     </div>
     {% endfor %}

@@ -64,6 +64,7 @@ def sync_task_from_ticket(ticket: Ticket, *, kanban_status: str | None = None) -
             description=ticket.description_md,
             priority=priority,
             kanban_status="todo",
+            gantt_sort=next_gantt_sort(proj.id),
             assignee_id=ticket.executor_id,
             due_date=ticket.resolution_deadline.date() if ticket.resolution_deadline else None,
             created_by_id=ticket.auditor_id or ticket.author_id,
@@ -266,6 +267,24 @@ def cascade_fs_from_task(task: ProjectTask) -> list[int]:
 
 def kanban_sort_key(task: ProjectTask) -> tuple:
     return (-(task.priority or 0), -(1 if task.is_critical_path else 0), task.kanban_sort, task.id)
+
+
+def gantt_sort_key(task: ProjectTask) -> tuple:
+    """Порядок строк на Ганте: ручной gantt_sort, затем id (стабильно по созданию)."""
+    return (task.gantt_sort or 0, task.id)
+
+
+def next_gantt_sort(project_id: int | None) -> int:
+    if not project_id:
+        return 0
+    from sqlalchemy import func
+
+    mx = (
+        db.session.query(func.coalesce(func.max(ProjectTask.gantt_sort), 0))
+        .filter(ProjectTask.project_id == project_id)
+        .scalar()
+    )
+    return int(mx or 0) + 1
 
 
 def timer_start(task: ProjectTask, user_id: int) -> None:
@@ -532,6 +551,7 @@ def duplicate_task(
         description=source.description,
         priority=source.priority,
         kanban_status="todo",
+        gantt_sort=next_gantt_sort(source.project_id),
         assignee_id=source.assignee_id,
         start_date=source.start_date,
         due_date=source.due_date,

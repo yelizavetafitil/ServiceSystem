@@ -25,8 +25,10 @@ from servicesystem.project_management.services import (
     cascade_fs_schedule,
     duplicate_task,
     gantt_sla_breach,
+    gantt_sort_key,
     kanban_sort_key,
     move_task_kanban,
+    next_gantt_sort,
     project_from_template,
     rollover_overdue_tasks,
     sync_calendar_events_for_task,
@@ -171,7 +173,11 @@ def arm():
             project_id=project_id,
             include_completed=include_done,
         )
-    tasks = sorted(tasks_q.all(), key=kanban_sort_key)
+    tasks_raw = tasks_q.all()
+    if view == "gantt":
+        tasks = sorted(tasks_raw, key=gantt_sort_key)
+    else:
+        tasks = sorted(tasks_raw, key=kanban_sort_key)
     ctx = dict(
         view=view,
         projects=projects,
@@ -193,19 +199,30 @@ def arm():
         ctx["grouped"] = grouped
         return render_template("projects/kanban.html", **ctx)
     if view == "week":
-        return render_template("projects/week.html", **ctx, week_days=_week_days())
+        week_days = _week_days()
+        week_dates = [d for d, _ in week_days]
+        return render_template(
+            "projects/week.html",
+            **ctx,
+            week_days=week_days,
+            tasks_by_day=_tasks_by_day(tasks, week_dates),
+        )
     if view == "calendar":
+        month_grid = _month_grid(cal_mode)
         return render_template(
             "projects/calendar.html",
             **ctx,
-            month_grid=_month_grid(cal_mode),
+            month_grid=month_grid,
+            tasks_by_day=_tasks_by_day(tasks, list(month_grid)),
             team_load=_team_load(tasks) if cal_mode == "team" else None,
         )
+    gantt_anchor = _parse_form_date(request.args.get("anchor"))
     gantt = _gantt_layout(
         tasks,
         gantt_scale,
         group_by=gantt_group,
         user=current_user,
+        anchor=gantt_anchor,
         project_filter=project_id,
     )
     gantt_stages = []
@@ -526,15 +543,25 @@ def task_new():
     stages_by_project: dict[int, list] = {}
     tasks_by_project: dict[int, list] = {}
     executors_by_project: dict[int, list] = {}
+    def _tasks_tree_payload(project_id: int):
+        return [
+            {
+                "id": t.id,
+                "title": t.title,
+                "stage_id": t.stage_id,
+                "parent_id": t.parent_id,
+            }
+            for t in ProjectTask.query.filter_by(project_id=project_id)
+            .order_by(ProjectTask.gantt_sort.asc(), ProjectTask.id.asc())
+            .limit(400)
+        ]
+
     for p in projects:
         stages_by_project[p.id] = [
             {"id": s.id, "title": s.title}
             for s in p.stages.order_by(ProjectStage.sort_order)
         ]
-        tasks_by_project[p.id] = [
-            {"id": t.id, "title": t.title}
-            for t in p.tasks.order_by(ProjectTask.id.desc()).limit(200)
-        ]
+        tasks_by_project[p.id] = _tasks_tree_payload(p.id)
         executors_by_project[p.id] = [
             {"id": u.id, "name": u.full_name} for u in executors_for_project(p.id)
         ]
@@ -544,12 +571,7 @@ def task_new():
             for s in parent_task.project.stages.order_by(ProjectStage.sort_order)
         ] if parent_task.project else []
     if parent_task and parent_task.project_id not in tasks_by_project:
-        tasks_by_project[parent_task.project_id] = [
-            {"id": t.id, "title": t.title}
-            for t in ProjectTask.query.filter_by(project_id=parent_task.project_id)
-            .order_by(ProjectTask.id.desc())
-            .limit(200)
-        ]
+        tasks_by_project[parent_task.project_id] = _tasks_tree_payload(parent_task.project_id)
     if parent_task and parent_task.project_id not in executors_by_project:
         executors_by_project[parent_task.project_id] = [
             {"id": u.id, "name": u.full_name}
@@ -572,6 +594,15 @@ def task_new():
             return redirect(
                 url_for("projects.task_new", project=project_id, parent=parent_id, stage=stage_id)
             )
+        start_date = _parse_form_date(request.form.get("start_date"))
+        due_date = _parse_form_date(request.form.get("due_date"))
+        # Без дат задача не видна на шкале Ганта — по умолчанию сегодня (1 день)
+        if not start_date and not due_date:
+            start_date = due_date = date.today()
+        elif start_date and not due_date:
+            due_date = start_date
+        elif due_date and not start_date:
+            start_date = due_date
         task = ProjectTask(
             project_id=project_id,
             stage_id=stage_id,
@@ -580,9 +611,10 @@ def task_new():
             description=(request.form.get("description") or "").strip() or None,
             priority=int(request.form.get("priority") or 2),
             assignee_id=assignee_id,
-            due_date=_parse_form_date(request.form.get("due_date")),
-            start_date=_parse_form_date(request.form.get("start_date")),
+            due_date=due_date,
+            start_date=start_date,
             kanban_status="todo",
+            gantt_sort=next_gantt_sort(project_id),
             created_by_id=current_user.id,
         )
         db.session.add(task)
@@ -625,6 +657,9 @@ def task_new():
         else (preset_project_id or (projects[0].id if projects else None))
     )
     executors = executors_for_project(initial_project_id)
+    project_names = {str(p.id): p.name for p in projects}
+    if parent_task and parent_task.project and str(parent_task.project_id) not in project_names:
+        project_names[str(parent_task.project_id)] = parent_task.project.name
     return render_template(
         "projects/task_form.html",
         task=None,
@@ -636,7 +671,10 @@ def task_new():
         stages_by_project=stages_by_project,
         tasks_by_project=tasks_by_project,
         executors_by_project=executors_by_project,
+        project_names=project_names,
         preset_stage_id=preset_stage_id,
+        default_start=date.today(),
+        default_due=date.today(),
         **projects_ui_context(),
     )
 
@@ -924,6 +962,34 @@ def gantt_link_remove(lid):
     return jsonify({"ok": True})
 
 
+@bp.route("/gantt/reorder", methods=["POST"])
+@login_required
+def gantt_reorder():
+    """Ручной порядок строк на Ганте (перетаскивание списка слева)."""
+    _staff_or_curator()
+    if not (current_user.is_admin or current_user.is_auditor):
+        abort(403)
+    data = request.get_json(silent=True) or {}
+    raw_ids = data.get("task_ids") or []
+    try:
+        task_ids = [int(x) for x in raw_ids]
+    except (TypeError, ValueError):
+        return jsonify({"error": "bad_ids"}), 400
+    if not task_ids:
+        return jsonify({"error": "empty"}), 400
+    tasks = ProjectTask.query.filter(ProjectTask.id.in_(task_ids)).all()
+    by_id = {t.id: t for t in tasks}
+    if len(by_id) != len(set(task_ids)):
+        return jsonify({"error": "missing"}), 400
+    project_ids = {t.project_id for t in tasks}
+    if len(project_ids) > 1:
+        return jsonify({"error": "mixed_projects"}), 400
+    for idx, tid in enumerate(task_ids):
+        by_id[tid].gantt_sort = idx + 1
+    db.session.commit()
+    return jsonify({"ok": True})
+
+
 @bp.route("/api/tasks/<int:tid>/move", methods=["POST"])
 @login_required
 def api_move_task(tid):
@@ -970,11 +1036,50 @@ def _month_grid(cal_mode: str):
     return [start + timedelta(days=i) for i in range(42)]
 
 
+def _task_date_range(t) -> tuple[date, date] | None:
+    s = t.start_date or t.due_date
+    e = t.due_date or t.start_date
+    if not s:
+        return None
+    e = e or s
+    if e < s:
+        s, e = e, s
+    return s, e
+
+
+def _tasks_by_day(tasks, days: list[date]) -> dict[date, list]:
+    """Задачи на каждый день сетки: весь диапазон start…due, не только дедлайн."""
+    day_set = set(days)
+    out: dict[date, list] = {d: [] for d in days}
+    for t in tasks:
+        rng = _task_date_range(t)
+        if not rng:
+            continue
+        s, e = rng
+        d = s
+        while d <= e:
+            if d in day_set:
+                out[d].append(t)
+            d += timedelta(days=1)
+            if (d - s).days > 800:
+                break
+    return out
+
+
 def _team_load(tasks):
+    """Нагрузка по дням: задача считается во все дни своего диапазона."""
     load: dict[date, int] = {}
     for t in tasks:
-        if t.due_date:
-            load[t.due_date] = load.get(t.due_date, 0) + 1
+        rng = _task_date_range(t)
+        if not rng:
+            continue
+        s, e = rng
+        d = s
+        while d <= e:
+            load[d] = load.get(d, 0) + 1
+            d += timedelta(days=1)
+            if (d - s).days > 800:
+                break
     return load
 
 
@@ -991,19 +1096,125 @@ def _format_gantt_tick(d: date, scale: str) -> str:
     return d.strftime("%d.%m.%Y")
 
 
-def _gantt_span_for_scale(scale: str, today: date) -> tuple[date, date]:
+def _month_start(d: date) -> date:
+    return d.replace(day=1)
+
+
+def _month_end(d: date) -> date:
+    return (_month_start(d) + timedelta(days=32)).replace(day=1) - timedelta(days=1)
+
+
+def _add_months(d: date, months: int) -> date:
+    m0 = d.month - 1 + months
+    y = d.year + m0 // 12
+    m = m0 % 12 + 1
+    return date(y, m, 1)
+
+
+def _quarter_start(d: date) -> date:
+    qm = ((d.month - 1) // 3) * 3 + 1
+    return d.replace(month=qm, day=1)
+
+
+def _quarter_end(d: date) -> date:
+    qs = _quarter_start(d)
+    return _month_end(_add_months(qs, 2))
+
+
+def _gantt_base_window(scale: str, today: date) -> tuple[date, date]:
+    """Минимальное окно вокруг «сегодня» для выбранного масштаба."""
     if scale == "day":
-        return today, today
+        return today - timedelta(days=7), today + timedelta(days=7)
     if scale == "week":
         start = today - timedelta(days=today.weekday())
-        return start, start + timedelta(days=6)
+        return start - timedelta(days=7), start + timedelta(days=13)
     if scale == "quarter":
-        qm = ((today.month - 1) // 3) * 3 + 1
-        start = today.replace(month=qm, day=1)
-        return start, start + timedelta(days=91)
-    start = today.replace(day=1)
-    end = (start + timedelta(days=32)).replace(day=1) - timedelta(days=1)
+        return _quarter_start(today), _quarter_end(today)
+    start = _month_start(today)
+    return start, _month_end(today)
+
+
+def _gantt_data_extent(tasks) -> tuple[date | None, date | None]:
+    """Крайние даты задач и вех этапов видимого набора."""
+    dates: list[date] = []
+    project_ids: set[int] = set()
+    for t in tasks:
+        if t.start_date:
+            dates.append(t.start_date)
+        if t.due_date:
+            dates.append(t.due_date)
+        if t.project_id:
+            project_ids.add(t.project_id)
+    if project_ids:
+        for st in ProjectStage.query.filter(
+            ProjectStage.project_id.in_(project_ids),
+            ProjectStage.deadline.isnot(None),
+        ):
+            if st.deadline:
+                dates.append(st.deadline)
+    if not dates:
+        return None, None
+    return min(dates), max(dates)
+
+
+def _gantt_align_span(scale: str, start: date, end: date) -> tuple[date, date]:
+    if end < start:
+        start, end = end, start
+    if scale == "quarter":
+        return _month_start(_add_months(start, -1)), _month_end(_add_months(_month_start(end), 1))
+    if scale == "month":
+        return _month_start(start), _month_end(end)
+    if scale == "week":
+        s = start - timedelta(days=start.weekday())
+        e = end + timedelta(days=(6 - end.weekday()) % 7)
+        return s - timedelta(days=7), e + timedelta(days=7)
+    # day — суточная сетка с запасом
+    return start - timedelta(days=3), end + timedelta(days=3)
+
+
+def _gantt_span_for_scale(
+    scale: str,
+    today: date,
+    *,
+    tasks=None,
+    anchor: date | None = None,
+) -> tuple[date, date]:
+    """
+    Диапазон шкалы: окно масштаба ∪ даты задач/вех ∪ сегодня.
+    Не режется «текущим кварталом» — длинные проекты прокручиваются.
+    """
+    pivot = anchor or today
+    base_s, base_e = _gantt_base_window(scale, pivot)
+    ext_s, ext_e = _gantt_data_extent(tasks or [])
+    start = base_s
+    end = base_e
+    if ext_s and ext_e:
+        start = min(start, ext_s)
+        end = max(end, ext_e)
+    start = min(start, today)
+    end = max(end, today)
+    start, end = _gantt_align_span(scale, start, end)
+
+    # Защита DOM: слишком длинная суточная сетка — обрезаем вокруг середины диапазона задач
+    max_days = {"day": 180, "week": 210, "month": 400, "quarter": 366 * 4}.get(scale, 400)
+    if (end - start).days > max_days:
+        mid = start + timedelta(days=(end - start).days // 2)
+        if ext_s and ext_e:
+            mid = ext_s + timedelta(days=(ext_e - ext_s).days // 2)
+        half = max_days // 2
+        start, end = _gantt_align_span(scale, mid - timedelta(days=half), mid + timedelta(days=half))
     return start, end
+
+
+def _gantt_col_px(scale: str, n_cols: int) -> int:
+    """Ширина колонки под масштаб — от неё зависит ползунок горизонтальной прокрутки."""
+    base = {"day": 88, "week": 64, "month": 44, "quarter": 160}.get(scale, 56)
+    # На очень длинной шкале чуть ужмём, чтобы ползунок оставался управляемым
+    if scale != "quarter" and n_cols > 120:
+        return max(28, base - 12)
+    if scale == "quarter" and n_cols > 18:
+        return max(100, base - 40)
+    return base
 
 
 def _gantt_columns(span_start: date, span_end: date, scale: str) -> list[dict]:
@@ -1045,9 +1256,8 @@ def _days_in_month(d: date) -> int:
     return calendar.monthrange(d.year, d.month)[1]
 
 
-def _gantt_bar_caption(s: date, e: date, width_pct: float) -> str:
-    if width_pct < 7:
-        return ""
+def _gantt_bar_caption(s: date, e: date, width_pct: float = 100.0) -> str:
+    """Полный диапазон на полоске (не режем по % ширины — места хватает в px)."""
     if s == e:
         return s.strftime("%d.%m")
     return f"{s.strftime('%d.%m')}–{e.strftime('%d.%m')}"
@@ -1160,9 +1370,14 @@ def _bar_geometry(
         start_f = float((vis_s - span_start).days)
         end_f = float((vis_e - span_start).days + 1)
     left_pct = max(0.0, (start_f / n) * 100)
-    width_pct = max(0.8, ((end_f - start_f) / n) * 100)
+    width_pct = max(0.4, ((end_f - start_f) / n) * 100)
+    # Минимальная ширина только для день/неделя (кликабельность).
+    # На квартале/месяце раздувание до ~½ колонки ломало последовательность FS-стрелок.
     min_col = 100.0 / n
-    width_pct = max(width_pct, min_col * (0.9 if scale == "day" else 0.45))
+    if scale == "day":
+        width_pct = max(width_pct, min_col * 0.85)
+    elif scale == "week":
+        width_pct = max(width_pct, min_col * 0.4)
     width_pct = min(width_pct, 100.0 - left_pct)
     return True, left_pct, width_pct
 
@@ -1292,12 +1507,14 @@ def _gantt_layout(
     group_by: str = "project",
     user=None,
     project_filter: int | None = None,
+    anchor: date | None = None,
 ) -> dict:
     """Данные для диаграммы Gantt — стратегическое планирование (ТЗ 2.1)."""
     today = date.today()
-    span_start, span_end = _gantt_span_for_scale(scale, today)
+    span_start, span_end = _gantt_span_for_scale(scale, today, tasks=tasks, anchor=anchor)
     columns = _gantt_columns(span_start, span_end, scale)
     n_cols = max(1, len(columns))
+    col_px = _gantt_col_px(scale, n_cols)
     dated = _gantt_collect_dated(tasks)
     task_list = [t for t, _, _ in dated]
     links = _gantt_links(task_list)
@@ -1342,7 +1559,29 @@ def _gantt_layout(
 
     gantt_bars = [b for g in groups for b in g["bars"]]
     _gantt_apply_row_numbers(gantt_bars)
-    if scale == "day":
+
+    dated_ids = {t.id for t, _, _ in dated}
+    undated_tasks = sorted(
+        [t for t in tasks if t.id not in dated_ids and not (t.start_date or t.due_date)],
+        key=gantt_sort_key,
+    )
+    undated_row0 = len(gantt_bars)
+    gantt_undated: list[dict] = []
+    for i, t in enumerate(undated_tasks):
+        gantt_undated.append(
+            {
+                "task": t,
+                "row": undated_row0 + i,
+                "display_no": undated_row0 + i + 1,
+                "status_label": KANBAN_LABELS.get(t.kanban_status, t.kanban_status),
+                "open_as_ticket": task_opens_as_ticket(t),
+                "ticket_id": t.ticket_id,
+                "can_edit_panel": bool(user and (user.is_admin or user.is_auditor)),
+                "can_drag": False,
+            }
+        )
+
+    if span_start == span_end:
         span_label = span_start.strftime("%d.%m.%Y")
     else:
         span_label = f"{span_start.strftime('%d.%m.%Y')} — {span_end.strftime('%d.%m.%Y')}"
@@ -1350,15 +1589,17 @@ def _gantt_layout(
     link_edges = _gantt_link_edges(gantt_bars, links)
     gantt_milestones = _gantt_milestones(task_list, span_start, span_end, scale, n_cols)
     gantt_milestone_groups = _gantt_milestone_groups(gantt_milestones)
-    milestone_stack_max = max((len(g["milestones"]) for g in gantt_milestone_groups), default=1)
+    milestone_stack_max = max((len(g["milestones"]) for g in gantt_milestone_groups), default=0)
 
     return {
         "gantt_bars": gantt_bars,
         "gantt_groups": groups,
+        "gantt_undated": gantt_undated,
         "gantt_columns": columns,
         "gantt_milestones": gantt_milestones,
         "gantt_milestone_groups": gantt_milestone_groups,
-        "gantt_milestone_lane_min_h": 36 + milestone_stack_max * 24,
+        # Компактная полоска вех: только маркеры, подписи в title (без «губы»)
+        "gantt_milestone_lane_min_h": 18 if milestone_stack_max else 0,
         "gantt_fs_links": [
             {"from_id": e["from_task_id"], "to_id": e["to_task_id"]}
             for e in link_edges
@@ -1368,14 +1609,16 @@ def _gantt_layout(
         "gantt_span_start": span_start.isoformat(),
         "gantt_span_end": span_end.isoformat(),
         "gantt_today": today,
+        "gantt_col_px": col_px,
+        "gantt_timeline_min_px": n_cols * col_px,
         "gantt_links": links,
         "gantt_link_edges": link_edges,
         "project_link_labels": PROJECT_LINK_LABELS,
         "gantt_scale_label": {
-            "day": "Один день",
-            "week": "7 дней (пн–вс)",
-            "month": "Календарный месяц",
-            "quarter": "Квартал (по месяцам)",
+            "day": "По дням (прокрутка)",
+            "week": "Недели (прокрутка)",
+            "month": "Месяц по дням (прокрутка)",
+            "quarter": "Месяцы (прокрутка)",
         }.get(scale, ""),
     }
 

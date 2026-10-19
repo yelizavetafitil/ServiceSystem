@@ -1,9 +1,9 @@
 {% extends "base.html" %}
 {% from "macros/forms.html" import csrf_field %}
 {% block title %}{% if parent_task %}Подзадача{% else %}Новая задача{% endif %}{% endblock %}
-{% block head %}<link rel="stylesheet" href="{{ url_for('static', filename='css/projects.css') }}?v=29">{% endblock %}
+{% block head %}<link rel="stylesheet" href="{{ url_for('static', filename='css/projects.css') }}?v=32">{% endblock %}
 {% block content %}
-<div class="container cms-page projects-cms">
+<div class="container cms-page projects-cms projects-task-create">
   {% if parent_task %}
   <a href="{{ url_for('projects.task_detail', tid=parent_task.id) }}" class="back-link">← К задаче «{{ parent_task.title }}»</a>
   {% elif preset_project_id %}
@@ -11,107 +11,154 @@
   {% else %}
   <a href="{{ url_for('projects.arm') }}" class="back-link">← К модулю проектов</a>
   {% endif %}
-  <div class="card projects-cms-card">
-    <h1 class="projects-cms-title">{% if parent_task %}Подзадача к «{{ parent_task.title }}»{% else %}Задача верхнего уровня{% endif %}</h1>
-    <form method="post" class="projects-cms-form" id="task-create-form">
-      {{ csrf_field() }}
-      <input type="hidden" name="parent_id" value="{{ parent_task.id if parent_task else '' }}">
+
+  <div class="projects-task-create-layout">
+    <aside class="card projects-cms-card projects-task-tree-panel" aria-label="Иерархия проекта">
+      <h2 class="projects-task-tree-heading">Структура проекта</h2>
+      <p class="muted projects-cms-hint">Проект → этап → задачи. Клик по этапу выбирает его в форме.</p>
+      <div id="task-project-tree" class="projects-task-tree" data-parent-id="{{ parent_task.id if parent_task else '' }}"></div>
+    </aside>
+
+    <div class="card projects-cms-card projects-task-create-form-card">
+      <h1 class="projects-cms-title">
+        {% if parent_task %}
+        Подзадача к «{{ parent_task.title }}»
+        {% elif preset_project_id %}
+        {% set preset_proj = projects|selectattr('id', 'equalto', preset_project_id)|first %}
+        Новая задача{% if preset_proj %} в «{{ preset_proj.name }}»{% endif %}
+        {% else %}
+        Новая задача
+        {% endif %}
+      </h1>
       {% if parent_task %}
-      <input type="hidden" name="project_id" value="{{ parent_task.project_id }}">
-      <p class="projects-cms-hint muted">Проект: <strong>{{ parent_task.project.name if parent_task.project else '—' }}</strong> (родитель задан автоматически)</p>
-      {% else %}
-      <div class="form-group"><label>Проект</label>
-        <select name="project_id" id="task-project-id" class="form-control" required>
-          {% for p in projects %}
-          <option value="{{ p.id }}" {% if preset_project_id == p.id %}selected{% endif %}>{{ p.name }}{% if p.is_template %} (шаблон){% endif %}</option>
-          {% endfor %}
-        </select>
-      </div>
+      <p class="projects-cms-hint muted">Это <strong>подзадача</strong> — вложена в выбранную задачу, не путать с задачей верхнего уровня.</p>
+      {% elif preset_project_id %}
+      <p class="projects-cms-hint muted">Задача <strong>верхнего уровня</strong> в выбранном проекте (не подзадача).</p>
       {% endif %}
-      <div class="form-group"><label>Этап (надзадача)</label>
-        <select name="stage_id" id="task-stage-id" class="form-control">
-          <option value="">— без этапа —</option>
-          {% set pid = parent_task.project_id if parent_task else preset_project_id %}
-          {% if parent_task %}
-            {% for s in stages_by_project.get(parent_task.project_id, []) %}
-            <option value="{{ s.id }}" {% if preset_stage_id == s.id %}selected{% endif %}>{{ s.title }}</option>
+      <form method="post" class="projects-cms-form" id="task-create-form">
+        {{ csrf_field() }}
+        <input type="hidden" name="parent_id" value="{{ parent_task.id if parent_task else '' }}">
+        {% if parent_task %}
+        <input type="hidden" name="project_id" id="task-project-id" value="{{ parent_task.project_id }}">
+        <p class="projects-cms-hint muted">Проект: <strong>{{ parent_task.project.name if parent_task.project else '—' }}</strong> (родитель задан автоматически)</p>
+        {% else %}
+        <div class="form-group"><label>Проект</label>
+          <select name="project_id" id="task-project-id" class="form-control" required>
+            {% for p in projects %}
+            <option value="{{ p.id }}" {% if preset_project_id == p.id %}selected{% endif %}>{{ p.name }}{% if p.is_template %} (шаблон){% endif %}</option>
             {% endfor %}
-          {% elif preset_project_id %}
-            {% for s in stages_by_project.get(preset_project_id, []) %}
-            <option value="{{ s.id }}" {% if preset_stage_id == s.id %}selected{% endif %}>{{ s.title }}</option>
-            {% endfor %}
-          {% elif projects %}
-            {% for s in stages_by_project.get(projects[0].id, []) %}
-            <option value="{{ s.id }}" {% if preset_stage_id == s.id %}selected{% endif %}>{{ s.title }}</option>
-            {% endfor %}
-          {% endif %}
-        </select>
-      </div>
-      <div class="form-group"><label>Название</label><input name="title" class="form-control" required></div>
-      <div class="form-group"><label>Описание</label><textarea name="description" class="form-control" rows="4"></textarea></div>
-      <div class="form-row">
-        <div class="form-group"><label>Критичность</label><select name="priority" class="form-control">{% for n, lbl in project_priority_labels.items() %}<option value="{{ n }}">{{ lbl }}</option>{% endfor %}</select></div>
-        <div class="form-group"><label>Исполнитель</label>
-          <select name="assignee_id" id="task-assignee-id" class="form-control">
-            <option value="">—</option>
-            {% for u in executors %}<option value="{{ u.id }}">{{ u.full_name }}</option>{% endfor %}
           </select>
-          <p class="muted projects-cms-hint">Только участники выбранного проекта</p>
         </div>
-      </div>
-      <div class="form-row">
-        <div class="form-group"><label>Начало</label><input type="date" name="start_date" class="form-control"></div>
-        <div class="form-group"><label>Дедлайн</label><input type="date" name="due_date" class="form-control"></div>
-      </div>
-      <div class="form-group">
-        <label>Предыдущая задача (предшественник)</label>
-        <select name="predecessor_task_id" id="task-predecessor-id" class="form-control">
-          <option value="">— нет —</option>
-          {% set pid = parent_task.project_id if parent_task else preset_project_id %}
-          {% if parent_task %}
-            {% for t in tasks_by_project.get(parent_task.project_id, []) %}
-            <option value="{{ t.id }}">{{ t.title }}</option>
-            {% endfor %}
-          {% elif preset_project_id %}
-            {% for t in tasks_by_project.get(preset_project_id, []) %}
-            <option value="{{ t.id }}">{{ t.title }}</option>
-            {% endfor %}
-          {% elif projects %}
-            {% for t in tasks_by_project.get(projects[0].id, []) %}
-            <option value="{{ t.id }}">{{ t.title }}</option>
-            {% endfor %}
-          {% endif %}
-        </select>
-        <p class="muted projects-cms-hint">Стрелка на Ганте: конец предыдущей → начало этой задачи</p>
-      </div>
-      <div class="form-actions">
-        <button type="submit" class="btn btn-primary">Создать</button>
-      </div>
-    </form>
+        {% endif %}
+        <div class="form-group"><label>Этап</label>
+          <select name="stage_id" id="task-stage-id" class="form-control">
+            <option value="">— без этапа —</option>
+            {% if parent_task %}
+              {% for s in stages_by_project.get(parent_task.project_id, []) %}
+              <option value="{{ s.id }}" {% if preset_stage_id == s.id %}selected{% endif %}>{{ s.title }}</option>
+              {% endfor %}
+            {% elif preset_project_id %}
+              {% for s in stages_by_project.get(preset_project_id, []) %}
+              <option value="{{ s.id }}" {% if preset_stage_id == s.id %}selected{% endif %}>{{ s.title }}</option>
+              {% endfor %}
+            {% elif projects %}
+              {% for s in stages_by_project.get(projects[0].id, []) %}
+              <option value="{{ s.id }}" {% if preset_stage_id == s.id %}selected{% endif %}>{{ s.title }}</option>
+              {% endfor %}
+            {% endif %}
+          </select>
+        </div>
+        <div class="form-group"><label>Название</label><input name="title" id="task-title-input" class="form-control" required></div>
+        <div class="form-group"><label>Описание</label><textarea name="description" class="form-control" rows="4"></textarea></div>
+        <div class="form-row">
+          <div class="form-group"><label>Критичность</label><select name="priority" class="form-control">{% for n, lbl in project_priority_labels.items() %}<option value="{{ n }}">{{ lbl }}</option>{% endfor %}</select></div>
+          <div class="form-group"><label>Исполнитель</label>
+            <select name="assignee_id" id="task-assignee-id" class="form-control">
+              <option value="">—</option>
+              {% for u in executors %}<option value="{{ u.id }}">{{ u.full_name }}</option>{% endfor %}
+            </select>
+            <p class="muted projects-cms-hint">Только участники выбранного проекта</p>
+          </div>
+        </div>
+        <div class="form-row">
+          <div class="form-group"><label>Начало</label>
+            <input type="date" name="start_date" class="form-control" value="{{ default_start.isoformat() if default_start else '' }}">
+          </div>
+          <div class="form-group"><label>Дедлайн</label>
+            <input type="date" name="due_date" class="form-control" value="{{ default_due.isoformat() if default_due else '' }}">
+            <p class="muted projects-cms-hint">По умолчанию — сегодня, чтобы задача сразу была на Ганте</p>
+          </div>
+        </div>
+        <div class="form-group">
+          <label>Предыдущая задача (предшественник)</label>
+          <select name="predecessor_task_id" id="task-predecessor-id" class="form-control">
+            <option value="">— нет —</option>
+            {% if parent_task %}
+              {% for t in tasks_by_project.get(parent_task.project_id, []) %}
+              <option value="{{ t.id }}">{{ t.title }}</option>
+              {% endfor %}
+            {% elif preset_project_id %}
+              {% for t in tasks_by_project.get(preset_project_id, []) %}
+              <option value="{{ t.id }}">{{ t.title }}</option>
+              {% endfor %}
+            {% elif projects %}
+              {% for t in tasks_by_project.get(projects[0].id, []) %}
+              <option value="{{ t.id }}">{{ t.title }}</option>
+              {% endfor %}
+            {% endif %}
+          </select>
+          <p class="muted projects-cms-hint">Стрелка на Ганте: конец предыдущей → начало этой задачи</p>
+        </div>
+        <div class="form-actions">
+          <button type="submit" class="btn btn-primary">Создать</button>
+        </div>
+      </form>
+    </div>
   </div>
 </div>
 <script type="application/json" id="stages-by-project-json">{{ stages_by_project | tojson }}</script>
 <script type="application/json" id="tasks-by-project-json">{{ tasks_by_project | tojson }}</script>
 <script type="application/json" id="executors-by-project-json">{{ executors_by_project | default({}) | tojson }}</script>
-{% if not parent_task %}
+<script type="application/json" id="projects-name-json">{{ project_names | default({}) | tojson }}</script>
 <script>
 (function () {
   var sel = document.getElementById("task-project-id");
   var stageSel = document.getElementById("task-stage-id");
   var predSel = document.getElementById("task-predecessor-id");
   var assigneeSel = document.getElementById("task-assignee-id");
+  var titleInput = document.getElementById("task-title-input");
+  var treeEl = document.getElementById("task-project-tree");
   var dataEl = document.getElementById("stages-by-project-json");
   var tasksEl = document.getElementById("tasks-by-project-json");
   var execEl = document.getElementById("executors-by-project-json");
+  var namesEl = document.getElementById("projects-name-json");
   if (!sel || !stageSel || !dataEl) return;
+
   var map = {};
   var tasksMap = {};
   var execMap = {};
+  var namesMap = {};
   try { map = JSON.parse(dataEl.textContent || "{}"); } catch (e) { map = {}; }
   try { if (tasksEl) tasksMap = JSON.parse(tasksEl.textContent || "{}"); } catch (e) { tasksMap = {}; }
   try { if (execEl) execMap = JSON.parse(execEl.textContent || "{}"); } catch (e) { execMap = {}; }
+  try { if (namesEl) namesMap = JSON.parse(namesEl.textContent || "{}"); } catch (e) { namesMap = {}; }
+
+  var highlightParentId = treeEl ? (treeEl.getAttribute("data-parent-id") || "") : "";
+
+  function esc(s) {
+    return String(s == null ? "" : s)
+      .replace(/&/g, "&amp;")
+      .replace(/</g, "&lt;")
+      .replace(/>/g, "&gt;")
+      .replace(/"/g, "&quot;");
+  }
+
+  function projectId() {
+    return sel.value;
+  }
+
   function fillStages() {
-    var pid = sel.value;
+    var pid = projectId();
     var stages = map[pid] || map[String(pid)] || [];
     var cur = stageSel.value;
     stageSel.innerHTML = '<option value="">— без этапа —</option>';
@@ -123,9 +170,10 @@
       stageSel.appendChild(o);
     });
   }
+
   function fillPredecessors() {
     if (!predSel) return;
-    var pid = sel.value;
+    var pid = projectId();
     var tasks = tasksMap[pid] || tasksMap[String(pid)] || [];
     predSel.innerHTML = '<option value="">— нет —</option>';
     tasks.forEach(function (t) {
@@ -135,9 +183,10 @@
       predSel.appendChild(o);
     });
   }
+
   function fillAssignees() {
     if (!assigneeSel) return;
-    var pid = sel.value;
+    var pid = projectId();
     var list = execMap[pid] || execMap[String(pid)] || [];
     var cur = assigneeSel.value;
     assigneeSel.innerHTML = '<option value="">—</option>';
@@ -149,13 +198,122 @@
       assigneeSel.appendChild(o);
     });
   }
+
+  function buildChildrenMap(tasks) {
+    var byParent = {};
+    tasks.forEach(function (t) {
+      var key = t.parent_id == null ? "root" : String(t.parent_id);
+      if (!byParent[key]) byParent[key] = [];
+      byParent[key].push(t);
+    });
+    return byParent;
+  }
+
+  function draftNodeHtml() {
+    var draft = (titleInput && titleInput.value.trim()) || "Новая задача…";
+    return '<li class="projects-task-tree-item projects-task-tree-item--draft">' +
+      '<span class="projects-task-tree-draft">' + esc(draft) + "</span></li>";
+  }
+
+  function renderTaskNodes(tasks, byParent, depth) {
+    var html = "";
+    tasks.forEach(function (t) {
+      var isParent = highlightParentId && String(t.id) === String(highlightParentId);
+      html += '<li class="projects-task-tree-item projects-task-tree-item--task' +
+        (isParent ? " is-parent-of-new" : "") +
+        '" style="--depth:' + depth + '">';
+      html += '<a class="projects-task-tree-link" href="/projects/tasks/' + t.id + '">' + esc(t.title) + "</a>";
+      var kids = byParent[String(t.id)] || [];
+      var showDraftHere = isParent;
+      if (kids.length || showDraftHere) {
+        html += '<ul class="projects-task-tree-list">';
+        html += renderTaskNodes(kids, byParent, depth + 1);
+        if (showDraftHere) html += draftNodeHtml();
+        html += "</ul>";
+      }
+      html += "</li>";
+    });
+    return html;
+  }
+
+  function renderTree() {
+    if (!treeEl) return;
+    var pid = projectId();
+    var stages = map[pid] || map[String(pid)] || [];
+    var tasks = tasksMap[pid] || tasksMap[String(pid)] || [];
+    var pname = namesMap[pid] || namesMap[String(pid)] ||
+      (sel.tagName === "SELECT" && sel.options[sel.selectedIndex]
+        ? sel.options[sel.selectedIndex].text.replace(/\s*\(шаблон\)\s*$/, "")
+        : "Проект");
+    var stageId = stageSel.value || "";
+    var byParent = buildChildrenMap(tasks);
+    var nestDraftUnderParent = !!highlightParentId;
+
+    function rootsForStage(sid) {
+      var roots = byParent.root || [];
+      return roots.filter(function (t) {
+        if (sid === "") return !t.stage_id;
+        return String(t.stage_id) === String(sid);
+      });
+    }
+
+    var html = '<ul class="projects-task-tree-list projects-task-tree-list--root">';
+    html += '<li class="projects-task-tree-item projects-task-tree-item--project">';
+    html += '<span class="projects-task-tree-label projects-task-tree-label--project">' + esc(pname) + "</span>";
+    html += '<ul class="projects-task-tree-list">';
+
+    stages.forEach(function (s) {
+      var active = String(s.id) === String(stageId);
+      html += '<li class="projects-task-tree-item projects-task-tree-item--stage' +
+        (active ? " is-active" : "") + '">';
+      html += '<button type="button" class="projects-task-tree-stage" data-stage-id="' + s.id + '">' +
+        esc(s.title) + "</button>";
+      html += '<ul class="projects-task-tree-list">';
+      html += renderTaskNodes(rootsForStage(s.id), byParent, 1);
+      if (active && !nestDraftUnderParent) html += draftNodeHtml();
+      html += "</ul></li>";
+    });
+
+    var unstaged = rootsForStage("");
+    var unstagedActive = !stageId;
+    if (unstaged.length || unstagedActive || (!stages.length && !nestDraftUnderParent)) {
+      html += '<li class="projects-task-tree-item projects-task-tree-item--stage' +
+        (unstagedActive ? " is-active" : "") + '">';
+      html += '<button type="button" class="projects-task-tree-stage" data-stage-id="">Без этапа</button>';
+      html += '<ul class="projects-task-tree-list">';
+      html += renderTaskNodes(unstaged, byParent, 1);
+      if (unstagedActive && !nestDraftUnderParent) html += draftNodeHtml();
+      html += "</ul></li>";
+    }
+
+    html += "</ul></li></ul>";
+    treeEl.innerHTML = html;
+  }
+
   function fill() {
     fillStages();
     fillPredecessors();
     fillAssignees();
+    renderTree();
   }
-  sel.addEventListener("change", fill);
+
+  if (sel.tagName === "SELECT") {
+    sel.addEventListener("change", fill);
+  }
+  stageSel.addEventListener("change", renderTree);
+  if (titleInput) {
+    titleInput.addEventListener("input", renderTree);
+  }
+  if (treeEl) {
+    treeEl.addEventListener("click", function (e) {
+      var btn = e.target.closest(".projects-task-tree-stage");
+      if (!btn) return;
+      stageSel.value = btn.getAttribute("data-stage-id") || "";
+      renderTree();
+    });
+  }
+
+  renderTree();
 })();
 </script>
-{% endif %}
 {% endblock %}

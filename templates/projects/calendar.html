@@ -2,7 +2,7 @@
 
 {% block title %}Проекты — календарь{% endblock %}
 
-{% block head %}<link rel="stylesheet" href="{{ url_for('static', filename='css/projects.css') }}?v=2">{% endblock %}
+{% block head %}<link rel="stylesheet" href="{{ url_for('static', filename='css/projects.css') }}?v=37">{% endblock %}
 
 {% block content %}
 
@@ -27,6 +27,7 @@
     {% for d in month_grid %}
 
     {% set load = team_load.get(d) if team_load else 0 %}
+    {% set day_tasks = tasks_by_day.get(d, []) if tasks_by_day is defined else [] %}
 
     <div class="projects-calendar-cell{% if d.month != today.month and cal_mode == 'month' %} is-muted{% endif %}{% if load %} projects-load-{{ 'high' if load >= 5 else ('mid' if load >= 3 else 'low') }}{% endif %}">
 
@@ -34,10 +35,17 @@
 
       {% if cal_mode == 'team' %}<span class="projects-calendar-load">{{ load }} задач</span>{% endif %}
 
-      {% for t in tasks if t.due_date == d %}
-
-      <a class="projects-calendar-event p-{{ t.priority }}" href="{{ url_for('projects.task_detail', tid=t.id) }}">{{ t.title[:40] }}</a>
-
+      {% for t in day_tasks %}
+      {% set s = t.start_date or t.due_date %}
+      {% set e = t.due_date or t.start_date %}
+      {% set is_start = s == d %}
+      {% set is_end = e == d %}
+      {% set multi = s and e and s != e %}
+      <a class="projects-calendar-event p-{{ t.priority }}{% if multi %} is-span{% if is_start %} is-span-start{% elif is_end %} is-span-end{% else %} is-span-mid{% endif %}{% endif %}"
+         href="{{ url_for('projects.task_detail', tid=t.id) }}"
+         title="{{ t.title }}{% if s and e %} · {{ s.strftime('%d.%m') }}—{{ e.strftime('%d.%m.%Y') }}{% endif %}">
+        {{ t.title[:36] }}
+      </a>
       {% endfor %}
 
     </div>

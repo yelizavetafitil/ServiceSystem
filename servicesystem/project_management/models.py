@@ -103,6 +103,7 @@ class ProjectTask(db.Model):
     start_date = db.Column(db.Date)
     due_date = db.Column(db.Date)
     kanban_sort = db.Column(db.Integer, default=0)
+    gantt_sort = db.Column(db.Integer, default=0)  # ручной порядок строк на диаграмме Ганта
     overdue_days = db.Column(db.Integer, default=0)
     is_critical_path = db.Column(db.Boolean, default=False)
     timer_running_since = db.Column(db.DateTime(timezone=True))

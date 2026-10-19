@@ -4,17 +4,17 @@
 
 {% block head %}
 
-<link rel="stylesheet" href="{{ url_for('static', filename='css/projects.css') }}?v=30">
+<link rel="stylesheet" href="{{ url_for('static', filename='css/projects.css') }}?v=38">
 
-<script defer src="{{ url_for('static', filename='js/projects-gantt.js') }}?v=14"></script>
+<script defer src="{{ url_for('static', filename='js/projects-gantt.js') }}?v=17"></script>
 
 {% endblock %}
 
 {% block content %}
 
 {% set gantt_n = gantt_columns|length %}
-
-{% set gantt_grid = 'repeat(' ~ gantt_n ~ ', minmax(56px, 1fr))' %}
+{% set gantt_px = gantt_col_px|default(56) %}
+{% set gantt_grid = 'repeat(' ~ gantt_n ~ ', minmax(' ~ gantt_px ~ 'px, 1fr))' %}
 
 <div class="container container-wide cms-page projects-page projects-gantt-page">
 
@@ -40,6 +40,13 @@
 
     {% endif %}
 
+    <span class="projects-gantt-toolbar-sep"></span>
+    <div class="projects-gantt-pan" role="group" aria-label="Прокрутка шкалы">
+      <button type="button" class="btn btn-outline btn-sm" id="gantt-pan-left" title="Прокрутить в прошлое">←</button>
+      <button type="button" class="btn btn-outline btn-sm" id="gantt-pan-today" title="Показать сегодня">Сегодня</button>
+      <button type="button" class="btn btn-outline btn-sm" id="gantt-pan-right" title="Прокрутить в будущее">→</button>
+    </div>
+
     {% if gantt_can_edit %}
     <span class="projects-gantt-toolbar-sep"></span>
     <button type="button" class="btn btn-outline btn-sm" id="gantt-link-mode-btn" data-gantt-link-toggle>Связать стрелкой</button>
@@ -50,37 +57,40 @@
 
   {% if gantt_can_edit %}
   <div id="gantt-bar-menu" class="projects-gantt-ctx-menu" hidden role="menu">
+    <a class="projects-gantt-ctx-item projects-gantt-ctx-link" data-gantt-ctx="subtask" role="menuitem" href="#">Создать подзадачу</a>
     <button type="button" class="projects-gantt-ctx-item" data-gantt-ctx="start-link" role="menuitem">Сделать предшественником (стрелка)</button>
     <button type="button" class="projects-gantt-ctx-item" data-gantt-ctx="finish-link" role="menuitem" hidden>Связать сюда как последователя</button>
     <button type="button" class="projects-gantt-ctx-item" data-gantt-ctx="cancel-link" role="menuitem" hidden>Отменить стрелку</button>
   </div>
   {% endif %}
 
+  {% if (current_user.is_auditor or current_user.is_admin) and filter_project %}
+  {% set fp_name = (projects|selectattr('id', 'equalto', filter_project)|map(attribute='name')|first) or ('№' ~ filter_project) %}
+  {% set fp_short = fp_name if fp_name|length <= 42 else (fp_name[:41] ~ '…') %}
+  <div class="projects-gantt-add-bar">
+    <a href="{{ url_for('projects.task_new', project=filter_project) }}" class="btn btn-primary btn-sm" title="{{ fp_name }}">
+      Новая задача в «{{ fp_short }}»
+    </a>
+    <span class="muted projects-gantt-add-hint">Верхний уровень проекта · подзадача — ПКМ по полоске задачи</span>
+  </div>
+  {% endif %}
 
 
-  <div class="projects-gantt-legend">
 
-    <span class="projects-gantt-legend-item"><i class="swatch p-1"></i> низший</span>
-
-    <span class="projects-gantt-legend-item"><i class="swatch p-2"></i> обычный</span>
-
-    <span class="projects-gantt-legend-item"><i class="swatch p-3"></i> высокий</span>
-
-    <span class="projects-gantt-legend-item"><i class="swatch p-4"></i> самый высший</span>
-
-    <span class="projects-gantt-legend-item"><i class="swatch is-sla"></i> SLA / крит. путь</span>
-
-    <span class="projects-gantt-legend-item"><i class="swatch is-fs"></i> конец → начало (2-я не раньше дня после 1-й)</span>
-
-    <span class="projects-gantt-legend-item"><i class="swatch is-milestone"></i> веха этапа</span>
-
+  <div class="projects-gantt-legend projects-gantt-legend--compact">
+    <span class="projects-gantt-legend-item"><i class="swatch p-1"></i>низш.</span>
+    <span class="projects-gantt-legend-item"><i class="swatch p-2"></i>обычн.</span>
+    <span class="projects-gantt-legend-item"><i class="swatch p-3"></i>выс.</span>
+    <span class="projects-gantt-legend-item"><i class="swatch p-4"></i>крит.</span>
+    <span class="projects-gantt-legend-item"><i class="swatch is-sla"></i>SLA</span>
+    <span class="projects-gantt-legend-item"><i class="swatch is-fs"></i>FS</span>
+    <span class="projects-gantt-legend-item"><i class="swatch is-milestone"></i>веха</span>
     <span class="projects-gantt-legend-period muted"><strong>{{ gantt_scale_label }}</strong> · {{ gantt_span_label }}</span>
-
   </div>
 
 
 
-  {% if gantt_bars and gantt_n > 0 %}
+  {% if (gantt_bars or gantt_undated) and gantt_n > 0 %}
 
   <div class="projects-gantt-chart" data-gantt-chart
 
@@ -88,7 +98,13 @@
 
        data-span-end="{{ gantt_span_end }}"
 
-       style="--gantt-cols: {{ gantt_n }}; --gantt-timeline-min: {{ gantt_n * 56 }}px; --gantt-side-w: 320px;">
+       data-scale="{{ gantt_scale }}"
+
+       data-cols="{{ gantt_n }}"
+
+       data-today="{{ gantt_today.isoformat() if gantt_today else '' }}"
+       data-col-px="{{ gantt_col_px|default(56) }}"
+       style="--gantt-cols: {{ gantt_n }}; --gantt-col-px: {{ gantt_col_px|default(56) }}px; --gantt-timeline-min: {{ gantt_timeline_min_px|default(gantt_n * 56) }}px; --gantt-side-w: 320px;">
 
     <script type="application/json" id="gantt-fs-links">{{ gantt_fs_links|tojson }}</script>
 
@@ -98,7 +114,7 @@
 
       <div class="projects-gantt-head">
 
-        <div class="projects-gantt-side-head"><span class="projects-gantt-col-no">№</span> Задача · сроки</div>
+        <div class="projects-gantt-side-head"><span class="projects-gantt-col-no">№</span> Задача · сроки{% if gantt_can_edit %} <span class="muted projects-gantt-reorder-hint">· перетащите строку</span>{% endif %}</div>
 
         <div class="projects-gantt-timeline">
 
@@ -113,43 +129,18 @@
           </div>
 
           {% if gantt_milestone_groups %}
-
-          <div class="projects-gantt-milestone-lane" aria-label="Вехи отчётных этапов" style="min-height: {{ gantt_milestone_lane_min_h }}px;">
-
+          <div class="projects-gantt-milestone-lane projects-gantt-milestone-lane--compact" aria-label="Вехи отчётных этапов" style="min-height: {{ gantt_milestone_lane_min_h }}px;">
             <div class="projects-gantt-milestone-grid" style="grid-template-columns: {{ gantt_grid }}; min-height: {{ gantt_milestone_lane_min_h }}px;">
-
               {% for col in gantt_columns %}<div class="projects-gantt-milestone-cell"></div>{% endfor %}
-
             </div>
-
             {% for g in gantt_milestone_groups %}
-
-            <div class="projects-gantt-milestone-tick" style="left: {{ g.center_pct }}%;">
-
-              <span class="projects-gantt-milestone-line"></span>
-
-              <div class="projects-gantt-milestone-labels">
-
-                {% for m in g.milestones %}
-
-                <div class="projects-gantt-milestone-label" title="{{ m.title }} · {{ m.date_label }}{% if m.project %} · {{ m.project }}{% endif %}">
-
-                  <span class="projects-gantt-milestone-cap">{{ m.short_title }}</span>
-
-                  <span class="projects-gantt-milestone-date">{{ m.date_label }}</span>
-
-                </div>
-
-                {% endfor %}
-
-              </div>
-
+            {% set tip = g.milestones|map(attribute='title')|join(' · ') %}
+            {% set tip_dates = g.milestones|map(attribute='date_label')|join(', ') %}
+            <div class="projects-gantt-milestone-tick" style="left: {{ g.center_pct }}%;" title="{{ tip }} · {{ tip_dates }}">
+              <span class="projects-gantt-milestone-dot" aria-hidden="true"></span>
             </div>
-
             {% endfor %}
-
           </div>
-
           {% endif %}
 
         </div>
@@ -190,12 +181,15 @@
 
         {% set t = grow.task %}
 
-        <div class="projects-gantt-row" id="gantt-row-{{ grow.display_no }}" data-task-id="{{ t.id }}">
+        <div class="projects-gantt-row{% if gantt_can_edit %} is-reorderable{% endif %}" id="gantt-row-{{ grow.display_no }}" data-task-id="{{ t.id }}">
 
           <div class="projects-gantt-side">
 
             <div class="projects-gantt-side-top">
 
+              {% if gantt_can_edit %}
+              <span class="projects-gantt-drag-handle" title="Перетащить для смены порядка" draggable="true" aria-hidden="true">⋮⋮</span>
+              {% endif %}
               <span class="projects-gantt-row-no">{{ grow.display_no }}</span>
 
               <div class="projects-gantt-side-text">
@@ -305,6 +299,49 @@
 
         {% endfor %}
 
+        {% if gantt_undated %}
+        <div class="projects-gantt-group-head projects-gantt-undated-head">
+          <div class="projects-gantt-side projects-gantt-group-title">
+            <strong>Без дат</strong>
+            <span class="muted">укажите сроки в карточке или панели задачи</span>
+          </div>
+          <div class="projects-gantt-timeline projects-gantt-group-band"></div>
+        </div>
+        {% for grow in gantt_undated %}
+        {% set t = grow.task %}
+        <div class="projects-gantt-row projects-gantt-row--undated{% if gantt_can_edit %} is-reorderable{% endif %}" id="gantt-row-{{ grow.display_no }}" data-task-id="{{ t.id }}">
+          <div class="projects-gantt-side">
+            <div class="projects-gantt-side-top">
+              {% if gantt_can_edit %}
+              <span class="projects-gantt-drag-handle" title="Перетащить для смены порядка" draggable="true" aria-hidden="true">⋮⋮</span>
+              {% endif %}
+              <span class="projects-gantt-row-no">{{ grow.display_no }}</span>
+              <div class="projects-gantt-side-text">
+                {% if grow.open_as_ticket and grow.ticket_id %}
+                <a href="{{ url_for('tickets.detail', tid=grow.ticket_id) }}" class="projects-gantt-label" title="{{ t.title }}">{{ t.title }}</a>
+                <span class="projects-kanban-badge">Заявка</span>
+                {% else %}
+                <a href="{{ url_for('projects.task_detail', tid=t.id) }}" class="projects-gantt-label" title="{{ t.title }}">{{ t.title }}</a>
+                {% endif %}
+                <div class="projects-gantt-side-meta">
+                  <span class="projects-gantt-status is-{{ t.kanban_status }}">{{ grow.status_label }}</span>
+                  <span class="projects-gantt-dates projects-gantt-dates--none">без дат</span>
+                </div>
+              </div>
+            </div>
+          </div>
+          <div class="projects-gantt-timeline">
+            <div class="projects-gantt-cols-track" data-gantt-track style="grid-template-columns: {{ gantt_grid }};">
+              {% for col in gantt_columns %}
+              <div class="projects-gantt-cell{% if col.is_today %} is-today{% endif %}"></div>
+              {% endfor %}
+              <div class="projects-gantt-empty-track muted">Нет сроков</div>
+            </div>
+          </div>
+        </div>
+        {% endfor %}
+        {% endif %}
+
       </div>
 
     </div>
@@ -389,7 +426,7 @@
 
   <div class="card projects-cms-card">
 
-    <p class="muted">Нет задач с датами. Укажите начало и дедлайн в карточке задачи.</p>
+    <p class="muted">Нет задач для отображения. Создайте задачу или выберите другой проект.</p>
 
   </div>
 

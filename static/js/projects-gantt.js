@@ -14,6 +14,10 @@
 
   var spanEnd = chart.getAttribute("data-span-end");
 
+  var ganttScale = chart.getAttribute("data-scale") || "month";
+
+  var ganttCols = Math.max(1, parseInt(chart.getAttribute("data-cols") || "1", 10) || 1);
+
 
 
   function parseIso(s) {
@@ -54,6 +58,14 @@
 
 
 
+  function daysInMonth(y, m0) {
+
+    return new Date(y, m0 + 1, 0).getDate();
+
+  }
+
+
+
   function sideWidth() {
 
     var side = chart.querySelector(".projects-gantt-side-head");
@@ -64,7 +76,64 @@
 
 
 
+  /** Квартал: доля месячных слотов → дата (как _bar_geometry на сервере). */
+  function quarterFracToDate(frac, endOfDay) {
+
+    var base = parseIso(spanStart);
+
+    if (!base) return null;
+
+    var slot = Math.floor(frac);
+
+    var part = frac - slot;
+
+    if (slot < 0) { slot = 0; part = 0; }
+
+    if (slot >= ganttCols) { slot = ganttCols - 1; part = 1; }
+
+    var d = new Date(base.getFullYear(), base.getMonth() + slot, 1);
+
+    var dim = daysInMonth(d.getFullYear(), d.getMonth());
+
+    var day = endOfDay
+
+      ? Math.max(1, Math.min(dim, Math.round(part * dim)))
+
+      : Math.max(1, Math.min(dim, Math.floor(part * dim) + 1));
+
+    return new Date(d.getFullYear(), d.getMonth(), day);
+
+  }
+
+
+
   function pctToDates(leftPct, widthPct) {
+
+    var base = parseIso(spanStart);
+
+    if (!base) return { start: spanStart, due: spanEnd };
+
+
+
+    if (ganttScale === "quarter") {
+
+      var startF = (leftPct / 100) * ganttCols;
+
+      var endF = ((leftPct + widthPct) / 100) * ganttCols;
+
+      var qs = quarterFracToDate(startF, false);
+
+      var qe = quarterFracToDate(endF, true);
+
+      if (!qs || !qe) return { start: spanStart, due: spanEnd };
+
+      if (qe < qs) qe = new Date(qs.getTime());
+
+      return { start: isoDate(qs), due: isoDate(qe) };
+
+    }
+
+
 
     var days = daySpan();
 
@@ -73,8 +142,6 @@
     var endOff = Math.round(((leftPct + widthPct) / 100) * days) - 1;
 
     if (endOff < startOff) endOff = startOff;
-
-    var base = parseIso(spanStart);
 
     var s = new Date(base.getTime());
 
@@ -366,10 +433,15 @@
   function showCtxMenu(bar, clientX, clientY) {
     if (!ctxMenu || !uiFlags.canEdit) return;
     ctxTaskId = bar.getAttribute("data-task-id");
+    var subtaskLink = ctxMenu.querySelector('[data-gantt-ctx="subtask"]');
     var startBtn = ctxMenu.querySelector('[data-gantt-ctx="start-link"]');
     var finishBtn = ctxMenu.querySelector('[data-gantt-ctx="finish-link"]');
     var cancelBtn = ctxMenu.querySelector('[data-gantt-ctx="cancel-link"]');
     var canFinish = !!(linkMode && linkFromId && String(linkFromId) !== String(ctxTaskId));
+    if (subtaskLink && ctxTaskId) {
+      subtaskLink.href = "/projects/tasks/new?parent=" + encodeURIComponent(ctxTaskId);
+      subtaskLink.hidden = false;
+    }
     if (startBtn) startBtn.hidden = false;
     if (finishBtn) finishBtn.hidden = !canFinish;
     if (cancelBtn) cancelBtn.hidden = !linkMode;
@@ -395,6 +467,12 @@
       var btn = e.target.closest("[data-gantt-ctx]");
       if (!btn || !ctxTaskId) return;
       var action = btn.getAttribute("data-gantt-ctx");
+      if (action === "subtask") {
+        // переход по href — не preventDefault
+        hideCtxMenu();
+        return;
+      }
+      e.preventDefault();
       if (action === "start-link") {
         setLinkMode(true, ctxTaskId);
         hideCtxMenu();
@@ -670,6 +748,83 @@
     requestAnimationFrame(drawFsLinks);
   }
 
+  // Ручной порядок строк: перетаскивание слева
+  (function setupRowReorder() {
+    if (!uiFlags.canEdit) return;
+    var rows = Array.prototype.slice.call(chart.querySelectorAll(".projects-gantt-row.is-reorderable"));
+    if (rows.length < 2) return;
+    var dragRow = null;
+
+    function rowList() {
+      return Array.prototype.slice.call(chart.querySelectorAll(".projects-gantt-row.is-reorderable"));
+    }
+
+    function renumber() {
+      rowList().forEach(function (row, i) {
+        row.id = "gantt-row-" + (i + 1);
+        var no = row.querySelector(".projects-gantt-row-no");
+        if (no) no.textContent = String(i + 1);
+      });
+      scheduleDraw();
+    }
+
+    async function persistOrder() {
+      var ids = rowList().map(function (r) { return r.getAttribute("data-task-id"); }).filter(Boolean);
+      try {
+        var res = await fetch("/projects/gantt/reorder", {
+          method: "POST",
+          headers: { "Content-Type": "application/json", "X-CSRFToken": csrf },
+          body: JSON.stringify({ task_ids: ids }),
+        });
+        if (!res.ok) window.location.reload();
+      } catch (err) {
+        window.location.reload();
+      }
+    }
+
+    rows.forEach(function (row) {
+      var handle = row.querySelector(".projects-gantt-drag-handle");
+      if (!handle) return;
+      handle.addEventListener("dragstart", function (e) {
+        e.stopPropagation();
+        dragRow = row;
+        row.classList.add("is-row-dragging");
+        try {
+          e.dataTransfer.effectAllowed = "move";
+          e.dataTransfer.setData("text/plain", row.getAttribute("data-task-id") || "");
+        } catch (err) {}
+      });
+      handle.addEventListener("dragend", function () {
+        row.classList.remove("is-row-dragging");
+        chart.querySelectorAll(".projects-gantt-row.is-row-drag-over").forEach(function (r) {
+          r.classList.remove("is-row-drag-over");
+        });
+        if (dragRow) {
+          renumber();
+          persistOrder();
+        }
+        dragRow = null;
+      });
+      row.addEventListener("dragover", function (e) {
+        if (!dragRow || dragRow === row) return;
+        e.preventDefault();
+        row.classList.add("is-row-drag-over");
+        var list = row.parentNode;
+        var rect = row.getBoundingClientRect();
+        var before = e.clientY < rect.top + rect.height / 2;
+        if (before) list.insertBefore(dragRow, row);
+        else list.insertBefore(dragRow, row.nextSibling);
+      });
+      row.addEventListener("dragleave", function () {
+        row.classList.remove("is-row-drag-over");
+      });
+      row.addEventListener("drop", function (e) {
+        e.preventDefault();
+        row.classList.remove("is-row-drag-over");
+      });
+    });
+  })();
+
   scheduleDraw();
   window.addEventListener("resize", scheduleDraw);
   window.addEventListener("load", scheduleDraw);
@@ -678,5 +833,55 @@
   if (body && window.ResizeObserver) {
     new ResizeObserver(scheduleDraw).observe(body);
   }
+
+  var colPx = Math.max(24, parseInt(chart.getAttribute("data-col-px") || "56", 10) || 56);
+  var todayIso = chart.getAttribute("data-today") || "";
+
+  function sideW() {
+    var side = chart.querySelector(".projects-gantt-side-head");
+    return side ? side.offsetWidth : 320;
+  }
+
+  function todayScrollLeft() {
+    if (!host || !spanStart || !todayIso) return 0;
+    var a = parseIso(spanStart);
+    var t = parseIso(todayIso);
+    if (!a || !t) return 0;
+    var days = Math.max(0, Math.round((t - a) / 86400000));
+    var frac;
+    if (ganttScale === "quarter") {
+      frac = (t.getFullYear() - a.getFullYear()) * 12 + (t.getMonth() - a.getMonth()) + (t.getDate() - 1) / 31;
+      frac = frac / Math.max(1, ganttCols);
+    } else {
+      frac = days / Math.max(1, daySpan());
+    }
+    var timelineLeft = frac * (ganttCols * colPx);
+    return Math.max(0, sideW() + timelineLeft - host.clientWidth * 0.35);
+  }
+
+  function scrollGanttTo(left, smooth) {
+    if (!host) return;
+    host.scrollTo({ left: left, behavior: smooth ? "smooth" : "auto" });
+  }
+
+  function panByCols(n) {
+    if (!host) return;
+    scrollGanttTo(host.scrollLeft + n * colPx * (ganttScale === "quarter" ? 1 : 3), true);
+  }
+
+  var panLeft = document.getElementById("gantt-pan-left");
+  var panRight = document.getElementById("gantt-pan-right");
+  var panToday = document.getElementById("gantt-pan-today");
+  if (panLeft) panLeft.addEventListener("click", function () { panByCols(-1); });
+  if (panRight) panRight.addEventListener("click", function () { panByCols(1); });
+  if (panToday) panToday.addEventListener("click", function () {
+    scrollGanttTo(todayScrollLeft(), true);
+  });
+
+  // Стартовая позиция — «сегодня» в видимой области (после раскладки)
+  requestAnimationFrame(function () {
+    scrollGanttTo(todayScrollLeft(), false);
+    scheduleDraw();
+  });
 })();
 

@@ -24,6 +24,7 @@ PROJECT_SCHEMA_PATCHES: tuple[str, ...] = (
     "ALTER TABLE project_tasks ADD COLUMN IF NOT EXISTS ticket_id INTEGER",
     "ALTER TABLE project_tasks ADD COLUMN IF NOT EXISTS start_date DATE",
     "ALTER TABLE project_tasks ADD COLUMN IF NOT EXISTS kanban_sort INTEGER DEFAULT 0",
+    "ALTER TABLE project_tasks ADD COLUMN IF NOT EXISTS gantt_sort INTEGER DEFAULT 0",
     "ALTER TABLE project_tasks ADD COLUMN IF NOT EXISTS overdue_days INTEGER DEFAULT 0",
     "ALTER TABLE project_tasks ADD COLUMN IF NOT EXISTS is_critical_path BOOLEAN DEFAULT FALSE",
     "ALTER TABLE project_tasks ADD COLUMN IF NOT EXISTS timer_running_since TIMESTAMPTZ",
@@ -55,6 +56,25 @@ def apply_project_schema_patches() -> None:
             db.session.commit()
         except Exception:
             db.session.rollback()
+    # Старые задачи: заполнить gantt_sort по id внутри проекта (стабильный порядок создания)
+    try:
+        db.session.execute(
+            text(
+                """
+                UPDATE project_tasks t
+                SET gantt_sort = s.rn
+                FROM (
+                  SELECT id, ROW_NUMBER() OVER (PARTITION BY project_id ORDER BY id) AS rn
+                  FROM project_tasks
+                ) s
+                WHERE t.id = s.id
+                  AND (t.gantt_sort IS NULL OR t.gantt_sort = 0)
+                """
+            )
+        )
+        db.session.commit()
+    except Exception:
+        db.session.rollback()
 
 
 def ensure_project_tables() -> None:
