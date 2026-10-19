@@ -180,7 +180,17 @@ class ProjectTaskLink(db.Model):
     link_type = db.Column(db.String(32), nullable=False)
 
     from_task = db.relationship("ProjectTask", foreign_keys=[from_task_id], back_populates="links_out")
-    to_task = db.relationship("ProjectTask", foreign_keys=[to_task_id])
+    to_task = db.relationship(
+        "ProjectTask",
+        foreign_keys=[to_task_id],
+        backref=db.backref(
+            "links_in",
+            lazy="dynamic",
+            foreign_keys="ProjectTaskLink.to_task_id",
+            cascade="all, delete-orphan",
+            passive_deletes=True,
+        ),
+    )
 
     __table_args__ = (
         db.UniqueConstraint("from_task_id", "to_task_id", "link_type", name="uq_task_link"),
@@ -290,7 +300,15 @@ class ProjectCalendarEvent(db.Model):
     title = db.Column(db.String(255), nullable=False)
     created_at = db.Column(db.DateTime(timezone=True), default=_utcnow)
 
-    task = db.relationship("ProjectTask", backref=db.backref("calendar_events", lazy="dynamic"))
+    task = db.relationship(
+        "ProjectTask",
+        backref=db.backref(
+            "calendar_events",
+            lazy="dynamic",
+            cascade="all, delete-orphan",
+            passive_deletes=True,
+        ),
+    )
     user = db.relationship("User")
 
     __table_args__ = (db.UniqueConstraint("task_id", "user_id", name="uq_task_user_calendar"),)

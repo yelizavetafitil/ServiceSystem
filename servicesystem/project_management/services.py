@@ -686,6 +686,24 @@ def user_can_manage_project(user: User, project: Project) -> bool:
     return False
 
 
+def delete_project_task(task: ProjectTask) -> None:
+    """Удалить задачу вместе со связями, событиями календаря и отвязать подзадачи.
+
+    Без явной очистки PostgreSQL/SQLAlchemy падают на NOT NULL у calendar_events
+    и на FK входящих links (to_task_id).
+    """
+    tid = task.id
+    ProjectTaskLink.query.filter(
+        or_(ProjectTaskLink.from_task_id == tid, ProjectTaskLink.to_task_id == tid)
+    ).delete(synchronize_session=False)
+    ProjectCalendarEvent.query.filter_by(task_id=tid).delete(synchronize_session=False)
+    ProjectTask.query.filter_by(parent_id=tid).update(
+        {ProjectTask.parent_id: None},
+        synchronize_session=False,
+    )
+    db.session.delete(task)
+
+
 def user_can_edit_task(user: User, task: ProjectTask) -> bool:
     if user.is_admin or user.is_auditor:
         return True

@@ -3,7 +3,7 @@ from __future__ import annotations
 
 import mimetypes
 
-from flask import abort, flash, jsonify, redirect, render_template, request, send_file, url_for
+from flask import abort, current_app, flash, jsonify, redirect, render_template, request, send_file, url_for
 from flask_login import current_user, login_required
 
 from servicesystem.extensions import db
@@ -24,6 +24,7 @@ from servicesystem.project_management.routes import KANBAN_LABELS, bp
 from servicesystem.project_management.services import (
     add_manual_time,
     build_ics_for_user,
+    delete_project_task,
     delete_task_attachment,
     save_task_attachment,
     task_attachment_path,
@@ -50,11 +51,20 @@ def task_update(tid):
         if not (current_user.is_admin or current_user.is_auditor):
             abort(403)
         if task.ticket_id:
-            flash("Задача, связанная с заявкой, не удаляется.", "warning")
+            flash("Задача-зеркало заявки не удаляется здесь — закройте или удалите заявку.", "warning")
+            return redirect(url_for("tickets.detail", tid=task.ticket_id))
+        project_id = task.project_id
+        try:
+            delete_project_task(task)
+            db.session.commit()
+        except Exception:
+            db.session.rollback()
+            current_app.logger.exception("task delete failed tid=%s", tid)
+            flash("Не удалось удалить задачу (связи или календарь). Попробуйте ещё раз.", "danger")
             return redirect(url_for("projects.task_detail", tid=tid))
-        db.session.delete(task)
-        db.session.commit()
         flash("Задача удалена.", "success")
+        if project_id:
+            return redirect(url_for("projects.arm", view="gantt", project=project_id))
         return redirect(url_for("projects.arm"))
     if action == "complete":
         if task_is_completion_blocked(task):
