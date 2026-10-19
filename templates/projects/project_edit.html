@@ -1,243 +1,392 @@
 {% extends "base.html" %}
 {% from "macros/forms.html" import csrf_field %}
 {% block title %}{{ project.name }}{% endblock %}
-{% block head %}<link rel="stylesheet" href="{{ url_for('static', filename='css/projects.css') }}?v=30">{% endblock %}
+{% block head %}<link rel="stylesheet" href="{{ url_for('static', filename='css/projects.css') }}?v=42">{% endblock %}
 {% block content %}
-<div class="container cms-page projects-cms">
+<div class="container cms-page projects-cms projects-project-edit">
   <a href="{{ url_for('projects.manage_list') }}" class="back-link">← Проекты</a>
 
-  <div class="card projects-cms-card">
-    <h1 class="projects-cms-title">
-      {{ project.name }}
-      {% if project.is_template %}<span class="badge badge-info">Шаблон</span>{% endif %}
-    </h1>
-    {% if project.is_template %}
-    <p class="projects-cms-hint muted">
-      Шаблон не показывается в ARM как рабочий проект. Добавьте этапы и задачи здесь, затем
-      <a href="{{ url_for('projects.manage_new', template=project.id) }}">разверните новый проект</a> из этого шаблона.
-    </p>
-    {% elif project.template_source_id %}
-    <p class="projects-cms-hint muted">Создан из шаблона (id {{ project.template_source_id }}).</p>
-    {% endif %}
-    <form method="post" class="projects-cms-form">
-      {{ csrf_field() }}
-      <div class="form-group">
-        <label>Название</label>
-        <input name="name" class="form-control" required value="{{ project.name }}">
-      </div>
-      <div class="form-row">
-        <div class="form-group">
-          <label>Старт</label>
-          <input type="date" name="planned_start" class="form-control" value="{{ project.planned_start or '' }}">
-        </div>
-        <div class="form-group">
-          <label>Крайний срок</label>
-          <input type="date" name="deadline" class="form-control" value="{{ project.deadline or '' }}">
-        </div>
-      </div>
-      <div class="form-group">
-        <label>ГИП (аудитор)</label>
-        <select name="curator_auditor_id" class="form-control">
-          {% for u in staff if u.is_auditor %}
-          <option value="{{ u.id }}" {% if project.curator_auditor_id == u.id %}selected{% endif %}>{{ u.full_name }}</option>
-          {% endfor %}
-        </select>
-      </div>
-      <div class="form-group">
-        <label>Куратор-заказчик</label>
-        <select name="customer_curator_id" class="form-control">
-          <option value="">—</option>
-          {% for u in customers %}
-          <option value="{{ u.id }}" {% if project.customer_curator_id == u.id %}selected{% endif %}>{{ u.full_name }}</option>
-          {% endfor %}
-        </select>
-      </div>
-      {% if project.customer_curator_active_until %}
-      <p class="projects-cms-hint muted">Роль куратора-заказчика активна до {{ project.customer_curator_active_until.strftime('%d.%m.%Y') }}</p>
-      {% endif %}
-      <div class="form-actions">
-        <button type="submit" class="btn btn-primary">Сохранить</button>
-        {% if not project.is_template %}
-        <button type="submit" name="action" value="mark_template" class="btn btn-outline" formnovalidate>Сделать шаблоном</button>
+  <div class="projects-project-edit-layout">
+    <aside class="card projects-cms-card projects-stages-nav" aria-label="Отчётные этапы">
+      <h2 class="projects-stages-nav-heading">Отчётные этапы</h2>
+      <p class="muted projects-cms-hint">Навигация по этапам проекта</p>
+      <nav class="projects-stages-nav-list">
+        <a class="projects-stages-nav-link" href="#project-main" data-stage-nav="main">Карточка проекта</a>
+        <a class="projects-stages-nav-link" href="#project-tasks" data-stage-nav="tasks">Задачи</a>
+        {% for s in project.stages %}
+        <a class="projects-stages-nav-link" href="#stage-{{ s.id }}" data-stage-nav="{{ s.id }}" data-stage-nav-label>
+          <span class="projects-stages-nav-title">{{ s.title }}</span>
+          <span class="projects-stages-nav-meta muted">
+            {% if s.deadline %}до {{ s.deadline.strftime('%d.%m.%Y') }}{% else %}без срока{% endif %}
+            {% if s.released_at %} · выпущен{% endif %}
+          </span>
+        </a>
+        {% else %}
+        <p class="muted projects-stages-nav-empty">Этапов пока нет</p>
+        {% endfor %}
+        <a class="projects-stages-nav-link projects-stages-nav-link--add" href="#stage-add" data-stage-nav="add">+ Добавить этап</a>
+        <a class="projects-stages-nav-link" href="#project-fields" data-stage-nav="fields">Кастомные поля</a>
+      </nav>
+    </aside>
+
+    <div class="projects-project-edit-main">
+      <div class="card projects-cms-card" id="project-main">
+        <h1 class="projects-cms-title">
+          {{ project.name }}
+          {% if project.is_template %}<span class="badge badge-info">Шаблон</span>{% endif %}
+        </h1>
+        {% if project.is_template %}
+        <p class="projects-cms-hint muted">
+          Шаблон не показывается в ARM как рабочий проект. Добавьте этапы и задачи здесь, затем
+          <a href="{{ url_for('projects.manage_new', template=project.id) }}">разверните новый проект</a> из этого шаблона.
+        </p>
+        {% elif project.template_source_id %}
+        <p class="projects-cms-hint muted">Создан из шаблона (id {{ project.template_source_id }}).</p>
         {% endif %}
-      </div>
-    </form>
-  </div>
-
-  <div class="card projects-cms-card">
-    <h2 class="projects-cms-section-title">{% if project.is_template %}Задачи шаблона{% else %}Задачи проекта{% endif %}</h2>
-    {% if project.is_template %}
-    <p class="muted">Эти задачи копируются при развёртывании (статус сбрасывается в «К выполнению»).</p>
-    <ul class="projects-cms-list">
-      {% for t in template_tasks %}
-      <li><a href="{{ url_for('projects.task_detail', tid=t.id) }}">{{ t.title }}</a></li>
-      {% else %}
-      <li class="muted">Задач нет — добавьте типовой набор.</li>
-      {% endfor %}
-    </ul>
-    {% else %}
-    <p class="muted">Новая задача будет сразу привязана к этому проекту.</p>
-    {% endif %}
-    <p><a href="{{ url_for('projects.task_new', project=project.id) }}" class="btn btn-outline btn-sm">{% if project.is_template %}Добавить задачу в шаблон{% else %}Добавить задачу{% endif %}</a></p>
-  </div>
-
-  <div class="card projects-cms-card">
-    <h2 class="projects-cms-section-title">Отчётные этапы</h2>
-    {% for s in project.stages %}
-    <div class="projects-stage-panel">
-      <div class="projects-stage-header">
-        <h3 class="projects-stage-title">
-          {{ s.title }} — до {{ s.deadline.strftime('%d.%m.%Y') if s.deadline else '—' }}
-          {% if s.cost is defined and s.cost is not none %}<span class="muted"> · {{ '%.2f'|format(s.cost|float) }} BYN</span>{% endif %}
-          {% if s.released_at %}<span class="badge badge-success">Выпущен {{ s.released_at.strftime('%d.%m.%Y') }}</span>{% endif %}
-        </h3>
-        <div class="projects-stage-header-actions">
-          <a href="{{ url_for('projects.task_new', project=project.id, stage=s.id) }}" class="btn btn-outline btn-sm">Задача</a>
-          <form method="post" class="inline-form"
-                data-confirm="Удалить этот отчётный этап? Задачи останутся без этапа."
-                data-confirm-title="Удаление этапа"
-                data-confirm-ok="Удалить"
-                data-confirm-danger>
-            {{ csrf_field() }}
-            <input type="hidden" name="action" value="stage_delete">
-            <input type="hidden" name="stage_id" value="{{ s.id }}">
-            <button type="submit" class="btn btn-danger btn-sm">Удалить</button>
-          </form>
-        </div>
-      </div>
-      {% if s.release_notes %}<p class="projects-stage-notes">{{ s.release_notes }}</p>{% endif %}
-      {% for a in s.attachments %}
-      {% if loop.first %}<ul class="projects-stage-files">{% endif %}
-      <li>{{ a.original_name }}</li>
-      {% if loop.last %}</ul>{% endif %}
-      {% endfor %}
-      <form method="post" class="projects-cms-inline-form projects-stage-edit">
-        {{ csrf_field() }}
-        <input type="hidden" name="action" value="stage_update">
-        <input type="hidden" name="stage_id" value="{{ s.id }}">
-        <div class="form-row form-row--align-end">
+        <form method="post" class="projects-cms-form">
+          {{ csrf_field() }}
           <div class="form-group">
             <label>Название</label>
-            <input name="stage_title" class="form-control" value="{{ s.title }}" required>
+            <input name="name" class="form-control" required value="{{ project.name }}">
+          </div>
+          <div class="form-row">
+            <div class="form-group">
+              <label>Старт</label>
+              <input type="date" name="planned_start" class="form-control" value="{{ project.planned_start or '' }}">
+            </div>
+            <div class="form-group">
+              <label>Крайний срок</label>
+              <input type="date" name="deadline" class="form-control" value="{{ project.deadline or '' }}">
+            </div>
           </div>
           <div class="form-group">
-            <label>Срок</label>
-            <input type="date" name="stage_deadline" class="form-control" value="{{ s.deadline.isoformat() if s.deadline else '' }}">
-          </div>
-          <div class="form-group">
-            <label>Стоимость</label>
-            <input type="number" name="stage_cost" class="form-control" min="0" step="0.01" placeholder="0.00" value="{% if s.cost is defined and s.cost is not none %}{{ s.cost }}{% endif %}">
-          </div>
-          <div class="form-group">
-            <label>Ответственный</label>
-            <select name="stage_responsible_id" class="form-control">
-              <option value="">—</option>
-              {% for u in staff %}<option value="{{ u.id }}" {% if s.responsible_id == u.id %}selected{% endif %}>{{ u.full_name }}</option>{% endfor %}
+            <label>ГИП (аудитор)</label>
+            <select name="curator_auditor_id" class="form-control">
+              {% for u in staff if u.is_auditor %}
+              <option value="{{ u.id }}" {% if project.curator_auditor_id == u.id %}selected{% endif %}>{{ u.full_name }}</option>
+              {% endfor %}
             </select>
           </div>
-          <div class="form-group form-group--shrink">
-            <label class="projects-cms-action-label" aria-hidden="true">Сохранить</label>
-            <button type="submit" class="btn btn-outline btn-sm">Сохранить</button>
+          <div class="form-group">
+            <label>Куратор-заказчик</label>
+            <select name="customer_curator_id" class="form-control">
+              <option value="">—</option>
+              {% for u in customers %}
+              <option value="{{ u.id }}" {% if project.customer_curator_id == u.id %}selected{% endif %}>{{ u.full_name }}</option>
+              {% endfor %}
+            </select>
           </div>
+          {% if project.customer_curator_active_until %}
+          <p class="projects-cms-hint muted">Роль куратора-заказчика активна до {{ project.customer_curator_active_until.strftime('%d.%m.%Y') }}</p>
+          {% endif %}
+          <div class="form-actions">
+            <button type="submit" class="btn btn-primary">Сохранить</button>
+            {% if not project.is_template %}
+            <button type="submit" name="action" value="mark_template" class="btn btn-outline" formnovalidate>Сделать шаблоном</button>
+            {% endif %}
+          </div>
+        </form>
+      </div>
+
+      <div class="card projects-cms-card" id="project-tasks">
+        <h2 class="projects-cms-section-title">{% if project.is_template %}Задачи шаблона{% else %}Задачи проекта{% endif %}</h2>
+        {% if project.is_template %}
+        <p class="muted">Эти задачи копируются при развёртывании (статус сбрасывается в «К выполнению»).</p>
+        <ul class="projects-cms-list">
+          {% for t in template_tasks %}
+          <li><a href="{{ url_for('projects.task_detail', tid=t.id) }}">{{ t.title }}</a></li>
+          {% else %}
+          <li class="muted">Задач нет — добавьте типовой набор.</li>
+          {% endfor %}
+        </ul>
+        {% else %}
+        <p class="muted">Новая задача будет сразу привязана к этому проекту.</p>
+        {% endif %}
+        <p><a href="{{ url_for('projects.task_new', project=project.id) }}" class="btn btn-outline btn-sm">{% if project.is_template %}Добавить задачу в шаблон{% else %}Добавить задачу{% endif %}</a></p>
+      </div>
+
+      <div class="card projects-cms-card" id="project-stages">
+        <h2 class="projects-cms-section-title">Отчётные этапы</h2>
+        {% for s in project.stages %}
+        <div class="projects-stage-panel" id="stage-{{ s.id }}" data-stage-id="{{ s.id }}">
+          <div class="projects-stage-header">
+            <h3 class="projects-stage-title" data-stage-heading>
+              <span data-stage-heading-text>{{ s.title }} — до {{ s.deadline.strftime('%d.%m.%Y') if s.deadline else '—' }}{% if s.cost is defined and s.cost is not none %} · {{ '%.2f'|format(s.cost|float) }} BYN{% endif %}</span>
+              {% if s.released_at %}<span class="badge badge-success">Выпущен {{ s.released_at.strftime('%d.%m.%Y') }}</span>{% endif %}
+            </h3>
+            <div class="projects-stage-header-actions">
+              <a href="{{ url_for('projects.task_new', project=project.id, stage=s.id) }}" class="btn btn-outline btn-sm">Задача</a>
+              <form method="post" class="inline-form"
+                    data-confirm="Удалить этот отчётный этап? Задачи останутся без этапа."
+                    data-confirm-title="Удаление этапа"
+                    data-confirm-ok="Удалить"
+                    data-confirm-danger>
+                {{ csrf_field() }}
+                <input type="hidden" name="action" value="stage_delete">
+                <input type="hidden" name="stage_id" value="{{ s.id }}">
+                <button type="submit" class="btn btn-danger btn-sm">Удалить</button>
+              </form>
+            </div>
+          </div>
+          {% if s.release_notes %}<p class="projects-stage-notes">{{ s.release_notes }}</p>{% endif %}
+          {% for a in s.attachments %}
+          {% if loop.first %}<ul class="projects-stage-files">{% endif %}
+          <li>{{ a.original_name }}</li>
+          {% if loop.last %}</ul>{% endif %}
+          {% endfor %}
+          <form method="post" class="projects-cms-inline-form projects-stage-edit" data-stage-edit>
+            {{ csrf_field() }}
+            <input type="hidden" name="action" value="stage_update">
+            <input type="hidden" name="stage_id" value="{{ s.id }}">
+            <div class="form-row form-row--align-end">
+              <div class="form-group">
+                <label>Название</label>
+                <input name="stage_title" class="form-control" value="{{ s.title }}" required>
+              </div>
+              <div class="form-group">
+                <label>Срок</label>
+                <input type="date" name="stage_deadline" class="form-control" value="{{ s.deadline.isoformat() if s.deadline else '' }}">
+              </div>
+              <div class="form-group">
+                <label>Стоимость</label>
+                <input type="number" name="stage_cost" class="form-control" min="0" step="0.01" placeholder="0.00" value="{% if s.cost is defined and s.cost is not none %}{{ s.cost }}{% endif %}">
+              </div>
+              <div class="form-group">
+                <label>Ответственный</label>
+                <select name="stage_responsible_id" class="form-control">
+                  <option value="">—</option>
+                  {% for u in staff %}<option value="{{ u.id }}" {% if s.responsible_id == u.id %}selected{% endif %}>{{ u.full_name }}</option>{% endfor %}
+                </select>
+              </div>
+              <div class="form-group form-group--shrink">
+                <label class="projects-cms-action-label" aria-hidden="true">Сохранить</label>
+                <button type="submit" class="btn btn-outline btn-sm" data-stage-save-btn>Сохранить</button>
+              </div>
+            </div>
+            <p class="muted projects-stage-save-status" data-stage-save-status hidden></p>
+          </form>
+          {% if not s.released_at %}
+          <form method="post" enctype="multipart/form-data" class="projects-stage-release">
+            {{ csrf_field() }}
+            <input type="hidden" name="action" value="stage_release">
+            <input type="hidden" name="stage_id" value="{{ s.id }}">
+            <div class="form-group">
+              <label>Отчётная информация для заказчика</label>
+              <textarea name="release_notes" class="form-control" rows="3" placeholder="Акты, накладные, комментарии…"></textarea>
+            </div>
+            <div class="form-group projects-stage-file-row">
+              <label>Файлы (до 100 Мб)</label>
+              <input type="file" name="stage_files" class="form-control" multiple>
+            </div>
+            <div class="form-actions">
+              <button type="submit" class="btn btn-outline btn-sm">Выпустить этап</button>
+            </div>
+          </form>
+          {% endif %}
         </div>
-      </form>
-      {% if not s.released_at %}
-      <form method="post" enctype="multipart/form-data" class="projects-stage-release">
-        {{ csrf_field() }}
-        <input type="hidden" name="action" value="stage_release">
-        <input type="hidden" name="stage_id" value="{{ s.id }}">
-        <div class="form-group">
-          <label>Отчётная информация для заказчика</label>
-          <textarea name="release_notes" class="form-control" rows="3" placeholder="Акты, накладные, комментарии…"></textarea>
-        </div>
-        <div class="form-group projects-stage-file-row">
-          <label>Файлы (до 100 Мб)</label>
-          <input type="file" name="stage_files" class="form-control" multiple>
-        </div>
-        <div class="form-actions">
-          <button type="submit" class="btn btn-outline btn-sm">Выпустить этап</button>
-        </div>
-      </form>
-      {% endif %}
+        {% else %}
+        <p class="muted">Этапов пока нет — добавьте ниже.</p>
+        {% endfor %}
+
+        <form method="post" class="projects-cms-inline-form" id="stage-add">
+          {{ csrf_field() }}
+          <input type="hidden" name="action" value="stage_add">
+          <p class="projects-cms-subheading">Добавить этап</p>
+          <div class="form-row form-row--align-end">
+            <div class="form-group">
+              <label>Название</label>
+              <input name="stage_title" class="form-control" placeholder="Название этапа" required>
+            </div>
+            <div class="form-group">
+              <label>Срок</label>
+              <input type="date" name="stage_deadline" class="form-control">
+            </div>
+            <div class="form-group">
+              <label>Стоимость</label>
+              <input type="number" name="stage_cost" class="form-control" min="0" step="0.01" placeholder="0.00">
+            </div>
+            <div class="form-group">
+              <label>Ответственный</label>
+              <select name="stage_responsible_id" class="form-control">
+                <option value="">—</option>
+                {% for u in staff %}<option value="{{ u.id }}">{{ u.full_name }}</option>{% endfor %}
+              </select>
+            </div>
+            <div class="form-group form-group--shrink">
+              <label class="projects-cms-action-label" aria-hidden="true">Добавить</label>
+              <button type="submit" class="btn btn-outline btn-sm">Добавить</button>
+            </div>
+          </div>
+        </form>
+      </div>
+
+      <div class="card projects-cms-card" id="project-fields">
+        <h2 class="projects-cms-section-title">Кастомные поля задач</h2>
+        <ul class="projects-cms-list">
+          {% for f in project.custom_fields %}
+          <li>{{ f.name }} ({{ project_field_type_labels.get(f.field_type, f.field_type) }}, {{ project_visibility_labels.get(f.visibility, f.visibility) }})</li>
+          {% else %}
+          <li class="muted">Поля не заданы</li>
+          {% endfor %}
+        </ul>
+        <form method="post" class="projects-cms-inline-form">
+          {{ csrf_field() }}
+          <input type="hidden" name="action" value="field_add">
+          <p class="projects-cms-subheading">Новое поле</p>
+          <div class="form-row form-row--align-end">
+            <div class="form-group">
+              <label>Название</label>
+              <input name="field_name" class="form-control" placeholder="Название поля" required>
+            </div>
+            <div class="form-group">
+              <label>Тип</label>
+              <select name="field_type" class="form-control">
+                <option value="text">Текст</option>
+                <option value="date">Дата</option>
+                <option value="url">Ссылка</option>
+                <option value="budget">Бюджет</option>
+                <option value="tag">Тег</option>
+              </select>
+            </div>
+            <div class="form-group">
+              <label>Видимость</label>
+              <select name="visibility" class="form-control">
+                <option value="all">Все</option>
+                <option value="staff">Персонал</option>
+                <option value="auditor">Только ГИП</option>
+              </select>
+            </div>
+            <div class="form-group form-group--shrink">
+              <label class="projects-cms-action-label" aria-hidden="true">Добавить</label>
+              <button type="submit" class="btn btn-outline btn-sm">Добавить</button>
+            </div>
+          </div>
+        </form>
+      </div>
     </div>
-    {% else %}
-    <p class="muted">Этапов пока нет — добавьте ниже.</p>
-    {% endfor %}
-
-    <form method="post" class="projects-cms-inline-form">
-      {{ csrf_field() }}
-      <input type="hidden" name="action" value="stage_add">
-      <p class="projects-cms-subheading">Добавить этап</p>
-      <div class="form-row form-row--align-end">
-        <div class="form-group">
-          <label>Название</label>
-          <input name="stage_title" class="form-control" placeholder="Название этапа" required>
-        </div>
-        <div class="form-group">
-          <label>Срок</label>
-          <input type="date" name="stage_deadline" class="form-control">
-        </div>
-        <div class="form-group">
-          <label>Стоимость</label>
-          <input type="number" name="stage_cost" class="form-control" min="0" step="0.01" placeholder="0.00">
-        </div>
-        <div class="form-group">
-          <label>Ответственный</label>
-          <select name="stage_responsible_id" class="form-control">
-            <option value="">—</option>
-            {% for u in staff %}<option value="{{ u.id }}">{{ u.full_name }}</option>{% endfor %}
-          </select>
-        </div>
-        <div class="form-group form-group--shrink">
-          <label class="projects-cms-action-label" aria-hidden="true">Добавить</label>
-          <button type="submit" class="btn btn-outline btn-sm">Добавить</button>
-        </div>
-      </div>
-    </form>
-  </div>
-
-  <div class="card projects-cms-card">
-    <h2 class="projects-cms-section-title">Кастомные поля задач</h2>
-    <ul class="projects-cms-list">
-      {% for f in project.custom_fields %}
-      <li>{{ f.name }} ({{ project_field_type_labels.get(f.field_type, f.field_type) }}, {{ project_visibility_labels.get(f.visibility, f.visibility) }})</li>
-      {% else %}
-      <li class="muted">Поля не заданы</li>
-      {% endfor %}
-    </ul>
-    <form method="post" class="projects-cms-inline-form">
-      {{ csrf_field() }}
-      <input type="hidden" name="action" value="field_add">
-      <p class="projects-cms-subheading">Новое поле</p>
-      <div class="form-row form-row--align-end">
-        <div class="form-group">
-          <label>Название</label>
-          <input name="field_name" class="form-control" placeholder="Название поля" required>
-        </div>
-        <div class="form-group">
-          <label>Тип</label>
-          <select name="field_type" class="form-control">
-            <option value="text">Текст</option>
-            <option value="date">Дата</option>
-            <option value="url">Ссылка</option>
-            <option value="budget">Бюджет</option>
-            <option value="tag">Тег</option>
-          </select>
-        </div>
-        <div class="form-group">
-          <label>Видимость</label>
-          <select name="visibility" class="form-control">
-            <option value="all">Все</option>
-            <option value="staff">Персонал</option>
-            <option value="auditor">Только ГИП</option>
-          </select>
-        </div>
-        <div class="form-group form-group--shrink">
-          <label class="projects-cms-action-label" aria-hidden="true">Добавить</label>
-          <button type="submit" class="btn btn-outline btn-sm">Добавить</button>
-        </div>
-      </div>
-    </form>
   </div>
 </div>
+<script>
+(function () {
+  var csrfEl = document.querySelector('meta[name="csrf-token"]');
+  var csrf = csrfEl ? csrfEl.content : "";
+
+  function setActiveNav(id) {
+    document.querySelectorAll("[data-stage-nav]").forEach(function (a) {
+      a.classList.toggle("is-active", String(a.getAttribute("data-stage-nav")) === String(id));
+    });
+  }
+
+  document.querySelectorAll("[data-stage-nav]").forEach(function (a) {
+    a.addEventListener("click", function () {
+      setActiveNav(a.getAttribute("data-stage-nav"));
+    });
+  });
+
+  if ("IntersectionObserver" in window) {
+    var map = {
+      "project-main": "main",
+      "project-tasks": "tasks",
+      "stage-add": "add",
+      "project-fields": "fields"
+    };
+    document.querySelectorAll(".projects-stage-panel[data-stage-id]").forEach(function (el) {
+      map[el.id] = el.getAttribute("data-stage-id");
+    });
+    var observer = new IntersectionObserver(function (entries) {
+      entries.forEach(function (entry) {
+        if (!entry.isIntersecting) return;
+        var key = map[entry.target.id];
+        if (key != null) setActiveNav(key);
+      });
+    }, { rootMargin: "-20% 0px -60% 0px", threshold: 0.01 });
+    Object.keys(map).forEach(function (id) {
+      var el = document.getElementById(id);
+      if (el) observer.observe(el);
+    });
+  }
+
+  document.querySelectorAll("form[data-stage-edit]").forEach(function (form) {
+    form.addEventListener("submit", function (e) {
+      e.preventDefault();
+      var btn = form.querySelector("[data-stage-save-btn]");
+      var status = form.querySelector("[data-stage-save-status]");
+      var panel = form.closest("[data-stage-id]");
+      var heading = panel ? panel.querySelector("[data-stage-heading-text]") : null;
+      var navLink = panel
+        ? document.querySelector('[data-stage-nav="' + panel.getAttribute("data-stage-id") + '"]')
+        : null;
+      var fd = new FormData(form);
+      if (btn) {
+        btn.disabled = true;
+        btn.textContent = "Сохранение…";
+      }
+      if (status) {
+        status.hidden = false;
+        status.textContent = "";
+        status.classList.remove("is-ok", "is-err");
+      }
+      fetch(form.getAttribute("action") || window.location.href, {
+        method: "POST",
+        body: fd,
+        headers: {
+          "X-Requested-With": "XMLHttpRequest",
+          Accept: "application/json",
+          "X-CSRFToken": csrf || (fd.get("csrf_token") || ""),
+        },
+        credentials: "same-origin",
+      })
+        .then(function (res) {
+          return res.json().then(function (data) {
+            return { ok: res.ok, data: data };
+          });
+        })
+        .then(function (r) {
+          if (!r.ok || !r.data || !r.data.ok) {
+            throw new Error((r.data && r.data.error) || "Ошибка сохранения");
+          }
+          var st = r.data.stage || {};
+          if (heading) {
+            var text = (st.title || "") + " — до " + (st.deadline_label || "—");
+            if (st.cost_label) text += " · " + st.cost_label;
+            heading.textContent = text;
+          }
+          if (navLink) {
+            var titleEl = navLink.querySelector(".projects-stages-nav-title");
+            var metaEl = navLink.querySelector(".projects-stages-nav-meta");
+            if (titleEl) titleEl.textContent = st.title || "";
+            if (metaEl) {
+              var meta = st.deadline
+                ? ("до " + (st.deadline_label || ""))
+                : "без срока";
+              if (st.released) meta += " · выпущен";
+              metaEl.textContent = meta;
+            }
+          }
+          if (status) {
+            status.textContent = r.data.message || "Сохранено";
+            status.classList.add("is-ok");
+          }
+          if (btn) {
+            btn.textContent = "Сохранено";
+            setTimeout(function () {
+              btn.textContent = "Сохранить";
+              btn.disabled = false;
+            }, 1200);
+          }
+        })
+        .catch(function (err) {
+          if (status) {
+            status.textContent = err.message || "Не удалось сохранить";
+            status.classList.add("is-err");
+          }
+          if (btn) {
+            btn.disabled = false;
+            btn.textContent = "Сохранить";
+          }
+        });
+    });
+  });
+})();
+</script>
 {% endblock %}

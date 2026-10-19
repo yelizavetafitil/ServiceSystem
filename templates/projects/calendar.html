@@ -1,59 +1,83 @@
 {% extends "base.html" %}
-
 {% block title %}Проекты — календарь{% endblock %}
-
-{% block head %}<link rel="stylesheet" href="{{ url_for('static', filename='css/projects.css') }}?v=37">{% endblock %}
-
+{% block head %}<link rel="stylesheet" href="{{ url_for('static', filename='css/projects.css') }}?v=43">{% endblock %}
 {% block content %}
-
 <div class="container cms-page projects-page">
-
   {% include "projects/_arm_header.html" %}
 
-  <div class="projects-gantt-toolbar">
-
+  <div class="projects-gantt-toolbar projects-calendar-toolbar">
     {% for m, lbl in [('month','Месяц'),('workweek','Рабочая неделя'),('day','День'),('team','Расписание команды')] %}
-
-    <a class="projects-view-tab{% if cal_mode == m %} is-active{% endif %}" href="{{ url_for('projects.arm', view='calendar', project=filter_project, cal_mode=m) }}">{{ lbl }}</a>
-
+    {% if filter_assignee %}
+    <a class="projects-view-tab{% if cal_mode == m %} is-active{% endif %}"
+       href="{{ url_for('projects.arm', view='calendar', project=filter_project, cal_mode=m, assignee=filter_assignee) }}">{{ lbl }}</a>
+    {% else %}
+    <a class="projects-view-tab{% if cal_mode == m %} is-active{% endif %}"
+       href="{{ url_for('projects.arm', view='calendar', project=filter_project, cal_mode=m) }}">{{ lbl }}</a>
+    {% endif %}
     {% endfor %}
-
     <a class="projects-view-tab" href="{{ url_for('projects.calendar_settings') }}">Синхронизация</a>
 
+    <form method="get" class="projects-calendar-assignee-filter" aria-label="Фильтр по исполнителю">
+      <input type="hidden" name="view" value="calendar">
+      <input type="hidden" name="cal_mode" value="{{ cal_mode }}">
+      {% if filter_project %}<input type="hidden" name="project" value="{{ filter_project }}">{% endif %}
+      <label for="calendar-assignee" class="projects-calendar-assignee-label">Исполнитель</label>
+      <select id="calendar-assignee" name="assignee" class="form-control" onchange="this.form.submit()">
+        <option value="">Все исполнители</option>
+        {% for u in calendar_executors %}
+        <option value="{{ u.id }}" {% if filter_assignee == u.id %}selected{% endif %}>{{ u.full_name }}</option>
+        {% endfor %}
+      </select>
+    </form>
   </div>
 
+  {% if executor_workload %}
+  {% set max_load = executor_workload[0].load if executor_workload[0].load else 1 %}
+  <div class="projects-calendar-load-bar" aria-label="Загрузка исполнителей">
+    <span class="projects-calendar-load-bar-title">Загрузка</span>
+    {% for w in executor_workload %}
+    {% set band = 'high' if w.load >= 20 else ('mid' if w.load >= 10 else 'low') %}
+    {% if filter_assignee == w.id %}
+    <a class="projects-calendar-load-chip projects-calendar-load-chip--{{ band }} is-active"
+       href="{{ url_for('projects.arm', view='calendar', project=filter_project, cal_mode=cal_mode) }}"
+       title="{{ w.name }}: {{ w.load }} чел.-дн. — сбросить фильтр">
+    {% else %}
+    <a class="projects-calendar-load-chip projects-calendar-load-chip--{{ band }}"
+       href="{{ url_for('projects.arm', view='calendar', project=filter_project, cal_mode=cal_mode, assignee=w.id) }}"
+       title="{{ w.name }}: {{ w.load }} чел.-дн. — показать только этого исполнителя">
+    {% endif %}
+      <span class="projects-calendar-load-chip-name">{{ w.name }}</span>
+      <span class="projects-calendar-load-chip-val">{{ w.load }}</span>
+      <span class="projects-calendar-load-chip-bar" style="--load: {{ ([100, (w.load * 100 / max_load)|round|int]|min) }}%"></span>
+    </a>
+    {% endfor %}
+  </div>
+  {% elif cal_mode == 'team' %}
+  <p class="muted projects-calendar-load-empty">Нет задач с исполнителями в этом периоде.</p>
+  {% endif %}
+
   <div class="projects-calendar-grid{% if cal_mode == 'day' %} projects-calendar-grid--day{% elif cal_mode == 'workweek' %} projects-calendar-grid--week{% endif %}">
-
     {% for d in month_grid %}
-
     {% set load = team_load.get(d) if team_load else 0 %}
     {% set day_tasks = tasks_by_day.get(d, []) if tasks_by_day is defined else [] %}
-
     <div class="projects-calendar-cell{% if d.month != today.month and cal_mode == 'month' %} is-muted{% endif %}{% if load %} projects-load-{{ 'high' if load >= 5 else ('mid' if load >= 3 else 'low') }}{% endif %}">
-
       <span class="projects-calendar-day">{% if cal_mode == 'month' %}{{ d.day }}{% else %}{% set wd = ('Пн','Вт','Ср','Чт','Пт','Сб','Вс') %}{{ wd[d.weekday()] }} {{ d.strftime('%d.%m') }}{% endif %}</span>
-
       {% if cal_mode == 'team' %}<span class="projects-calendar-load">{{ load }} задач</span>{% endif %}
-
       {% for t in day_tasks %}
       {% set s = t.start_date or t.due_date %}
       {% set e = t.due_date or t.start_date %}
       {% set is_start = s == d %}
       {% set is_end = e == d %}
       {% set multi = s and e and s != e %}
+      {% set who = t.assignee.full_name if t.assignee else '' %}
       <a class="projects-calendar-event p-{{ t.priority }}{% if multi %} is-span{% if is_start %} is-span-start{% elif is_end %} is-span-end{% else %} is-span-mid{% endif %}{% endif %}"
          href="{{ url_for('projects.task_detail', tid=t.id) }}"
-         title="{{ t.title }}{% if s and e %} · {{ s.strftime('%d.%m') }}—{{ e.strftime('%d.%m.%Y') }}{% endif %}">
-        {{ t.title[:36] }}
+         title="{{ t.title }}{% if who %} · {{ who }}{% endif %}{% if s and e %} · {{ s.strftime('%d.%m') }}—{{ e.strftime('%d.%m.%Y') }}{% endif %}">
+        {% if who and cal_mode == 'team' %}<span class="projects-calendar-event-who">{{ who.split()[0] }}</span> {% endif %}{{ t.title[:32] }}
       </a>
       {% endfor %}
-
     </div>
-
     {% endfor %}
-
   </div>
-
 </div>
-
 {% endblock %}

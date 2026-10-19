@@ -159,6 +159,9 @@ def arm():
     if gantt_group not in ("project", "none"):
         gantt_group = "project"
     cal_mode = request.args.get("cal_mode", "month")
+    if cal_mode not in ("month", "workweek", "day", "team"):
+        cal_mode = "month"
+    filter_assignee = request.args.get("assignee", type=int)
     projects = _projects_visible()
     include_done = view in ("kanban", "gantt")
     if current_user.is_admin or current_user.is_auditor:
@@ -182,6 +185,7 @@ def arm():
         view=view,
         projects=projects,
         filter_project=project_id,
+        filter_assignee=filter_assignee,
         tasks=tasks,
         kanban_labels=KANBAN_LABELS,
         columns=TASK_KANBAN_COLUMNS,
@@ -209,12 +213,24 @@ def arm():
         )
     if view == "calendar":
         month_grid = _month_grid(cal_mode)
+        # Полоса загрузки — по всем задачам периода; сетка — с учётом фильтра.
+        executor_workload = _executor_workload(tasks, list(month_grid))
+        calendar_executors = _calendar_executors(
+            project_id, projects, extra_ids=[w["id"] for w in executor_workload]
+        )
+        grid_tasks = (
+            [t for t in tasks if _task_involves_user(t, filter_assignee)]
+            if filter_assignee
+            else tasks
+        )
         return render_template(
             "projects/calendar.html",
             **ctx,
             month_grid=month_grid,
-            tasks_by_day=_tasks_by_day(tasks, list(month_grid)),
-            team_load=_team_load(tasks) if cal_mode == "team" else None,
+            tasks_by_day=_tasks_by_day(grid_tasks, list(month_grid)),
+            team_load=_team_load(grid_tasks) if cal_mode == "team" else None,
+            calendar_executors=calendar_executors,
+            executor_workload=executor_workload,
         )
     gantt_anchor = _parse_form_date(request.args.get("anchor"))
     gantt = _gantt_layout(
@@ -418,18 +434,46 @@ def manage_edit(pid):
         elif action == "stage_update":
             sid = request.form.get("stage_id", type=int)
             st = db.session.get(ProjectStage, sid) if sid else None
-            if st and st.project_id == proj.id:
+            wants_json = (
+                request.headers.get("X-Requested-With") == "XMLHttpRequest"
+                or "application/json" in (request.headers.get("Accept") or "")
+            )
+            if not st or st.project_id != proj.id:
+                if wants_json:
+                    return jsonify({"ok": False, "error": "Этап не найден"}), 404
+            else:
                 title = (request.form.get("stage_title") or "").strip()
-                if title:
+                if not title:
+                    if wants_json:
+                        return jsonify({"ok": False, "error": "Укажите название этапа"}), 400
+                else:
                     st.title = title
-                if "stage_deadline" in request.form:
-                    st.deadline = _parse_form_date(request.form.get("stage_deadline"))
-                if "stage_cost" in request.form:
-                    st.cost = _parse_stage_cost(request.form.get("stage_cost"))
-                if "stage_responsible_id" in request.form:
-                    st.responsible_id = request.form.get("stage_responsible_id", type=int) or None
-                db.session.commit()
-                flash("Этап обновлён.", "success")
+                    if "stage_deadline" in request.form:
+                        st.deadline = _parse_form_date(request.form.get("stage_deadline"))
+                    if "stage_cost" in request.form:
+                        st.cost = _parse_stage_cost(request.form.get("stage_cost"))
+                    if "stage_responsible_id" in request.form:
+                        st.responsible_id = request.form.get("stage_responsible_id", type=int) or None
+                    db.session.commit()
+                    if wants_json:
+                        cost_val = float(st.cost) if st.cost is not None else None
+                        return jsonify(
+                            {
+                                "ok": True,
+                                "message": "Этап сохранён",
+                                "stage": {
+                                    "id": st.id,
+                                    "title": st.title,
+                                    "deadline": st.deadline.isoformat() if st.deadline else None,
+                                    "deadline_label": st.deadline.strftime("%d.%m.%Y") if st.deadline else "—",
+                                    "cost": cost_val,
+                                    "cost_label": f"{cost_val:.2f} BYN" if cost_val is not None else None,
+                                    "responsible_id": st.responsible_id,
+                                    "released": bool(st.released_at),
+                                },
+                            }
+                        )
+                    flash("Этап обновлён.", "success")
         elif action == "stage_delete":
             sid = request.form.get("stage_id", type=int)
             st = db.session.get(ProjectStage, sid) if sid else None
@@ -1081,6 +1125,86 @@ def _team_load(tasks):
             if (d - s).days > 800:
                 break
     return load
+
+
+def _calendar_executors(
+    project_id: int | None,
+    projects,
+    extra_ids: list[int] | None = None,
+) -> list[User]:
+    """Исполнители для фильтра календаря: по проекту или объединение видимых."""
+    seen: set[int] = set()
+    out: list[User] = []
+    if project_id:
+        base = executors_for_project(project_id)
+    else:
+        base = []
+        for p in projects or []:
+            base.extend(executors_for_project(p.id))
+    for u in base:
+        if u.id in seen:
+            continue
+        seen.add(u.id)
+        out.append(u)
+    missing = [i for i in (extra_ids or []) if i not in seen]
+    if missing:
+        for u in User.query.filter(User.id.in_(missing), User.is_active.is_(True)).all():
+            if u.id in seen:
+                continue
+            seen.add(u.id)
+            out.append(u)
+    out.sort(key=lambda u: (u.full_name or "").lower())
+    return out
+
+
+def _task_people(t) -> list[User]:
+    """Исполнитель + соисполнители задачи."""
+    people: list[User] = []
+    seen: set[int] = set()
+    if t.assignee_id and t.assignee:
+        people.append(t.assignee)
+        seen.add(t.assignee_id)
+    for c in t.collaborators.all():
+        if c.user_id in seen or not c.user:
+            continue
+        seen.add(c.user_id)
+        people.append(c.user)
+    return people
+
+
+def _task_involves_user(t, user_id: int) -> bool:
+    if t.assignee_id == user_id:
+        return True
+    return any(c.user_id == user_id for c in t.collaborators.all())
+
+
+def _executor_workload(tasks, days: list[date]) -> list[dict]:
+    """Загрузка исполнителей: число человеко-дней задач в видимой сетке."""
+    day_set = set(days)
+    load: dict[int, int] = {}
+    names: dict[int, str] = {}
+    for t in tasks:
+        rng = _task_date_range(t)
+        if not rng:
+            continue
+        s, e = rng
+        days_in = 0
+        d = s
+        while d <= e:
+            if d in day_set:
+                days_in += 1
+            d += timedelta(days=1)
+            if (d - s).days > 800:
+                break
+        if not days_in:
+            continue
+        for u in _task_people(t):
+            load[u.id] = load.get(u.id, 0) + days_in
+            names[u.id] = u.full_name or f"#{u.id}"
+    return [
+        {"id": uid, "name": names[uid], "load": load[uid]}
+        for uid in sorted(load.keys(), key=lambda i: (-load[i], names[i].lower()))
+    ]
 
 
 def _format_gantt_tick(d: date, scale: str) -> str:

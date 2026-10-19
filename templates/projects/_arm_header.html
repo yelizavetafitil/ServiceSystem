@@ -33,6 +33,12 @@
       <input type="hidden" name="group" value="{{ gantt_group }}">
       {% endif %}
       {% endif %}
+      {% if view == 'calendar' and cal_mode is defined %}
+      <input type="hidden" name="cal_mode" value="{{ cal_mode }}">
+      {% endif %}
+      {% if view == 'calendar' and filter_assignee %}
+      <input type="hidden" name="assignee" value="{{ filter_assignee }}">
+      {% endif %}
 
       <select name="project" class="form-control" onchange="this.form.submit()">
 

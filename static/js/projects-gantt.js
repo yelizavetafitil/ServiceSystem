@@ -197,9 +197,7 @@
 
 
 
-    var sideW = sideWidth();
-
-    var w = Math.max(0, body.clientWidth - sideW);
+    var w = body.clientWidth;
 
     var h = body.clientHeight;
 
@@ -207,11 +205,12 @@
 
 
 
+    // SVG на всю ширину body; левая колонка выше по z-index и перекрывает линии
     svg.setAttribute("width", w);
 
     svg.setAttribute("height", h);
 
-    svg.style.left = sideW + "px";
+    svg.style.left = "0";
 
     svg.style.width = w + "px";
 
@@ -263,11 +262,15 @@
 
 
 
+      if (!isFinite(x1) || !isFinite(x2) || !isFinite(y1) || !isFinite(y2)) return;
+
+      if (y1 < -20 || y2 < -20 || y1 > h + 20 || y2 > h + 20) return;
+
+
+
       if (Math.abs(y1 - y2) < 2 && x2 > x1) {
 
-        var d = "M" + x1 + "," + y1 + " L" + x2 + "," + y2;
-
-        appendPath(svg, d);
+        appendPath(svg, "M" + x1 + "," + y1 + " L" + x2 + "," + y2);
 
         return;
 
@@ -279,9 +282,9 @@
 
       if (gutter <= x1 + 2) gutter = x1 + 8;
 
-      var d = "M" + x1 + "," + y1 + " H" + gutter + " V" + y2 + " H" + x2;
 
-      appendPath(svg, d);
+
+      appendPath(svg, "M" + x1 + "," + y1 + " H" + gutter + " V" + y2 + " H" + x2);
 
     });
 
