@@ -10,6 +10,12 @@
 
   var csrf = csrfEl ? csrfEl.content : "";
 
+  var flagsEl = document.getElementById("gantt-ui-flags");
+
+  var uiFlags = { canEdit: false };
+
+  try { if (flagsEl) uiFlags = JSON.parse(flagsEl.textContent || "{}"); } catch (e) {}
+
   var spanStart = chart.getAttribute("data-span-start");
 
   var spanEnd = chart.getAttribute("data-span-end");
@@ -270,7 +276,7 @@
 
       if (Math.abs(y1 - y2) < 2 && x2 > x1) {
 
-        appendPath(svg, "M" + x1 + "," + y1 + " L" + x2 + "," + y2);
+        appendPath(svg, "M" + x1 + "," + y1 + " L" + x2 + "," + y2, link);
 
         return;
 
@@ -284,7 +290,7 @@
 
 
 
-      appendPath(svg, "M" + x1 + "," + y1 + " H" + gutter + " V" + y2 + " H" + x2);
+      appendPath(svg, "M" + x1 + "," + y1 + " H" + gutter + " V" + y2 + " H" + x2, link);
 
     });
 
@@ -292,17 +298,81 @@
 
 
 
-  function appendPath(svg, d) {
+  function appendPath(svg, d, link) {
 
-    var path = document.createElementNS("http://www.w3.org/2000/svg", "path");
+    var visible = document.createElementNS("http://www.w3.org/2000/svg", "path");
 
-    path.setAttribute("d", d);
+    visible.setAttribute("d", d);
 
-    path.setAttribute("class", "projects-gantt-fs-path");
+    visible.setAttribute("class", "projects-gantt-fs-path");
 
-    path.setAttribute("marker-end", "url(#gantt-fs-arrow)");
+    visible.setAttribute("marker-end", "url(#gantt-fs-arrow)");
 
-    svg.appendChild(path);
+    if (link && link.id) {
+
+      visible.setAttribute("data-link-id", String(link.id));
+
+    }
+
+    svg.appendChild(visible);
+
+
+
+    if (!uiFlags.canEdit || !link || !link.id) return;
+
+
+
+    var hit = document.createElementNS("http://www.w3.org/2000/svg", "path");
+
+    hit.setAttribute("d", d);
+
+    hit.setAttribute("class", "projects-gantt-fs-hit");
+
+    hit.setAttribute("data-link-id", String(link.id));
+
+    hit.setAttribute("role", "button");
+
+    hit.setAttribute("tabindex", "0");
+
+    hit.setAttribute("aria-label", "Удалить связь FS");
+
+    hit.setAttribute("title", "Удалить связь");
+
+    hit.addEventListener("mouseenter", function () {
+
+      visible.classList.add("is-hover");
+
+    });
+
+    hit.addEventListener("mouseleave", function () {
+
+      visible.classList.remove("is-hover");
+
+    });
+
+    hit.addEventListener("click", function (e) {
+
+      e.preventDefault();
+
+      e.stopPropagation();
+
+      deleteGanttLink(link.id);
+
+    });
+
+    hit.addEventListener("keydown", function (e) {
+
+      if (e.key === "Enter" || e.key === " ") {
+
+        e.preventDefault();
+
+        deleteGanttLink(link.id);
+
+      }
+
+    });
+
+    svg.appendChild(hit);
 
   }
 
@@ -391,10 +461,6 @@
   }
 
 
-
-  var flagsEl = document.getElementById("gantt-ui-flags");
-  var uiFlags = { canEdit: false };
-  try { if (flagsEl) uiFlags = JSON.parse(flagsEl.textContent || "{}"); } catch (e) {}
 
   var linkMode = false;
   var linkFromId = null;

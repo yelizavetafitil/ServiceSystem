@@ -4,9 +4,9 @@
 
 {% block head %}
 
-<link rel="stylesheet" href="{{ url_for('static', filename='css/projects.css') }}?v=44">
+<link rel="stylesheet" href="{{ url_for('static', filename='css/projects.css') }}?v=47">
 
-<script defer src="{{ url_for('static', filename='js/projects-gantt.js') }}?v=19"></script>
+<script defer src="{{ url_for('static', filename='js/projects-gantt.js') }}?v=20"></script>
 
 {% endblock %}
 
@@ -21,30 +21,10 @@
   {% include "projects/_arm_header.html" %}
 
   <div class="projects-gantt-toolbar">
-
-    {% for sc, lbl in [('day','День'),('week','Неделя'),('month','Месяц'),('quarter','Квартал')] %}
-
-    <a class="projects-view-tab{% if gantt_scale == sc %} is-active{% endif %}" href="{{ url_for('projects.arm', view='gantt', project=filter_project, scale=sc, group=gantt_group) }}">{{ lbl }}</a>
-
-    {% endfor %}
-
-    {% if not filter_project %}
-
-    <span class="projects-gantt-toolbar-sep"></span>
-
-    {% for gr, gl in [('project','По проектам'),('none','Список')] %}
-
-    <a class="projects-view-tab projects-view-tab--sm{% if gantt_group == gr %} is-active{% endif %}" href="{{ url_for('projects.arm', view='gantt', scale=gantt_scale, group=gr) }}">{{ gl }}</a>
-
-    {% endfor %}
-
-    {% endif %}
-
-    <span class="projects-gantt-toolbar-sep"></span>
     <div class="projects-gantt-pan" role="group" aria-label="Прокрутка шкалы">
-      <button type="button" class="btn btn-outline btn-sm" id="gantt-pan-left" title="Прокрутить в прошлое">←</button>
+      <button type="button" class="btn btn-outline btn-sm" id="gantt-pan-left" title="Прокрутить к началу проекта">←</button>
       <button type="button" class="btn btn-outline btn-sm" id="gantt-pan-today" title="Показать сегодня">Сегодня</button>
-      <button type="button" class="btn btn-outline btn-sm" id="gantt-pan-right" title="Прокрутить в будущее">→</button>
+      <button type="button" class="btn btn-outline btn-sm" id="gantt-pan-right" title="Прокрутить к дедлайну проекта">→</button>
     </div>
 
     {% if gantt_can_edit %}
@@ -52,7 +32,6 @@
     <button type="button" class="btn btn-outline btn-sm" id="gantt-link-mode-btn" data-gantt-link-toggle>Связать стрелкой</button>
     <span class="muted projects-gantt-link-hint" id="gantt-link-hint" hidden>Клик: предшественник, затем последователь (или ПКМ по задаче)</span>
     {% endif %}
-
   </div>
 
   {% if gantt_can_edit %}

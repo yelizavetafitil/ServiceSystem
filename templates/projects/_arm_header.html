@@ -1,71 +1,119 @@
 <div class="page-header projects-arm-header">
-
   <div class="page-header-main">
-
     <h1>Управление проектами</h1>
-
     <div class="projects-view-tabs" role="tablist">
-
       {% if current_user.is_admin or current_user.is_auditor %}
       <a class="projects-view-tab{% if view == 'gantt' %} is-active{% endif %}" href="{{ url_for('projects.arm', view='gantt', project=filter_project) }}">Ганта</a>
-
       <a class="projects-view-tab{% if view == 'week' %} is-active{% endif %}" href="{{ url_for('projects.arm', view='week', project=filter_project) }}">Неделя</a>
       {% endif %}
-
       <a class="projects-view-tab{% if view == 'kanban' %} is-active{% endif %}" href="{{ url_for('projects.arm', view='kanban', project=filter_project) }}">Канбан</a>
-
       {% if current_user.is_admin or current_user.is_auditor %}
       <a class="projects-view-tab{% if view == 'calendar' %} is-active{% endif %}" href="{{ url_for('projects.arm', view='calendar', project=filter_project) }}">Календарь</a>
       {% endif %}
-
     </div>
-
   </div>
 
   <div class="page-header-actions">
+    {% set fp_name = (projects|selectattr('id', 'equalto', filter_project)|map(attribute='name')|first) if filter_project else none %}
+    {% set fp_name = fp_name or (('№' ~ filter_project) if filter_project else none) %}
+    {% set ns = namespace(summary=(fp_name or 'Все проекты')) %}
+    {% if view == 'gantt' and gantt_scale is defined %}
+      {% set ns.summary = ns.summary ~ ' · зум ' ~ {'day':'день','week':'неделя','month':'месяц','quarter':'квартал'}.get(gantt_scale, gantt_scale) %}
+    {% elif view == 'calendar' and cal_mode is defined %}
+      {% set ns.summary = ns.summary ~ ' · ' ~ {'month':'месяц','workweek':'раб. неделя','day':'день','team':'команда'}.get(cal_mode, cal_mode) %}
+    {% endif %}
+    {% set filter_summary = ns.summary %}
 
-    <form method="get" class="projects-filter-form">
+    <div class="projects-filters" data-projects-filters>
+      <button type="button"
+              class="btn btn-outline btn-sm projects-filters-toggle"
+              data-projects-filters-toggle
+              aria-expanded="false"
+              aria-haspopup="true"
+              title="{{ filter_summary }}">
+        Фильтры
+        <span class="projects-filters-summary">{{ filter_summary if filter_summary|length <= 36 else (filter_summary[:35] ~ '…') }}</span>
+        <span class="projects-filters-caret" aria-hidden="true">▾</span>
+      </button>
 
-      <input type="hidden" name="view" value="{{ view }}">
-      {% if view == 'gantt' and gantt_scale is defined %}
-      <input type="hidden" name="scale" value="{{ gantt_scale }}">
-      {% if gantt_group is defined %}
-      <input type="hidden" name="group" value="{{ gantt_group }}">
-      {% endif %}
-      {% endif %}
-      {% if view == 'calendar' and cal_mode is defined %}
-      <input type="hidden" name="cal_mode" value="{{ cal_mode }}">
-      {% endif %}
-      {% if view == 'calendar' and filter_assignee %}
-      <input type="hidden" name="assignee" value="{{ filter_assignee }}">
-      {% endif %}
+      <form method="get" class="projects-filters-panel" data-projects-filters-panel hidden>
+        <input type="hidden" name="view" value="{{ view }}">
 
-      <select name="project" class="form-control" onchange="this.form.submit()">
+        <div class="projects-filters-field">
+          <label for="arm-filter-project">Проект</label>
+          <select id="arm-filter-project" name="project" class="form-control">
+            <option value="">Все проекты</option>
+            {% for p in projects %}
+            <option value="{{ p.id }}" {% if filter_project == p.id %}selected{% endif %}>{{ p.name }}</option>
+            {% endfor %}
+          </select>
+        </div>
 
-        <option value="">Все проекты</option>
+        {% if view == 'gantt' %}
+        <div class="projects-filters-field">
+          <label for="arm-filter-scale">Зум шкалы</label>
+          <select id="arm-filter-scale" name="scale" class="form-control">
+            <option value="day" {% if gantt_scale == 'day' %}selected{% endif %}>День</option>
+            <option value="week" {% if gantt_scale == 'week' %}selected{% endif %}>Неделя</option>
+            <option value="month" {% if gantt_scale == 'month' %}selected{% endif %}>Месяц</option>
+            <option value="quarter" {% if gantt_scale == 'quarter' %}selected{% endif %}>Квартал</option>
+          </select>
+          <p class="muted projects-filters-hint">Границы шкалы — старт и дедлайн проекта; зум только меняет шаг колонок.</p>
+        </div>
+        {% if not filter_project %}
+        <div class="projects-filters-field">
+          <label for="arm-filter-group">Группировка</label>
+          <select id="arm-filter-group" name="group" class="form-control">
+            <option value="project" {% if gantt_group == 'project' %}selected{% endif %}>По проектам</option>
+            <option value="none" {% if gantt_group == 'none' %}selected{% endif %}>Список</option>
+          </select>
+        </div>
+        {% else %}
+        <input type="hidden" name="group" value="none">
+        {% endif %}
+        {% endif %}
 
-        {% for p in projects %}
+        {% if view == 'calendar' %}
+        <div class="projects-filters-field">
+          <label for="arm-filter-cal-mode">Вид календаря</label>
+          <select id="arm-filter-cal-mode" name="cal_mode" class="form-control">
+            <option value="month" {% if cal_mode == 'month' %}selected{% endif %}>Месяц</option>
+            <option value="workweek" {% if cal_mode == 'workweek' %}selected{% endif %}>Рабочая неделя</option>
+            <option value="day" {% if cal_mode == 'day' %}selected{% endif %}>День</option>
+            <option value="team" {% if cal_mode == 'team' %}selected{% endif %}>Расписание команды</option>
+          </select>
+        </div>
+        <div class="projects-filters-field">
+          <label for="arm-filter-assignee">Исполнитель</label>
+          <select id="arm-filter-assignee" name="assignee" class="form-control">
+            <option value="">Все исполнители</option>
+            {% for u in calendar_executors or [] %}
+            <option value="{{ u.id }}" {% if filter_assignee == u.id %}selected{% endif %}>{{ u.full_name }}</option>
+            {% endfor %}
+          </select>
+        </div>
+        {% endif %}
 
-        <option value="{{ p.id }}" {% if filter_project == p.id %}selected{% endif %}>{{ p.name }}</option>
-
-        {% endfor %}
-
-      </select>
-
-    </form>
+        <div class="projects-filters-actions">
+          <button type="submit" class="btn btn-primary btn-sm">Применить</button>
+          {% if view == 'gantt' %}
+          <a class="btn btn-outline btn-sm" href="{{ url_for('projects.arm', view='gantt', project='', scale='month', group='project') }}">Сбросить</a>
+          {% elif view == 'calendar' %}
+          <a class="btn btn-outline btn-sm" href="{{ url_for('projects.arm', view='calendar', project='', cal_mode='month', assignee='') }}">Сбросить</a>
+          {% else %}
+          <a class="btn btn-outline btn-sm" href="{{ url_for('projects.arm', view=view, project='') }}">Сбросить</a>
+          {% endif %}
+        </div>
+      </form>
+    </div>
 
     {% if current_user.is_staff %}
-
     <a href="{{ url_for('projects.calendar_settings') }}" class="btn btn-outline btn-sm">Синхронизация</a>
-
     {% endif %}
 
     {% if current_user.is_auditor or current_user.is_admin %}
-
     <a href="{{ url_for('projects.manage_list') }}" class="btn btn-outline btn-sm">Управление</a>
-
     {% if filter_project %}
-    {% set fp_name = (projects|selectattr('id', 'equalto', filter_project)|map(attribute='name')|first) or ('№' ~ filter_project) %}
     <a href="{{ url_for('projects.task_new', project=filter_project) }}"
        class="btn btn-primary btn-sm"
        title="Задача верхнего уровня в проекте «{{ fp_name }}» (не подзадача)">Новая задача</a>
@@ -74,9 +122,41 @@
        class="btn btn-primary btn-sm"
        title="Задача верхнего уровня — выберите проект в форме">Новая задача</a>
     {% endif %}
-
     {% endif %}
-
   </div>
-
 </div>
+<script>
+(function () {
+  var root = document.querySelector("[data-projects-filters]");
+  if (!root) return;
+  var btn = root.querySelector("[data-projects-filters-toggle]");
+  var panel = root.querySelector("[data-projects-filters-panel]");
+  if (!btn || !panel) return;
+
+  function isOpen() {
+    return root.classList.contains("is-open");
+  }
+
+  function setOpen(open) {
+    panel.hidden = !open;
+    btn.setAttribute("aria-expanded", open ? "true" : "false");
+    root.classList.toggle("is-open", !!open);
+  }
+
+  setOpen(false);
+
+  btn.addEventListener("click", function (e) {
+    e.preventDefault();
+    e.stopPropagation();
+    setOpen(!isOpen());
+  });
+
+  document.addEventListener("click", function (e) {
+    if (!root.contains(e.target)) setOpen(false);
+  });
+
+  document.addEventListener("keydown", function (e) {
+    if (e.key === "Escape") setOpen(false);
+  });
+})();
+</script>

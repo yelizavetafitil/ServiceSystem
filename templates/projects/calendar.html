@@ -1,6 +1,6 @@
 {% extends "base.html" %}
 {% block title %}Проекты — календарь{% endblock %}
-{% block head %}<link rel="stylesheet" href="{{ url_for('static', filename='css/projects.css') }}?v=43">{% endblock %}
+{% block head %}<link rel="stylesheet" href="{{ url_for('static', filename='css/projects.css') }}?v=50">{% endblock %}
 {% block content %}
 <div class="container cms-page projects-page">
   {% include "projects/_arm_header.html" %}
@@ -24,7 +24,7 @@
       <label for="calendar-assignee" class="projects-calendar-assignee-label">Исполнитель</label>
       <select id="calendar-assignee" name="assignee" class="form-control" onchange="this.form.submit()">
         <option value="">Все исполнители</option>
-        {% for u in calendar_executors %}
+        {% for u in calendar_executors or [] %}
         <option value="{{ u.id }}" {% if filter_assignee == u.id %}selected{% endif %}>{{ u.full_name }}</option>
         {% endfor %}
       </select>
@@ -37,12 +37,13 @@
     <span class="projects-calendar-load-bar-title">Загрузка</span>
     {% for w in executor_workload %}
     {% set band = 'high' if w.load >= 20 else ('mid' if w.load >= 10 else 'low') %}
+    {% set color_i = loop.index0 % 6 %}
     {% if filter_assignee == w.id %}
-    <a class="projects-calendar-load-chip projects-calendar-load-chip--{{ band }} is-active"
-       href="{{ url_for('projects.arm', view='calendar', project=filter_project, cal_mode=cal_mode) }}"
+    <a class="projects-calendar-load-chip projects-calendar-load-chip--{{ band }} projects-calendar-load-chip--c{{ color_i }} is-active"
+       href="{{ url_for('projects.arm', view='calendar', project=filter_project, cal_mode=cal_mode, assignee='') }}"
        title="{{ w.name }}: {{ w.load }} чел.-дн. — сбросить фильтр">
     {% else %}
-    <a class="projects-calendar-load-chip projects-calendar-load-chip--{{ band }}"
+    <a class="projects-calendar-load-chip projects-calendar-load-chip--{{ band }} projects-calendar-load-chip--c{{ color_i }}"
        href="{{ url_for('projects.arm', view='calendar', project=filter_project, cal_mode=cal_mode, assignee=w.id) }}"
        title="{{ w.name }}: {{ w.load }} чел.-дн. — показать только этого исполнителя">
     {% endif %}

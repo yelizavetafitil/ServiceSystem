@@ -4,7 +4,7 @@ from __future__ import annotations
 import calendar
 from datetime import date, timedelta
 
-from flask import Blueprint, abort, current_app, flash, jsonify, redirect, render_template, request, url_for
+from flask import Blueprint, abort, current_app, flash, jsonify, redirect, render_template, request, session, url_for
 from sqlalchemy import or_
 from flask_login import current_user, login_required
 
@@ -46,6 +46,12 @@ from servicesystem.project_management.services import (
 )
 
 bp = Blueprint("projects", __name__)
+
+_ARM_FILTER_PROJECT_KEY = "projects_arm_filter_project"
+_ARM_FILTER_SCALE_KEY = "projects_arm_filter_scale"
+_ARM_FILTER_GROUP_KEY = "projects_arm_filter_group"
+_ARM_FILTER_CAL_MODE_KEY = "projects_arm_filter_cal_mode"
+_ARM_FILTER_ASSIGNEE_KEY = "projects_arm_filter_assignee"
 
 KANBAN_LABELS = {
     "todo": "К исполнению",
@@ -151,18 +157,27 @@ def arm():
         except Exception:
             db.session.rollback()
             current_app.logger.exception("rollover_overdue_tasks failed")
-    project_id = request.args.get("project", type=int)
-    gantt_scale = (request.args.get("scale") or "week").lower()
-    if gantt_scale not in ("day", "week", "month", "quarter"):
-        gantt_scale = "month"
-    gantt_group = (request.args.get("group") or ("project" if not project_id else "none")).lower()
-    if gantt_group not in ("project", "none"):
-        gantt_group = "project"
-    cal_mode = request.args.get("cal_mode", "month")
-    if cal_mode not in ("month", "workweek", "day", "team"):
-        cal_mode = "month"
-    filter_assignee = request.args.get("assignee", type=int)
     projects = _projects_visible()
+    project_id = _arm_filter_project(projects)
+    gantt_scale = _arm_filter_choice(
+        "scale",
+        _ARM_FILTER_SCALE_KEY,
+        allowed=("day", "week", "month", "quarter"),
+        default="month",
+    )
+    gantt_group = _arm_filter_choice(
+        "group",
+        _ARM_FILTER_GROUP_KEY,
+        allowed=("project", "none"),
+        default=("none" if project_id else "project"),
+    )
+    cal_mode = _arm_filter_choice(
+        "cal_mode",
+        _ARM_FILTER_CAL_MODE_KEY,
+        allowed=("month", "workweek", "day", "team"),
+        default="month",
+    )
+    filter_assignee = _arm_filter_assignee()
     include_done = view in ("kanban", "gantt")
     if current_user.is_admin or current_user.is_auditor:
         tasks_q = ProjectTask.query
@@ -181,11 +196,15 @@ def arm():
         tasks = sorted(tasks_raw, key=gantt_sort_key)
     else:
         tasks = sorted(tasks_raw, key=kanban_sort_key)
+    calendar_executors = (
+        _calendar_executors(project_id, projects) if view == "calendar" else []
+    )
     ctx = dict(
         view=view,
         projects=projects,
         filter_project=project_id,
         filter_assignee=filter_assignee,
+        calendar_executors=calendar_executors,
         tasks=tasks,
         kanban_labels=KANBAN_LABELS,
         columns=TASK_KANBAN_COLUMNS,
@@ -213,9 +232,8 @@ def arm():
         )
     if view == "calendar":
         month_grid = _month_grid(cal_mode)
-        # Полоса загрузки — по всем задачам периода; сетка — с учётом фильтра.
         executor_workload = _executor_workload(tasks, list(month_grid))
-        calendar_executors = _calendar_executors(
+        ctx["calendar_executors"] = _calendar_executors(
             project_id, projects, extra_ids=[w["id"] for w in executor_workload]
         )
         grid_tasks = (
@@ -229,10 +247,12 @@ def arm():
             month_grid=month_grid,
             tasks_by_day=_tasks_by_day(grid_tasks, list(month_grid)),
             team_load=_team_load(grid_tasks) if cal_mode == "team" else None,
-            calendar_executors=calendar_executors,
             executor_workload=executor_workload,
         )
     gantt_anchor = _parse_form_date(request.args.get("anchor"))
+    span_projects = (
+        [p for p in projects if p.id == project_id] if project_id else list(projects)
+    )
     gantt = _gantt_layout(
         tasks,
         gantt_scale,
@@ -240,6 +260,7 @@ def arm():
         user=current_user,
         anchor=gantt_anchor,
         project_filter=project_id,
+        projects=span_projects,
     )
     gantt_stages = []
     for p in projects:
@@ -266,6 +287,64 @@ def _projects_visible():
         ids = db.session.query(ProjectMember.project_id).filter_by(user_id=current_user.id)
         return q.filter(or_(Project.id.in_(ids), Project.is_support_project.is_(True))).order_by(Project.name).all()
     return []
+
+
+def _arm_filter_project(projects) -> int | None:
+    """Фильтр проекта ARM: из query или из сессии; «Все проекты» сбрасывает сессию."""
+    visible = {p.id for p in projects or []}
+    if "project" in request.args:
+        raw = (request.args.get("project") or "").strip()
+        if not raw:
+            session.pop(_ARM_FILTER_PROJECT_KEY, None)
+            return None
+        pid = request.args.get("project", type=int)
+        if pid and pid in visible:
+            session[_ARM_FILTER_PROJECT_KEY] = pid
+            return pid
+        session.pop(_ARM_FILTER_PROJECT_KEY, None)
+        return None
+    stored = session.get(_ARM_FILTER_PROJECT_KEY)
+    if isinstance(stored, int) and stored in visible:
+        return stored
+    if stored is not None:
+        session.pop(_ARM_FILTER_PROJECT_KEY, None)
+    return None
+
+
+def _arm_filter_choice(
+    arg: str,
+    session_key: str,
+    *,
+    allowed: tuple[str, ...],
+    default: str,
+) -> str:
+    if arg in request.args:
+        val = (request.args.get(arg) or "").strip().lower()
+        if val in allowed:
+            session[session_key] = val
+            return val
+        session.pop(session_key, None)
+        return default
+    stored = session.get(session_key)
+    if isinstance(stored, str) and stored in allowed:
+        return stored
+    return default
+
+
+def _arm_filter_assignee() -> int | None:
+    if "assignee" in request.args:
+        raw = (request.args.get("assignee") or "").strip()
+        if not raw:
+            session.pop(_ARM_FILTER_ASSIGNEE_KEY, None)
+            return None
+        uid = request.args.get("assignee", type=int)
+        if uid:
+            session[_ARM_FILTER_ASSIGNEE_KEY] = uid
+            return uid
+        session.pop(_ARM_FILTER_ASSIGNEE_KEY, None)
+        return None
+    stored = session.get(_ARM_FILTER_ASSIGNEE_KEY)
+    return stored if isinstance(stored, int) else None
 
 
 @bp.route("/manage")
@@ -1282,18 +1361,36 @@ def _gantt_data_extent(tasks) -> tuple[date | None, date | None]:
 
 
 def _gantt_align_span(scale: str, start: date, end: date) -> tuple[date, date]:
+    """Выравнивание под сетку колонок без запаса за пределы периода."""
     if end < start:
         start, end = end, start
     if scale == "quarter":
-        return _month_start(_add_months(start, -1)), _month_end(_add_months(_month_start(end), 1))
-    if scale == "month":
         return _month_start(start), _month_end(end)
+    if scale == "month":
+        return start, end
     if scale == "week":
         s = start - timedelta(days=start.weekday())
         e = end + timedelta(days=(6 - end.weekday()) % 7)
-        return s - timedelta(days=7), e + timedelta(days=7)
-    # day — суточная сетка с запасом
-    return start - timedelta(days=3), end + timedelta(days=3)
+        return s, e
+    return start, end
+
+
+def _gantt_project_extent(projects) -> tuple[date | None, date | None]:
+    """Крайние даты проектов: planned_start … deadline (прокрутка Ганта)."""
+    starts: list[date] = []
+    ends: list[date] = []
+    for p in projects or []:
+        if getattr(p, "planned_start", None):
+            starts.append(p.planned_start)
+        if getattr(p, "deadline", None):
+            ends.append(p.deadline)
+    if not starts and not ends:
+        return None, None
+    start = min(starts) if starts else min(ends)
+    end = max(ends) if ends else max(starts)
+    if end < start:
+        start, end = end, start
+    return start, end
 
 
 def _gantt_span_for_scale(
@@ -1301,33 +1398,26 @@ def _gantt_span_for_scale(
     today: date,
     *,
     tasks=None,
+    projects=None,
     anchor: date | None = None,
 ) -> tuple[date, date]:
     """
-    Диапазон шкалы: окно масштаба ∪ даты задач/вех ∪ сегодня.
-    Не режется «текущим кварталом» — длинные проекты прокручиваются.
+    Диапазон шкалы всегда = старт…дедлайн проекта.
+    Зум меняет только шаг колонок, не границы периода.
     """
     pivot = anchor or today
-    base_s, base_e = _gantt_base_window(scale, pivot)
-    ext_s, ext_e = _gantt_data_extent(tasks or [])
-    start = base_s
-    end = base_e
-    if ext_s and ext_e:
-        start = min(start, ext_s)
-        end = max(end, ext_e)
-    start = min(start, today)
-    end = max(end, today)
-    start, end = _gantt_align_span(scale, start, end)
+    proj_s, proj_e = _gantt_project_extent(projects or [])
 
-    # Защита DOM: слишком длинная суточная сетка — обрезаем вокруг середины диапазона задач
-    max_days = {"day": 180, "week": 210, "month": 400, "quarter": 366 * 4}.get(scale, 400)
-    if (end - start).days > max_days:
-        mid = start + timedelta(days=(end - start).days // 2)
-        if ext_s and ext_e:
-            mid = ext_s + timedelta(days=(ext_e - ext_s).days // 2)
-        half = max_days // 2
-        start, end = _gantt_align_span(scale, mid - timedelta(days=half), mid + timedelta(days=half))
-    return start, end
+    if proj_s and proj_e:
+        return proj_s, proj_e
+
+    # Нет дат проекта — запасной вариант по задачам / окно вокруг сегодня
+    task_s, task_e = _gantt_data_extent(tasks or [])
+    if task_s and task_e:
+        start, end = task_s, task_e
+    else:
+        start, end = _gantt_base_window(scale, pivot)
+    return _gantt_align_span(scale, start, end)
 
 
 def _gantt_col_px(scale: str, n_cols: int) -> int:
@@ -1632,10 +1722,13 @@ def _gantt_layout(
     user=None,
     project_filter: int | None = None,
     anchor: date | None = None,
+    projects=None,
 ) -> dict:
     """Данные для диаграммы Gantt — стратегическое планирование (ТЗ 2.1)."""
     today = date.today()
-    span_start, span_end = _gantt_span_for_scale(scale, today, tasks=tasks, anchor=anchor)
+    span_start, span_end = _gantt_span_for_scale(
+        scale, today, tasks=tasks, projects=projects, anchor=anchor
+    )
     columns = _gantt_columns(span_start, span_end, scale)
     n_cols = max(1, len(columns))
     col_px = _gantt_col_px(scale, n_cols)
@@ -1725,7 +1818,11 @@ def _gantt_layout(
         # Компактная полоска вех: только маркеры, подписи в title (без «губы»)
         "gantt_milestone_lane_min_h": 18 if milestone_stack_max else 0,
         "gantt_fs_links": [
-            {"from_id": e["from_task_id"], "to_id": e["to_task_id"]}
+            {
+                "id": e["id"],
+                "from_id": e["from_task_id"],
+                "to_id": e["to_task_id"],
+            }
             for e in link_edges
             if e.get("kind") == "blocks"
         ],
@@ -1739,10 +1836,10 @@ def _gantt_layout(
         "gantt_link_edges": link_edges,
         "project_link_labels": PROJECT_LINK_LABELS,
         "gantt_scale_label": {
-            "day": "По дням (прокрутка)",
-            "week": "Недели (прокрутка)",
-            "month": "Месяц по дням (прокрутка)",
-            "quarter": "Месяцы (прокрутка)",
+            "day": "Зум: день",
+            "week": "Зум: неделя",
+            "month": "Зум: месяц",
+            "quarter": "Зум: квартал",
         }.get(scale, ""),
     }
 
