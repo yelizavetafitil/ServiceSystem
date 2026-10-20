@@ -25,6 +25,8 @@ class Project(db.Model):
     description = db.Column(db.Text)
     planned_start = db.Column(db.Date)
     deadline = db.Column(db.Date)
+    skip_weekends = db.Column(db.Boolean, default=False)  # сб/вс — не ставить задачи
+    skip_public_holidays = db.Column(db.Boolean, default=False)  # госпраздники РБ (в т.ч. 7.11)
     curator_auditor_id = db.Column(db.Integer, db.ForeignKey("users.id"))
     customer_curator_id = db.Column(db.Integer, db.ForeignKey("users.id"))
     customer_curator_active_until = db.Column(db.Date)

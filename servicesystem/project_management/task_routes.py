@@ -189,8 +189,40 @@ def task_update(tid):
         flash("Исполнитель должен быть участником проекта.", "warning")
         return redirect(url_for("projects.task_detail", tid=tid))
     task.assignee_id = assignee_id
+    old_start = task.start_date or task.due_date
     task.due_date = parse_optional_date(request.form.get("due_date"))
     task.start_date = parse_optional_date(request.form.get("start_date"))
+    if task.start_date and task.due_date and task.due_date < task.start_date:
+        task.start_date, task.due_date = task.due_date, task.start_date
+    from servicesystem.project_management.services import (
+        clamp_task_dates,
+        dates_within_parent,
+        parent_date_window,
+        project_dates_violation_message,
+        shift_task_subtree,
+    )
+
+    if task.parent_id:
+        parent = task.parent or db.session.get(ProjectTask, task.parent_id)
+        if not dates_within_parent(task.start_date, task.due_date, parent):
+            p_start, p_due = parent_date_window(parent)
+            if p_start and p_due:
+                flash(
+                    f"Сроки подзадачи должны быть внутри родителя "
+                    f"({p_start.strftime('%d.%m.%Y')} — {p_due.strftime('%d.%m.%Y')}).",
+                    "warning",
+                )
+                return redirect(url_for("projects.task_detail", tid=tid))
+    proj_msg = project_dates_violation_message(task.start_date, task.due_date, task.project)
+    if proj_msg:
+        flash(proj_msg, "warning")
+        return redirect(url_for("projects.task_detail", tid=tid))
+    clamp_task_dates(task)
+    new_start = task.start_date or task.due_date
+    if old_start and new_start:
+        delta = (new_start - old_start).days
+        if delta:
+            shift_task_subtree(task, delta)
     stage_id = request.form.get("stage_id", type=int)
     if stage_id:
         st = db.session.get(ProjectStage, stage_id)
@@ -330,6 +362,9 @@ def api_task_dates(tid):
         task.start_date = parse_optional_date(data["start_date"])
     if data.get("due_date"):
         task.due_date = parse_optional_date(data["due_date"])
+    from servicesystem.project_management.services import cascade_fs_from_task
+
+    cascade_fs_from_task(task)
     sync_calendar_events_for_task(task)
     db.session.commit()
     from servicesystem.project_management.caldav_sync import try_push_task_to_caldav

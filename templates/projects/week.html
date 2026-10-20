@@ -12,7 +12,7 @@
       {% for t in day_tasks %}
       {% set s = t.start_date or t.due_date %}
       {% set e = t.due_date or t.start_date %}
-      <a class="projects-week-card p-{{ t.priority }}" href="{{ url_for('projects.task_detail', tid=t.id) }}"
+      <a class="projects-week-card p-{{ t.priority }}" href="{{ url_for('projects.task_detail', tid=t.id, arm_view='week') }}"
          title="{% if s and e %}{{ s.strftime('%d.%m') }}—{{ e.strftime('%d.%m.%Y') }}{% endif %}">{{ t.title }}</a>
       {% endfor %}
     </div>

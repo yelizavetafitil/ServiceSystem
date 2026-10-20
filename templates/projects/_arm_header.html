@@ -19,6 +19,9 @@
     {% set ns = namespace(summary=(fp_name or 'Все проекты')) %}
     {% if view == 'gantt' and gantt_scale is defined %}
       {% set ns.summary = ns.summary ~ ' · зум ' ~ {'day':'день','week':'неделя','month':'месяц','quarter':'квартал'}.get(gantt_scale, gantt_scale) %}
+      {% if gantt_show_subtasks is defined and not gantt_show_subtasks %}
+        {% set ns.summary = ns.summary ~ ' · без подзадач' %}
+      {% endif %}
     {% elif view == 'calendar' and cal_mode is defined %}
       {% set ns.summary = ns.summary ~ ' · ' ~ {'month':'месяц','workweek':'раб. неделя','day':'день','team':'команда'}.get(cal_mode, cal_mode) %}
     {% endif %}
@@ -71,6 +74,13 @@
         {% else %}
         <input type="hidden" name="group" value="none">
         {% endif %}
+        <div class="projects-filters-field">
+          <label for="arm-filter-subtasks">Подзадачи</label>
+          <select id="arm-filter-subtasks" name="subtasks" class="form-control">
+            <option value="1" {% if gantt_show_subtasks %}selected{% endif %}>Отображать подзадачи</option>
+            <option value="0" {% if not gantt_show_subtasks %}selected{% endif %}>Только задачи верхнего уровня</option>
+          </select>
+        </div>
         {% endif %}
 
         {% if view == 'calendar' %}
@@ -97,7 +107,7 @@
         <div class="projects-filters-actions">
           <button type="submit" class="btn btn-primary btn-sm">Применить</button>
           {% if view == 'gantt' %}
-          <a class="btn btn-outline btn-sm" href="{{ url_for('projects.arm', view='gantt', project='', scale='month', group='project') }}">Сбросить</a>
+          <a class="btn btn-outline btn-sm" href="{{ url_for('projects.arm', view='gantt', project='', scale='month', group='project', subtasks='1') }}">Сбросить</a>
           {% elif view == 'calendar' %}
           <a class="btn btn-outline btn-sm" href="{{ url_for('projects.arm', view='calendar', project='', cal_mode='month', assignee='') }}">Сбросить</a>
           {% else %}

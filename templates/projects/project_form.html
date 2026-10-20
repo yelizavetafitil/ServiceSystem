@@ -4,7 +4,7 @@
 
 {% block title %}Новый проект{% endblock %}
 
-{% block head %}<link rel="stylesheet" href="{{ url_for('static', filename='css/projects.css') }}?v=28">{% endblock %}
+{% block head %}<link rel="stylesheet" href="{{ url_for('static', filename='css/projects.css') }}?v=51">{% endblock %}
 
 {% block content %}
 
@@ -129,6 +129,18 @@
         <div class="form-group"><label>Крайний срок</label><input type="date" name="deadline" class="form-control"></div>
 
       </div>
+
+      <fieldset class="projects-workdays-opts">
+        <legend class="projects-workdays-legend">Рабочие дни</legend>
+        <label class="projects-workdays-check">
+          <input type="checkbox" name="skip_weekends">
+          Не ставить задачи на выходные (сб–вс); трудодни в эти дни не считаются
+        </label>
+        <label class="projects-workdays-check">
+          <input type="checkbox" name="skip_public_holidays">
+          Учитывать государственные праздники (в т.ч. 7 ноября)
+        </label>
+      </fieldset>
 
       <div class="form-group"><label>ГИП</label>
 

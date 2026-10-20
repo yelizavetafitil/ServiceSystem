@@ -23,8 +23,20 @@
   var ganttScale = chart.getAttribute("data-scale") || "month";
 
   var ganttCols = Math.max(1, parseInt(chart.getAttribute("data-cols") || "1", 10) || 1);
+  var ganttScrollKey = "gantt-hscroll:" + location.pathname + location.search;
 
+  function saveGanttScroll() {
+    var h = chart.querySelector(".projects-gantt-hscroll");
+    if (!h) return;
+    try {
+      sessionStorage.setItem(ganttScrollKey, String(Math.round(h.scrollLeft)));
+    } catch (e) {}
+  }
 
+  function reloadGantt() {
+    saveGanttScroll();
+    window.location.reload();
+  }
 
   function parseIso(s) {
 
@@ -224,74 +236,64 @@
 
 
 
+    // Синяя FS по жёлтому маршруту:
+    // выход вправо → вниз → к левому краю → вдоль края вниз → вход влево
     svg.innerHTML =
-
-      '<defs><marker id="gantt-fs-arrow" markerWidth="7" markerHeight="7" refX="6" refY="3.5" orient="auto">' +
-
-      '<path d="M0,0 L7,3.5 L0,7 Z" fill="#1e40af"/></marker></defs>';
-
-
+      '<defs>' +
+      '<marker id="gantt-fs-dot" markerUnits="userSpaceOnUse" markerWidth="10" markerHeight="10" refX="5" refY="5">' +
+      '<circle cx="5" cy="5" r="3" fill="#1e40af"/></marker>' +
+      '<marker id="gantt-fs-dot-hover" markerUnits="userSpaceOnUse" markerWidth="10" markerHeight="10" refX="5" refY="5">' +
+      '<circle cx="5" cy="5" r="3" fill="#dc2626"/></marker>' +
+      '<marker id="gantt-fs-arrow" markerUnits="userSpaceOnUse" markerWidth="7" markerHeight="7" refX="6" refY="3.5" orient="auto" viewBox="0 0 7 7">' +
+      '<path d="M0.5,0.7 L6,3.5 L0.5,6.3 Z" fill="#1e40af"/></marker>' +
+      '<marker id="gantt-fs-arrow-hover" markerUnits="userSpaceOnUse" markerWidth="7" markerHeight="7" refX="6" refY="3.5" orient="auto" viewBox="0 0 7 7">' +
+      '<path d="M0.5,0.7 L6,3.5 L0.5,6.3 Z" fill="#dc2626"/></marker>' +
+      '</defs>';
 
     var svgRect = svg.getBoundingClientRect();
 
-
-
     links.forEach(function (link) {
-
       var fromRow = chart.querySelector('.projects-gantt-row[data-task-id="' + link.from_id + '"]');
-
       var toRow = chart.querySelector('.projects-gantt-row[data-task-id="' + link.to_id + '"]');
-
       if (!fromRow || !toRow) return;
-
       var fromBar = fromRow.querySelector(".projects-gantt-bar");
-
       var toBar = toRow.querySelector(".projects-gantt-bar");
-
       if (!fromBar || !toBar) return;
 
-
-
       var fr = fromBar.getBoundingClientRect();
-
       var tr = toBar.getBoundingClientRect();
 
-
-
       var x1 = fr.right - svgRect.left;
-
-      var x2 = tr.left - svgRect.left;
-
+      var barLeft = tr.left - svgRect.left;
+      var gap = barLeft - x1;
+      var x2 = barLeft + 3;
+      // Дальше влево на перегибе — явный заход в левый край
+      var bendLeft = barLeft - 28;
       var y1 = fr.top + fr.height / 2 - svgRect.top;
-
       var y2 = tr.top + tr.height / 2 - svgRect.top;
 
-
-
       if (!isFinite(x1) || !isFinite(x2) || !isFinite(y1) || !isFinite(y2)) return;
-
       if (y1 < -20 || y2 < -20 || y1 > h + 20 || y2 > h + 20) return;
 
-
-
-      if (Math.abs(y1 - y2) < 2 && x2 > x1) {
-
+      if (Math.abs(y1 - y2) < 2 && gap > 10) {
         appendPath(svg, "M" + x1 + "," + y1 + " L" + x2 + "," + y2, link);
-
         return;
-
       }
 
+      var stub = 10;
+      var vx = x1 + stub;
+      var midY = y1 + (y2 - y1) * 0.55;
+      if (Math.abs(y2 - y1) < 16) midY = y1 + (y2 - y1) * 0.5;
 
-
-      var gutter = Math.min(Math.max(x1 + 12, x2 - 8), x1 + 40);
-
-      if (gutter <= x1 + 2) gutter = x1 + 8;
-
-
-
-      appendPath(svg, "M" + x1 + "," + y1 + " H" + gutter + " V" + y2 + " H" + x2, link);
-
+      // вправо → вниз → длиннее влево → вниз → вход в левый край
+      var d =
+        "M" + x1 + "," + y1 +
+        " H" + vx +
+        " V" + midY +
+        " H" + bendLeft +
+        " V" + y2 +
+        " H" + x2;
+      appendPath(svg, d, link);
     });
 
   }
@@ -305,13 +307,11 @@
     visible.setAttribute("d", d);
 
     visible.setAttribute("class", "projects-gantt-fs-path");
-
+    visible.setAttribute("marker-start", "url(#gantt-fs-dot)");
     visible.setAttribute("marker-end", "url(#gantt-fs-arrow)");
 
     if (link && link.id) {
-
       visible.setAttribute("data-link-id", String(link.id));
-
     }
 
     svg.appendChild(visible);
@@ -381,83 +381,117 @@
   var drag = null;
   var suppressBarClick = false;
 
-
-
-  function onPointerMove(e) {
-
-    if (!drag) return;
-
-    var tr = drag.track.getBoundingClientRect();
-
-    var dx = e.clientX - drag.startX;
-
-    if (Math.abs(dx) > 4) drag.moved = true;
-
-    var dPct = (dx / tr.width) * 100;
-
-    var newLeft = Math.max(0, Math.min(100 - drag.widthPct, drag.origLeft + dPct));
-
-    drag.slot.style.left = newLeft + "%";
-
-    var dates = pctToDates(newLeft, drag.widthPct);
-
-    drag.bar.classList.toggle("is-critical-pulse", slaBreach(dates.due, drag.projectDeadline) || drag.wasCritical);
-
+  function collectDescendantSlots(rootTaskId) {
+    var byParent = {};
+    chart.querySelectorAll(".projects-gantt-row[data-task-id]").forEach(function (row) {
+      var pid = row.getAttribute("data-parent-id") || "";
+      if (!pid) return;
+      if (!byParent[pid]) byParent[pid] = [];
+      byParent[pid].push(row.getAttribute("data-task-id"));
+    });
+    var out = [];
+    var queue = (byParent[String(rootTaskId)] || []).slice();
+    var seen = {};
+    while (queue.length) {
+      var id = queue.shift();
+      if (!id || seen[id]) continue;
+      seen[id] = true;
+      var row = chart.querySelector('.projects-gantt-row[data-task-id="' + id + '"]');
+      if (row) {
+        var slot = row.querySelector(".projects-gantt-bar-slot");
+        if (slot) {
+          out.push({
+            id: id,
+            slot: slot,
+            origLeft: parseFloat(slot.style.left) || 0,
+          });
+        }
+      }
+      var kids = byParent[id] || [];
+      for (var i = 0; i < kids.length; i++) queue.push(kids[i]);
+    }
+    return out;
   }
 
+  function parentSlotBounds(taskId) {
+    var row = chart.querySelector('.projects-gantt-row[data-task-id="' + taskId + '"]');
+    if (!row) return null;
+    var parentId = row.getAttribute("data-parent-id") || "";
+    if (!parentId) return null;
+    var parentRow = chart.querySelector('.projects-gantt-row[data-task-id="' + parentId + '"]');
+    if (!parentRow) return null;
+    var slot = parentRow.querySelector(".projects-gantt-bar-slot");
+    if (!slot) return null;
+    var left = parseFloat(slot.style.left) || 0;
+    var width = parseFloat(slot.getAttribute("data-width-pct")) || 0;
+    if (width <= 0) return null;
+    return { left: left, width: width };
+  }
 
+  function onPointerMove(e) {
+    if (!drag) return;
+    var tr = drag.track.getBoundingClientRect();
+    var dx = e.clientX - drag.startX;
+    if (Math.abs(dx) > 4) drag.moved = true;
+    var dPct = (dx / tr.width) * 100;
+    var minLeft = 0;
+    var maxLeft = 100 - drag.widthPct;
+    if (drag.parentBounds) {
+      minLeft = drag.parentBounds.left;
+      maxLeft = drag.parentBounds.left + drag.parentBounds.width - drag.widthPct;
+      if (maxLeft < minLeft) maxLeft = minLeft;
+    }
+    var newLeft = Math.max(minLeft, Math.min(maxLeft, drag.origLeft + dPct));
+    drag.slot.style.left = newLeft + "%";
+    var shift = newLeft - drag.origLeft;
+    if (drag.children) {
+      drag.children.forEach(function (ch) {
+        ch.slot.style.left = (ch.origLeft + shift) + "%";
+      });
+    }
+    var dates = pctToDates(newLeft, drag.widthPct);
+    drag.bar.classList.toggle("is-critical-pulse", slaBreach(dates.due, drag.projectDeadline) || drag.wasCritical);
+    scheduleDraw();
+  }
 
   async function onPointerUp(e) {
-
     if (!drag) return;
-
     document.removeEventListener("pointermove", onPointerMove);
-
     document.removeEventListener("pointerup", onPointerUp);
-
     var state = drag;
-
     drag = null;
-
     state.bar.classList.remove("is-dragging");
-
     var dx = e && typeof e.clientX === "number" ? Math.abs(e.clientX - state.startX) : 0;
     var moved = state.moved || dx > 4;
 
     if (!moved) {
-      // Обычный клик: вернуть полоску, панель откроет обработчик click
       state.slot.style.left = state.origLeft + "%";
+      if (state.children) {
+        state.children.forEach(function (ch) {
+          ch.slot.style.left = ch.origLeft + "%";
+        });
+      }
+      scheduleDraw();
       return;
     }
 
-    // После drag не открывать панель на синтетическом click
     suppressBarClick = true;
     setTimeout(function () { suppressBarClick = false; }, 0);
 
     var left = parseFloat(state.slot.style.left) || state.origLeft;
-
     var dates = pctToDates(left, state.widthPct);
 
     try {
-
       var res = await fetch("/projects/gantt/tasks/" + state.taskId + "/dates", {
-
         method: "POST",
-
         headers: { "Content-Type": "application/json", "X-CSRFToken": csrf },
-
         body: JSON.stringify({ start_date: dates.start, due_date: dates.due }),
-
       });
-
-      if (res.ok) window.location.reload();
-
+      if (res.ok) reloadGantt();
+      else reloadGantt();
     } catch (err) {
-
-      window.location.reload();
-
+      reloadGantt();
     }
-
   }
 
 
@@ -508,7 +542,7 @@
     var cancelBtn = ctxMenu.querySelector('[data-gantt-ctx="cancel-link"]');
     var canFinish = !!(linkMode && linkFromId && String(linkFromId) !== String(ctxTaskId));
     if (subtaskLink && ctxTaskId) {
-      subtaskLink.href = "/projects/tasks/new?parent=" + encodeURIComponent(ctxTaskId);
+      subtaskLink.href = "/projects/tasks/new?parent=" + encodeURIComponent(ctxTaskId) + "&arm_view=gantt";
       subtaskLink.hidden = false;
     }
     if (startBtn) startBtn.hidden = false;
@@ -601,7 +635,7 @@
         method: "DELETE",
         headers: { "X-CSRFToken": csrf },
       });
-      if (res.ok) window.location.reload();
+      if (res.ok) reloadGantt();
       else alert("Не удалось удалить связь.");
     } catch (err) {
       alert("Ошибка сети.");
@@ -691,7 +725,7 @@
     if (panelNote) panelNote.hidden = canEdit;
     if (panelOpen) {
       if (openTicket && ticketId) panelOpen.href = "/tickets/" + ticketId;
-      else panelOpen.href = "/projects/tasks/" + panelTaskId;
+      else panelOpen.href = "/projects/tasks/" + panelTaskId + "?arm_view=gantt";
     }
     renderPanelLinks(bar, canEdit);
     panel.hidden = false;
@@ -713,7 +747,7 @@
             kanban_status: panelStatus ? panelStatus.value : "",
           }),
         });
-        if (res.ok) window.location.reload();
+        if (res.ok) reloadGantt();
         else if (res.status === 409) alert("Нельзя сменить статус: есть блокирующие связи.");
         else alert("Не удалось сохранить.");
       } catch (err) {
@@ -729,7 +763,7 @@
         headers: { "Content-Type": "application/json", "X-CSRFToken": csrf },
         body: JSON.stringify({ from_task_id: fromId, to_task_id: toId, link_type: "blocks" }),
       });
-      if (res.ok) window.location.reload();
+      if (res.ok) reloadGantt();
       else alert("Не удалось создать связь.");
     } catch (err) {
       alert("Ошибка сети.");
@@ -754,17 +788,20 @@
         var slot = bar.closest(".projects-gantt-bar-slot");
         var track = bar.closest("[data-gantt-track]");
         if (!slot || !track) return;
+        var taskId = bar.getAttribute("data-task-id");
         drag = {
           bar: bar,
           slot: slot,
           track: track,
-          taskId: bar.getAttribute("data-task-id"),
+          taskId: taskId,
           startX: e.clientX,
           origLeft: parseFloat(slot.style.left) || 0,
           widthPct: parseFloat(slot.getAttribute("data-width-pct")) || 10,
           projectDeadline: bar.getAttribute("data-project-deadline") || "",
           wasCritical: bar.classList.contains("is-critical-pulse"),
           moved: false,
+          children: collectDescendantSlots(taskId),
+          parentBounds: parentSlotBounds(taskId),
         };
         bar.classList.add("is-dragging");
         bar.setPointerCapture(e.pointerId);
@@ -829,10 +866,25 @@
     }
 
     function renumber() {
-      rowList().forEach(function (row, i) {
+      var rows = rowList();
+      var counters = {};
+      var wbsById = {};
+      rows.forEach(function (row, i) {
         row.id = "gantt-row-" + (i + 1);
+        var id = row.getAttribute("data-task-id") || "";
+        var parentId = row.getAttribute("data-parent-id") || "";
+        var parentWbs = parentId ? wbsById[parentId] : null;
+        var key = parentWbs != null ? parentId : "";
+        if (parentWbs == null) parentId = "";
+        counters[key] = (counters[key] || 0) + 1;
+        var wbs = parentWbs != null ? parentWbs + "." + counters[key] : String(counters[key]);
+        wbsById[id] = wbs;
+        row.setAttribute("data-wbs", wbs);
         var no = row.querySelector(".projects-gantt-row-no");
-        if (no) no.textContent = String(i + 1);
+        if (no) {
+          no.textContent = wbs;
+          no.setAttribute("title", "WBS " + wbs);
+        }
       });
       scheduleDraw();
     }
@@ -845,9 +897,13 @@
           headers: { "Content-Type": "application/json", "X-CSRFToken": csrf },
           body: JSON.stringify({ task_ids: ids }),
         });
-        if (!res.ok) window.location.reload();
+        if (!res.ok) reloadGantt();
+        else {
+          // После сохранения порядка перезагрузить, чтобы дерево/WBS совпали с сервером
+          reloadGantt();
+        }
       } catch (err) {
-        window.location.reload();
+        reloadGantt();
       }
     }
 
@@ -894,11 +950,68 @@
     });
   })();
 
+  // Быстрое переименование в боковой колонке
+  chart.querySelectorAll("[data-gantt-rename]").forEach(function (btn) {
+    btn.addEventListener("click", async function (e) {
+      e.preventDefault();
+      e.stopPropagation();
+      if (!uiFlags.canEdit) return;
+      var tid = btn.getAttribute("data-gantt-rename");
+      if (!tid) return;
+      var side = btn.closest(".projects-gantt-side");
+      var label = side ? side.querySelector("[data-gantt-title]") : null;
+      var current = label ? (label.textContent || "").trim() : "";
+      var next = null;
+      if (typeof window.ssPrompt === "function") {
+        next = await window.ssPrompt("Название задачи", current, {
+          title: "Переименовать задачу",
+          confirmLabel: "Сохранить",
+        });
+      } else {
+        next = window.prompt("Название задачи", current);
+      }
+      if (next == null) return;
+      next = next.trim();
+      if (!next || next === current) return;
+      try {
+        var res = await fetch("/projects/gantt/tasks/" + tid + "/panel", {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            "X-CSRFToken": csrf,
+            Accept: "application/json",
+          },
+          body: JSON.stringify({ title: next }),
+          credentials: "same-origin",
+        });
+        var data = await res.json().catch(function () { return {}; });
+        if (!res.ok) {
+          alert((data && data.error) || "Не удалось сохранить название");
+          return;
+        }
+        var title = (data && data.title) || next;
+        if (label) {
+          label.textContent = title;
+          label.setAttribute("title", title);
+        }
+        var bar = chart.querySelector('.projects-gantt-bar[data-task-id="' + tid + '"]');
+        if (bar) bar.setAttribute("data-title", title);
+      } catch (err) {
+        alert("Ошибка сети");
+      }
+    });
+  });
+
   scheduleDraw();
   window.addEventListener("resize", scheduleDraw);
   window.addEventListener("load", scheduleDraw);
   var host = chart.querySelector(".projects-gantt-hscroll");
-  if (host) host.addEventListener("scroll", scheduleDraw);
+  if (host) {
+    host.addEventListener("scroll", function () {
+      scheduleDraw();
+      saveGanttScroll();
+    });
+  }
   if (body && window.ResizeObserver) {
     new ResizeObserver(scheduleDraw).observe(body);
   }
@@ -933,6 +1046,20 @@
     host.scrollTo({ left: left, behavior: smooth ? "smooth" : "auto" });
   }
 
+  function restoreGanttScroll() {
+    if (!host) return false;
+    try {
+      var raw = sessionStorage.getItem(ganttScrollKey);
+      if (raw == null || raw === "") return false;
+      var left = parseInt(raw, 10);
+      if (!isFinite(left)) return false;
+      scrollGanttTo(left, false);
+      return true;
+    } catch (e) {
+      return false;
+    }
+  }
+
   function panByCols(n) {
     if (!host) return;
     scrollGanttTo(host.scrollLeft + n * colPx * (ganttScale === "quarter" ? 1 : 3), true);
@@ -945,11 +1072,12 @@
   if (panRight) panRight.addEventListener("click", function () { panByCols(1); });
   if (panToday) panToday.addEventListener("click", function () {
     scrollGanttTo(todayScrollLeft(), true);
+    saveGanttScroll();
   });
 
-  // Стартовая позиция — «сегодня» в видимой области (после раскладки)
+  // После reload — прежний скролл; иначе «сегодня»
   requestAnimationFrame(function () {
-    scrollGanttTo(todayScrollLeft(), false);
+    if (!restoreGanttScroll()) scrollGanttTo(todayScrollLeft(), false);
     scheduleDraw();
   });
 })();

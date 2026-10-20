@@ -208,24 +208,84 @@ def _fs_successor_tasks(task: ProjectTask) -> list[ProjectTask]:
 
 
 def enforce_task_fs_start(task: ProjectTask) -> bool:
-    """FS: начало задачи не раньше дня после окончания предшественника. Сохраняет длительность."""
+    """FS: начало не раньше дня после предшественника; выходные/праздники пропускаются."""
+    from servicesystem.project_management.work_calendar import (
+        add_workday_steps,
+        project_uses_work_calendar,
+        snap_to_workday,
+        workday_steps,
+    )
+
     ends = [p.due_date for p in _fs_predecessor_tasks(task) if p.due_date]
     if not ends:
-        return False
+        return _snap_task_dates_to_workdays(task)
+    project = task.project
     min_start = max(ends) + timedelta(days=1)
+    if project_uses_work_calendar(project):
+        min_start = snap_to_workday(min_start, project)
     cur_start = task.start_date or task.due_date
     if cur_start is None:
         task.start_date = min_start
         task.due_date = min_start
         return True
     if cur_start >= min_start:
+        # Даже если FS уже соблюдён — сдвинуть с выходного/праздника
+        if project_uses_work_calendar(project):
+            return _snap_task_dates_to_workdays(task)
         return False
-    duration_days = 0
     if task.start_date and task.due_date:
-        duration_days = max(0, (task.due_date - task.start_date).days)
+        if project_uses_work_calendar(project):
+            duration_days = workday_steps(task.start_date, task.due_date, project)
+        else:
+            duration_days = max(0, (task.due_date - task.start_date).days)
+    else:
+        duration_days = 0
     task.start_date = min_start
-    task.due_date = min_start + timedelta(days=duration_days)
+    if project_uses_work_calendar(project):
+        task.due_date = add_workday_steps(min_start, duration_days, project)
+    else:
+        task.due_date = min_start + timedelta(days=duration_days)
     return True
+
+
+def _snap_task_dates_to_workdays(task: ProjectTask) -> bool:
+    """Если даты попали на выходной/праздник — сдвинуть вперёд на рабочий день."""
+    from servicesystem.project_management.work_calendar import (
+        add_workday_steps,
+        project_uses_work_calendar,
+        snap_to_workday,
+        workday_steps,
+    )
+
+    project = task.project
+    if not project_uses_work_calendar(project):
+        return False
+    changed = False
+    old_start, old_due = task.start_date, task.due_date
+    if task.start_date and task.due_date:
+        steps = workday_steps(task.start_date, task.due_date, project)
+        new_start = snap_to_workday(task.start_date, project)
+        new_due = add_workday_steps(new_start, steps, project)
+        new_due = snap_to_workday(new_due, project)
+        if new_start != task.start_date or new_due != task.due_date:
+            task.start_date = new_start
+            task.due_date = new_due
+            changed = True
+    else:
+        if task.start_date:
+            ns = snap_to_workday(task.start_date, project)
+            if ns != task.start_date:
+                task.start_date = ns
+                changed = True
+        if task.due_date:
+            nd = snap_to_workday(task.due_date, project)
+            if nd != task.due_date:
+                task.due_date = nd
+                changed = True
+    if task.start_date and task.due_date and task.due_date < task.start_date:
+        task.due_date = task.start_date
+        changed = True
+    return changed or (old_start, old_due) != (task.start_date, task.due_date)
 
 
 def cascade_fs_schedule(root: ProjectTask) -> list[int]:
@@ -238,8 +298,9 @@ def cascade_fs_schedule(root: ProjectTask) -> list[int]:
         if task.id in visited:
             continue
         visited.add(task.id)
-        if enforce_task_fs_start(task):
-            changed.append(task.id)
+        if enforce_task_fs_start(task) or _snap_task_dates_to_workdays(task):
+            if task.id not in changed:
+                changed.append(task.id)
             sync_calendar_events_for_task(task)
         for succ in _fs_successor_tasks(task):
             if succ.id not in visited:
@@ -250,11 +311,21 @@ def cascade_fs_schedule(root: ProjectTask) -> list[int]:
 def cascade_fs_from_task(task: ProjectTask) -> list[int]:
     """После сдвига сроков: подтянуть саму задачу к предшественникам и сдвинуть последователей."""
     changed = []
-    if enforce_task_fs_start(task):
+    if enforce_task_fs_start(task) or _snap_task_dates_to_workdays(task):
         changed.append(task.id)
         sync_calendar_events_for_task(task)
     for succ in _fs_successor_tasks(task):
         changed.extend(cascade_fs_schedule(succ))
+    # После FS снова уложить в окна родителя и старт проекта
+    if clamp_task_dates(task):
+        if task.id not in changed:
+            changed.append(task.id)
+        sync_calendar_events_for_task(task)
+    for child in iter_task_descendants(task):
+        if clamp_task_dates(child):
+            if child.id not in changed:
+                changed.append(child.id)
+            sync_calendar_events_for_task(child)
     # уникальные с сохранением порядка
     seen: set[int] = set()
     out: list[int] = []
@@ -263,6 +334,283 @@ def cascade_fs_from_task(task: ProjectTask) -> list[int]:
             seen.add(tid)
             out.append(tid)
     return out
+
+
+def parent_date_window(parent: ProjectTask | None) -> tuple[date | None, date | None]:
+    """Окно сроков родителя (min_start, max_due) или (None, None)."""
+    if not parent:
+        return None, None
+    p_start = parent.start_date or parent.due_date
+    p_due = parent.due_date or parent.start_date
+    if not p_start or not p_due:
+        return None, None
+    if p_due < p_start:
+        p_start, p_due = p_due, p_start
+    return p_start, p_due
+
+
+def dates_within_parent(
+    start: date | None,
+    due: date | None,
+    parent: ProjectTask | None,
+) -> bool:
+    """True, если сроки пустые/без окна родителя или целиком внутри родителя."""
+    p_start, p_due = parent_date_window(parent)
+    if not p_start or not p_due:
+        return True
+    if start and (start < p_start or start > p_due):
+        return False
+    if due and (due < p_start or due > p_due):
+        return False
+    return True
+
+
+def clamp_dates_to_parent(
+    start: date | None,
+    due: date | None,
+    parent: ProjectTask | None,
+) -> tuple[date | None, date | None]:
+    """Подрезать start/due под окно родителя (длительность по возможности сохранить)."""
+    p_start, p_due = parent_date_window(parent)
+    if not p_start or not p_due:
+        return start, due
+    if start and due and due < start:
+        start, due = due, start
+    if start is None and due is None:
+        return start, due
+    if start is None:
+        start = due
+    if due is None:
+        due = start
+    assert start is not None and due is not None
+    span = max(0, (due - start).days)
+    window = max(0, (p_due - p_start).days)
+    if span > window:
+        return p_start, p_due
+    if start < p_start:
+        start = p_start
+        due = start + timedelta(days=span)
+    if due > p_due:
+        due = p_due
+        start = due - timedelta(days=span)
+        if start < p_start:
+            start = p_start
+    return start, due
+
+
+def clamp_task_dates_to_parent(task: ProjectTask) -> bool:
+    """Уложить сроки задачи в окно родителя. True если изменилось."""
+    if not task.parent_id:
+        return False
+    parent = task.parent
+    if parent is None and task.parent_id:
+        parent = db.session.get(ProjectTask, task.parent_id)
+    old_s, old_d = task.start_date, task.due_date
+    ns, nd = clamp_dates_to_parent(task.start_date, task.due_date, parent)
+    if (ns, nd) == (old_s, old_d):
+        return False
+    task.start_date, task.due_date = ns, nd
+    return True
+
+
+def project_earliest_start(project: Project | None) -> date | None:
+    """Старт проекта — нижняя граница сроков задач."""
+    if not project:
+        return None
+    return getattr(project, "planned_start", None) or None
+
+
+def project_latest_due(project: Project | None) -> date | None:
+    """Крайний срок проекта — верхняя граница сроков задач."""
+    if not project:
+        return None
+    return getattr(project, "deadline", None) or None
+
+
+def dates_within_project(
+    start: date | None,
+    due: date | None,
+    project: Project | None,
+) -> bool:
+    """True, если сроки внутри окна проекта (старт…дедлайн)."""
+    floor = project_earliest_start(project)
+    ceil = project_latest_due(project)
+    if floor:
+        if start and start < floor:
+            return False
+        if due and due < floor:
+            return False
+    if ceil:
+        if start and start > ceil:
+            return False
+        if due and due > ceil:
+            return False
+    return True
+
+
+def clamp_dates_to_project(
+    start: date | None,
+    due: date | None,
+    project: Project | None,
+) -> tuple[date | None, date | None]:
+    """Уложить сроки в окно проекта (не раньше старта, не позже дедлайна)."""
+    floor = project_earliest_start(project)
+    ceil = project_latest_due(project)
+    if not floor and not ceil:
+        return start, due
+    if start and due and due < start:
+        start, due = due, start
+    if start is None and due is None:
+        return start, due
+    if start is None:
+        start = due
+    if due is None:
+        due = start
+    assert start is not None and due is not None
+    span = max(0, (due - start).days)
+    if floor and start < floor:
+        start = floor
+        due = start + timedelta(days=span)
+    if ceil and due > ceil:
+        due = ceil
+        start = due - timedelta(days=span)
+        if floor and start < floor:
+            start = floor
+            due = ceil if ceil >= floor else floor
+        elif start > due:
+            start = due
+    if floor and start < floor:
+        start = floor
+    if ceil and due > ceil:
+        due = ceil
+    if start > due:
+        start = due
+    return start, due
+
+
+def clamp_task_dates_to_project(task: ProjectTask) -> bool:
+    """Внутри окна проекта. True если изменилось."""
+    project = task.project
+    if project is None and task.project_id:
+        project = db.session.get(Project, task.project_id)
+    old_s, old_d = task.start_date, task.due_date
+    ns, nd = clamp_dates_to_project(task.start_date, task.due_date, project)
+    if (ns, nd) == (old_s, old_d):
+        return False
+    task.start_date, task.due_date = ns, nd
+    return True
+
+
+def clamp_task_dates(task: ProjectTask) -> bool:
+    """Родитель + окно проекта."""
+    changed = clamp_task_dates_to_parent(task)
+    if clamp_task_dates_to_project(task):
+        changed = True
+    return changed
+
+
+def effective_date_window(
+    *,
+    parent: ProjectTask | None = None,
+    project: Project | None = None,
+) -> tuple[date | None, date | None]:
+    """min/max: max(старт проекта, старт родителя) … min(дедлайн проекта, due родителя)."""
+    min_d: date | None = None
+    max_d: date | None = None
+    p_start, p_due = parent_date_window(parent)
+    if p_start:
+        min_d = p_start
+    if p_due:
+        max_d = p_due
+    floor = project_earliest_start(project)
+    ceil = project_latest_due(project)
+    if floor:
+        min_d = max(min_d, floor) if min_d else floor
+    if ceil:
+        max_d = min(max_d, ceil) if max_d else ceil
+    if min_d and max_d and max_d < min_d:
+        max_d = min_d
+    return min_d, max_d
+
+
+def project_dates_violation_message(
+    start: date | None,
+    due: date | None,
+    project: Project | None,
+) -> str | None:
+    """Текст ошибки, если сроки вне окна проекта."""
+    if dates_within_project(start, due, project):
+        return None
+    floor = project_earliest_start(project)
+    ceil = project_latest_due(project)
+    if floor and ((start and start < floor) or (due and due < floor)):
+        return f"Нельзя начать задачу раньше старта проекта ({floor.strftime('%d.%m.%Y')})."
+    if ceil and ((start and start > ceil) or (due and due > ceil)):
+        return f"Нельзя закончить задачу позже крайнего срока проекта ({ceil.strftime('%d.%m.%Y')})."
+    return "Сроки задачи должны быть внутри периода проекта."
+
+
+def iter_task_descendants(task: ProjectTask):
+    """Все потомки задачи (BFS)."""
+    queue: list[ProjectTask] = list(getattr(task, "subtasks", None) or [])
+    if not queue and task.id:
+        queue = list(ProjectTask.query.filter_by(parent_id=task.id).all())
+    seen: set[int] = set()
+    while queue:
+        child = queue.pop(0)
+        if not child or child.id in seen:
+            continue
+        seen.add(child.id)
+        yield child
+        kids = list(getattr(child, "subtasks", None) or [])
+        if not kids:
+            kids = list(ProjectTask.query.filter_by(parent_id=child.id).all())
+        queue.extend(kids)
+
+
+def shift_task_dates(task: ProjectTask, delta_days: int) -> bool:
+    """Сдвинуть start/due на delta календарных дней."""
+    if not delta_days:
+        return False
+    changed = False
+    if task.start_date:
+        task.start_date = task.start_date + timedelta(days=delta_days)
+        changed = True
+    if task.due_date:
+        task.due_date = task.due_date + timedelta(days=delta_days)
+        changed = True
+    if task.start_date and task.due_date and task.due_date < task.start_date:
+        task.start_date, task.due_date = task.due_date, task.start_date
+    return changed
+
+
+def shift_task_subtree(task: ProjectTask, delta_days: int) -> list[int]:
+    """Сдвинуть все подзадачи вместе с родителем (родитель уже сдвинут)."""
+    if not delta_days:
+        return []
+    changed: list[int] = []
+    for child in iter_task_descendants(task):
+        if shift_task_dates(child, delta_days):
+            clamp_task_dates(child)
+            sync_calendar_events_for_task(child)
+            changed.append(child.id)
+    return changed
+
+
+def default_dates_within_parent(
+    parent: ProjectTask | None,
+    today: date | None = None,
+    *,
+    project: Project | None = None,
+) -> tuple[date, date]:
+    """Дефолт для новой задачи — сегодня, не раньше проекта и внутри родителя."""
+    d = today or date.today()
+    min_d, max_d = effective_date_window(parent=parent, project=project or (parent.project if parent else None))
+    if min_d and d < min_d:
+        d = min_d
+    if max_d and d > max_d:
+        d = max_d
+    return d, d
 
 
 def kanban_sort_key(task: ProjectTask) -> tuple:
@@ -522,6 +870,8 @@ def move_task_kanban(task: ProjectTask, new_status: str, sort: int = 0) -> None:
 
 def rollover_overdue_tasks(*, today: date | None = None) -> int:
     """ТЗ 4.1: перенос просроченных на следующий день + счётчик."""
+    from servicesystem.project_management.work_calendar import snap_to_workday
+
     today = today or date.today()
     moved = 0
     q = ProjectTask.query.filter(
@@ -531,7 +881,8 @@ def rollover_overdue_tasks(*, today: date | None = None) -> int:
     )
     for task in q:
         task.overdue_days = (task.overdue_days or 0) + 1
-        task.due_date = today + timedelta(days=1)
+        nxt = today + timedelta(days=1)
+        task.due_date = snap_to_workday(nxt, task.project)
         moved += 1
     return moved
 
@@ -598,6 +949,8 @@ def project_from_template(
         description=template.description,
         planned_start=planned_start or template.planned_start,
         deadline=deadline or template.deadline,
+        skip_weekends=bool(getattr(template, "skip_weekends", False)),
+        skip_public_holidays=bool(getattr(template, "skip_public_holidays", False)),
         curator_auditor_id=curator_id,
         customer_curator_id=customer_curator_id,
         template_source_id=template.id,

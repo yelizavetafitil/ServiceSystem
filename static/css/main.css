@@ -1840,6 +1840,14 @@ a.directory-contact-title:hover {
   line-height: 1.5;
   color: var(--text);
 }
+.ss-prompt-label {
+  display: block;
+  margin: 0 0 6px;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--muted);
+}
+#ss-prompt-input { width: 100%; }
 .inline-form { display: inline; margin: 0; }
 
 .prose .markdown-body h1, .prose .markdown-body h2, .prose .markdown-body h3 { margin: 16px 0 8px; color: var(--primary-dark); }

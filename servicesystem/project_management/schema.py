@@ -10,6 +10,8 @@ PROJECT_SCHEMA_PATCHES: tuple[str, ...] = (
     "ALTER TABLE projects ADD COLUMN IF NOT EXISTS description TEXT",
     "ALTER TABLE projects ADD COLUMN IF NOT EXISTS planned_start DATE",
     "ALTER TABLE projects ADD COLUMN IF NOT EXISTS deadline DATE",
+    "ALTER TABLE projects ADD COLUMN IF NOT EXISTS skip_weekends BOOLEAN DEFAULT FALSE",
+    "ALTER TABLE projects ADD COLUMN IF NOT EXISTS skip_public_holidays BOOLEAN DEFAULT FALSE",
     "ALTER TABLE projects ADD COLUMN IF NOT EXISTS curator_auditor_id INTEGER",
     "ALTER TABLE projects ADD COLUMN IF NOT EXISTS customer_curator_id INTEGER",
     "ALTER TABLE projects ADD COLUMN IF NOT EXISTS customer_curator_active_until DATE",

@@ -23,14 +23,24 @@ from servicesystem.project_management.dates import parse_optional_date as _parse
 from servicesystem.project_management.services import (
     cascade_fs_from_task,
     cascade_fs_schedule,
+    clamp_task_dates,
+    dates_within_parent,
+    dates_within_project,
+    default_dates_within_parent,
     duplicate_task,
+    effective_date_window,
     gantt_sla_breach,
     gantt_sort_key,
     kanban_sort_key,
     move_task_kanban,
     next_gantt_sort,
+    parent_date_window,
+    project_dates_violation_message,
+    project_earliest_start,
+    project_latest_due,
     project_from_template,
     rollover_overdue_tasks,
+    shift_task_subtree,
     sync_calendar_events_for_task,
     task_opens_as_ticket,
     tasks_for_user_query,
@@ -50,8 +60,11 @@ bp = Blueprint("projects", __name__)
 _ARM_FILTER_PROJECT_KEY = "projects_arm_filter_project"
 _ARM_FILTER_SCALE_KEY = "projects_arm_filter_scale"
 _ARM_FILTER_GROUP_KEY = "projects_arm_filter_group"
+_ARM_FILTER_SUBTASKS_KEY = "projects_arm_filter_subtasks"
 _ARM_FILTER_CAL_MODE_KEY = "projects_arm_filter_cal_mode"
 _ARM_FILTER_ASSIGNEE_KEY = "projects_arm_filter_assignee"
+_ARM_BACK_VIEW_KEY = "projects_arm_back_view"
+_ARM_VIEWS = ("kanban", "week", "calendar", "gantt")
 
 KANBAN_LABELS = {
     "todo": "К исполнению",
@@ -144,7 +157,7 @@ def index():
 def arm():
     _staff_or_curator()
     view = (request.args.get("view") or "kanban").lower()
-    if view not in ("kanban", "week", "calendar", "gantt"):
+    if view not in _ARM_VIEWS:
         view = "kanban"
     # Гант / неделя / календарь — планирование ГИП; исполнители — канбан (список/доски)
     if view in ("gantt", "week", "calendar") and not user_can_view_gantt(current_user):
@@ -159,6 +172,7 @@ def arm():
             current_app.logger.exception("rollover_overdue_tasks failed")
     projects = _projects_visible()
     project_id = _arm_filter_project(projects)
+    _remember_arm_back(view, project_id)
     gantt_scale = _arm_filter_choice(
         "scale",
         _ARM_FILTER_SCALE_KEY,
@@ -171,6 +185,12 @@ def arm():
         allowed=("project", "none"),
         default=("none" if project_id else "project"),
     )
+    gantt_show_subtasks = _arm_filter_choice(
+        "subtasks",
+        _ARM_FILTER_SUBTASKS_KEY,
+        allowed=("1", "0"),
+        default="1",
+    ) == "1"
     cal_mode = _arm_filter_choice(
         "cal_mode",
         _ARM_FILTER_CAL_MODE_KEY,
@@ -191,6 +211,8 @@ def arm():
             project_id=project_id,
             include_completed=include_done,
         )
+    if view == "gantt" and not gantt_show_subtasks:
+        tasks_q = tasks_q.filter(ProjectTask.parent_id.is_(None))
     tasks_raw = tasks_q.all()
     if view == "gantt":
         tasks = sorted(tasks_raw, key=gantt_sort_key)
@@ -211,6 +233,7 @@ def arm():
         today=date.today(),
         gantt_scale=gantt_scale,
         gantt_group=gantt_group,
+        gantt_show_subtasks=gantt_show_subtasks,
         cal_mode=cal_mode,
     )
     if view == "kanban":
@@ -287,6 +310,47 @@ def _projects_visible():
         ids = db.session.query(ProjectMember.project_id).filter_by(user_id=current_user.id)
         return q.filter(or_(Project.id.in_(ids), Project.is_support_project.is_(True))).order_by(Project.name).all()
     return []
+
+
+def _remember_arm_back(view: str | None = None, project_id: int | None = None) -> None:
+    """Запомнить вид ARM для «назад» с карточки задачи."""
+    if view and view in _ARM_VIEWS:
+        session[_ARM_BACK_VIEW_KEY] = view
+    # project_id фильтруется отдельно в _arm_filter_project / сессии проекта
+
+
+def _arm_back_url(*, project_id: int | None = None) -> str:
+    """Ссылка «К модулю проектов» — тот же view (Гант/канбан/…), откуда пришли."""
+    view = session.get(_ARM_BACK_VIEW_KEY) or "kanban"
+    if view not in _ARM_VIEWS:
+        view = "kanban"
+    if view in ("gantt", "week", "calendar") and not user_can_view_gantt(current_user):
+        view = "kanban"
+    pid = project_id if project_id is not None else session.get(_ARM_FILTER_PROJECT_KEY)
+    kwargs: dict = {"view": view}
+    if isinstance(pid, int) and pid:
+        kwargs["project"] = pid
+    # сохранить зум/режим, если есть в сессии
+    if view == "gantt":
+        scale = session.get(_ARM_FILTER_SCALE_KEY)
+        if scale in ("day", "week", "month", "quarter"):
+            kwargs["scale"] = scale
+        group = session.get(_ARM_FILTER_GROUP_KEY)
+        if group in ("project", "none"):
+            kwargs["group"] = group
+        subtasks = session.get(_ARM_FILTER_SUBTASKS_KEY)
+        if subtasks in ("0", "1"):
+            kwargs["subtasks"] = subtasks
+    elif view == "calendar":
+        cal_mode = session.get(_ARM_FILTER_CAL_MODE_KEY)
+        if cal_mode in ("month", "workweek", "day", "team"):
+            kwargs["cal_mode"] = cal_mode
+    return url_for("projects.arm", **kwargs)
+
+
+def _arm_view_from_request() -> str | None:
+    raw = (request.args.get("arm_view") or request.args.get("from") or "").strip().lower()
+    return raw if raw in _ARM_VIEWS else None
 
 
 def _arm_filter_project(projects) -> int | None:
@@ -444,6 +508,9 @@ def manage_new():
                     deadline=_parse_form_date(request.form.get("deadline")),
                     member_ids=member_ids,
                 )
+                if "skip_weekends" in request.form or "skip_public_holidays" in request.form:
+                    proj.skip_weekends = request.form.get("skip_weekends") == "on"
+                    proj.skip_public_holidays = request.form.get("skip_public_holidays") == "on"
                 update_customer_curator_window(proj)
                 db.session.commit()
                 flash("Проект развёрнут из шаблона — проверьте сроки и договор.", "success")
@@ -460,6 +527,8 @@ def manage_new():
                 contract_id=contract_id,
                 planned_start=_parse_form_date(request.form.get("planned_start")),
                 deadline=_parse_form_date(request.form.get("deadline")),
+                skip_weekends=request.form.get("skip_weekends") == "on",
+                skip_public_holidays=request.form.get("skip_public_holidays") == "on",
                 curator_auditor_id=request.form.get("curator_auditor_id", type=int) or current_user.id,
                 customer_curator_id=request.form.get("customer_curator_id", type=int) or None,
                 description=(request.form.get("description") or "").strip() or None,
@@ -614,6 +683,8 @@ def manage_edit(pid):
             proj.contract_id = request.form.get("contract_id", type=int) or None
             proj.planned_start = _parse_form_date(request.form.get("planned_start"))
             proj.deadline = _parse_form_date(request.form.get("deadline"))
+            proj.skip_weekends = request.form.get("skip_weekends") == "on"
+            proj.skip_public_holidays = request.form.get("skip_public_holidays") == "on"
             proj.curator_auditor_id = request.form.get("curator_auditor_id", type=int)
             proj.customer_curator_id = request.form.get("customer_curator_id", type=int) or None
             proj.description = (request.form.get("description") or "").strip() or None
@@ -648,6 +719,9 @@ def task_new():
         abort(403)
     preset_project_id = request.args.get("project", type=int)
     preset_stage_id = request.args.get("stage", type=int)
+    arm_view = _arm_view_from_request()
+    if arm_view:
+        _remember_arm_back(arm_view, preset_project_id)
     projects_q = Project.query.filter_by(is_active=True)
     if preset_project_id and (current_user.is_admin or current_user.is_auditor):
         tpl = db.session.get(Project, preset_project_id)
@@ -720,12 +794,29 @@ def task_new():
         start_date = _parse_form_date(request.form.get("start_date"))
         due_date = _parse_form_date(request.form.get("due_date"))
         # Без дат задача не видна на шкале Ганта — по умолчанию сегодня (1 день)
+        proj_for_dates = db.session.get(Project, project_id) if project_id else None
         if not start_date and not due_date:
-            start_date = due_date = date.today()
+            start_date, due_date = default_dates_within_parent(parent_task, project=proj_for_dates)
         elif start_date and not due_date:
             due_date = start_date
         elif due_date and not start_date:
             start_date = due_date
+        if parent_task and not dates_within_parent(start_date, due_date, parent_task):
+            p_start, p_due = parent_date_window(parent_task)
+            flash(
+                f"Сроки подзадачи должны быть внутри родителя "
+                f"({p_start.strftime('%d.%m.%Y')} — {p_due.strftime('%d.%m.%Y')}).",
+                "warning",
+            )
+            return redirect(
+                url_for("projects.task_new", project=project_id, parent=parent_id, stage=stage_id)
+            )
+        proj_msg = project_dates_violation_message(start_date, due_date, proj_for_dates)
+        if proj_msg:
+            flash(proj_msg, "warning")
+            return redirect(
+                url_for("projects.task_new", project=project_id, parent=parent_id, stage=stage_id)
+            )
         task = ProjectTask(
             project_id=project_id,
             stage_id=stage_id,
@@ -763,13 +854,21 @@ def task_new():
         db.session.commit()
         flash("Задача создана.", "success")
         return redirect(url_for("projects.task_detail", tid=task.id))
+    proj_for_form = (
+        parent_task.project
+        if parent_task
+        else (db.session.get(Project, preset_project_id) if preset_project_id else None)
+    )
     if parent_task:
         preset_stage_id = parent_task.stage_id or preset_stage_id
-    elif preset_stage_id and preset_project_id:
+        default_start, default_due = default_dates_within_parent(parent_task, project=proj_for_form)
+    else:
+        default_start, default_due = default_dates_within_parent(None, project=proj_for_form)
+    if preset_stage_id and preset_project_id and not parent_task:
         st = db.session.get(ProjectStage, preset_stage_id)
         if not st or st.project_id != preset_project_id:
             preset_stage_id = None
-    elif not preset_stage_id and preset_project_id:
+    elif not preset_stage_id and preset_project_id and not parent_task:
         # Один этап в проекте — подставляем его по умолчанию
         stages = stages_by_project.get(preset_project_id) or []
         if len(stages) == 1:
@@ -783,6 +882,7 @@ def task_new():
     project_names = {str(p.id): p.name for p in projects}
     if parent_task and parent_task.project and str(parent_task.project_id) not in project_names:
         project_names[str(parent_task.project_id)] = parent_task.project.name
+    date_min, date_max = effective_date_window(parent=parent_task, project=proj_for_form)
     return render_template(
         "projects/task_form.html",
         task=None,
@@ -796,8 +896,13 @@ def task_new():
         executors_by_project=executors_by_project,
         project_names=project_names,
         preset_stage_id=preset_stage_id,
-        default_start=date.today(),
-        default_due=date.today(),
+        default_start=default_start,
+        default_due=default_due,
+        parent_window_start=date_min,
+        parent_window_due=date_max,
+        project_start=project_earliest_start(proj_for_form),
+        project_deadline=project_latest_due(proj_for_form),
+        arm_back_url=_arm_back_url(project_id=preset_project_id or (parent_task.project_id if parent_task else None)),
         **projects_ui_context(),
     )
 
@@ -810,6 +915,9 @@ def task_detail(tid):
         abort(403)
     if task_opens_as_ticket(task) and task.ticket_id:
         return redirect(url_for("tickets.detail", tid=task.ticket_id))
+    arm_view = _arm_view_from_request()
+    if arm_view:
+        _remember_arm_back(arm_view, task.project_id)
     tab = request.args.get("tab", "main")
     executors = executors_for_project(task.project_id)
     # Текущий исполнитель/соисполнители вне состава — оставляем в списке, чтобы не потерять
@@ -884,6 +992,7 @@ def task_detail(tid):
         for f in task_files:
             if user_can_delete_task_attachment(current_user, task, f):
                 deletable_file_ids.add(f.id)
+    date_min, date_max = effective_date_window(parent=task.parent, project=task.project)
     return render_template(
         "projects/task_detail.html",
         task=task,
@@ -900,6 +1009,12 @@ def task_detail(tid):
         project_stages=project_stages,
         blocked=blocked,
         subtasks=subtasks,
+        parent_window_start=date_min,
+        parent_window_due=date_max,
+        project_start=project_earliest_start(task.project),
+        project_deadline=project_latest_due(task.project),
+        arm_back_url=_arm_back_url(project_id=task.project_id),
+        arm_back_view=session.get(_ARM_BACK_VIEW_KEY),
         collaborator_ids=collaborator_ids,
         time_logs=time_logs,
         link_type_choices=list(PROJECT_LINK_UI_CHOICES),
@@ -945,6 +1060,7 @@ def gantt_task_dates(tid):
         return jsonify({"error": "no_dates"}), 400
     if start_d and due_d and due_d < start_d:
         start_d, due_d = due_d, start_d
+    old_start = task.start_date or task.due_date
     if start_d:
         task.start_date = start_d
     if due_d:
@@ -953,6 +1069,13 @@ def gantt_task_dates(tid):
         task.due_date = task.start_date
     if task.due_date and not task.start_date:
         task.start_date = task.due_date
+    # Подзадача — внутри родителя; все — не раньше старта проекта; с подзадачами вместе
+    clamp_task_dates(task)
+    new_start = task.start_date or task.due_date
+    if old_start and new_start:
+        delta = (new_start - old_start).days
+        if delta:
+            shift_task_subtree(task, delta)
     sla = gantt_sla_breach(task, task.project)
     if sla and task.project:
         task.is_critical_path = True
@@ -988,6 +1111,7 @@ def gantt_task_panel(tid):
     data = request.get_json(silent=True) or {}
     start_s = (data.get("start_date") or "").strip()
     due_s = (data.get("due_date") or "").strip()
+    old_start = task.start_date or task.due_date
     try:
         if start_s:
             task.start_date = date.fromisoformat(start_s)
@@ -997,6 +1121,13 @@ def gantt_task_panel(tid):
         return jsonify({"error": "bad_date"}), 400
     if task.start_date and task.due_date and task.due_date < task.start_date:
         task.start_date, task.due_date = task.due_date, task.start_date
+    clamp_task_dates(task)
+    if start_s or due_s:
+        new_start = task.start_date or task.due_date
+        if old_start and new_start:
+            delta = (new_start - old_start).days
+            if delta:
+                shift_task_subtree(task, delta)
     if "stage_id" in data:
         stage_id = data.get("stage_id")
         if stage_id in ("", None):
@@ -1018,10 +1149,17 @@ def gantt_task_panel(tid):
             if str(exc) == "blocked":
                 return jsonify({"error": "blocked"}), 409
             return jsonify({"error": "bad_status"}), 400
+    if "title" in data:
+        title = (data.get("title") or "").strip()
+        if not title:
+            return jsonify({"error": "empty_title"}), 400
+        if len(title) > 255:
+            return jsonify({"error": "title_too_long"}), 400
+        task.title = title
     sync_calendar_events_for_task(task)
     shifted = cascade_fs_from_task(task)
     db.session.commit()
-    return jsonify({"ok": True, "fs_shifted": shifted})
+    return jsonify({"ok": True, "fs_shifted": shifted, "title": task.title})
 
 
 @bp.route("/gantt/links", methods=["POST"])
@@ -1551,10 +1689,19 @@ def _gantt_link_edges(bars: list[dict], links) -> list[dict]:
 
 def _gantt_apply_row_numbers(bars: list[dict]) -> None:
     no_by_id = {b["task"].id: b["row"] + 1 for b in bars}
+    wbs_by_id = {b["task"].id: b.get("wbs") or str(b["row"] + 1) for b in bars}
     for b in bars:
         b["display_no"] = b["row"] + 1
-        b["waits_for"] = [{**w, "no": no_by_id.get(w["id"])} for w in b.get("waits_for", [])]
-        b["blocks"] = [{**x, "no": no_by_id.get(x["id"])} for x in b.get("blocks", [])]
+        if not b.get("wbs"):
+            b["wbs"] = str(b["display_no"])
+        b["waits_for"] = [
+            {**w, "no": no_by_id.get(w["id"]), "wbs": wbs_by_id.get(w["id"])}
+            for w in b.get("waits_for", [])
+        ]
+        b["blocks"] = [
+            {**x, "no": no_by_id.get(x["id"]), "wbs": wbs_by_id.get(x["id"])}
+            for x in b.get("blocks", [])
+        ]
 
 
 def _bar_geometry(
@@ -1608,6 +1755,43 @@ def _gantt_collect_dated(tasks) -> list[tuple]:
             s, e = e, s
         dated.append((t, s, e))
     return dated
+
+
+def _gantt_tree_order(items: list[tuple]) -> list[tuple]:
+    """Родитель → дети: (task, *rest, depth, wbs). WBS: 1, 1.1, 1.2.1 по порядку gantt_sort."""
+    if not items:
+        return []
+    by_id = {it[0].id: it for it in items}
+    children: dict[int | None, list[int]] = {None: []}
+    for it in items:
+        t = it[0]
+        pid = t.parent_id if t.parent_id in by_id else None
+        children.setdefault(pid, []).append(t.id)
+    for pid, ids in children.items():
+        ids.sort(key=lambda i: gantt_sort_key(by_id[i][0]))
+
+    out: list[tuple] = []
+    visited: set[int] = set()
+
+    def walk(tid: int, depth: int, parts: list[int]) -> None:
+        if tid in visited:
+            return
+        visited.add(tid)
+        it = by_id[tid]
+        wbs = ".".join(str(p) for p in parts)
+        out.append((*it, depth, wbs))
+        for j, cid in enumerate(children.get(tid, []), start=1):
+            walk(cid, depth + 1, parts + [j])
+
+    roots = children.get(None, [])
+    for i, tid in enumerate(roots, start=1):
+        walk(tid, 0, [i])
+    n_root = len(roots)
+    for tid in by_id:
+        if tid not in visited:
+            n_root += 1
+            walk(tid, 0, [n_root])
+    return out
 
 
 def _gantt_milestones(
@@ -1678,7 +1862,17 @@ def _gantt_build_bars(
     row_offset: int = 0,
 ) -> list[dict]:
     bars = []
-    for idx, (t, s, e) in enumerate(dated):
+    for idx, item in enumerate(dated):
+        t = item[0]
+        s, e = item[1], item[2]
+        # хвост: depth, wbs (после _gantt_tree_order)
+        depth = 0
+        wbs = str(row_offset + idx + 1)
+        if len(item) >= 5 and isinstance(item[-1], str) and isinstance(item[-2], int):
+            depth = max(0, int(item[-2]))
+            wbs = item[-1]
+        elif len(item) >= 4 and isinstance(item[3], int):
+            depth = max(0, int(item[3]))
         in_range, left_pct, width_pct = _bar_geometry(s, e, span_start, span_end, scale, n_cols)
         sla = gantt_sla_breach(t, t.project)
         critical = sla or bool(t.is_critical_path)
@@ -1686,6 +1880,8 @@ def _gantt_build_bars(
             {
                 "task": t,
                 "row": row_offset + idx,
+                "depth": depth,
+                "wbs": wbs,
                 "left_pct": left_pct,
                 "width_pct": width_pct,
                 "bar_caption": _gantt_bar_caption(s, e, width_pct if in_range else 0),
@@ -1732,15 +1928,16 @@ def _gantt_layout(
     columns = _gantt_columns(span_start, span_end, scale)
     n_cols = max(1, len(columns))
     col_px = _gantt_col_px(scale, n_cols)
-    dated = _gantt_collect_dated(tasks)
-    task_list = [t for t, _, _ in dated]
+    dated_flat = _gantt_collect_dated(tasks)
+    dated = _gantt_tree_order(dated_flat)
+    task_list = [it[0] for it in dated]
     links = _gantt_links(task_list)
     waits_for, blocks, related_with = _gantt_task_relations(task_list, links)
 
     groups: list[dict] = []
     if group_by == "project" and not project_filter:
         by_pid: dict[int, list] = {}
-        for item in dated:
+        for item in dated_flat:
             t = item[0]
             by_pid.setdefault(t.project_id or 0, []).append(item)
         order = sorted(
@@ -1752,8 +1949,8 @@ def _gantt_layout(
         )
         row_off = 0
         for pid in order:
-            chunk = by_pid[pid]
-            proj = chunk[0][0].project
+            chunk = _gantt_tree_order(by_pid[pid])
+            proj = chunk[0][0].project if chunk else None
             bars = _gantt_build_bars(
                 chunk, span_start, span_end, scale, n_cols,
                 waits_for, blocks, related_with, user, row_off,
@@ -1777,18 +1974,28 @@ def _gantt_layout(
     gantt_bars = [b for g in groups for b in g["bars"]]
     _gantt_apply_row_numbers(gantt_bars)
 
-    dated_ids = {t.id for t, _, _ in dated}
-    undated_tasks = sorted(
-        [t for t in tasks if t.id not in dated_ids and not (t.start_date or t.due_date)],
-        key=gantt_sort_key,
-    )
+    dated_ids = {it[0].id for it in dated_flat}
+    undated_flat = [
+        (t,)
+        for t in tasks
+        if t.id not in dated_ids and not (t.start_date or t.due_date)
+    ]
+    undated_ordered = _gantt_tree_order(undated_flat)
     undated_row0 = len(gantt_bars)
     gantt_undated: list[dict] = []
-    for i, t in enumerate(undated_tasks):
+    for i, item in enumerate(undated_ordered):
+        t = item[0]
+        depth = 0
+        wbs = str(undated_row0 + i + 1)
+        if len(item) >= 3 and isinstance(item[-1], str) and isinstance(item[-2], int):
+            depth = max(0, int(item[-2]))
+            wbs = item[-1]
         gantt_undated.append(
             {
                 "task": t,
                 "row": undated_row0 + i,
+                "depth": depth,
+                "wbs": wbs,
                 "display_no": undated_row0 + i + 1,
                 "status_label": KANBAN_LABELS.get(t.kanban_status, t.kanban_status),
                 "open_as_ticket": task_opens_as_ticket(t),

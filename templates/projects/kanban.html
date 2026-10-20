@@ -20,7 +20,7 @@
           <a class="projects-kanban-card-title" href="{{ url_for('tickets.detail', tid=t.ticket_id) }}">{{ t.title }}</a>
           <span class="projects-kanban-badge">Заявка</span>
           {% else %}
-          <a class="projects-kanban-card-title" href="{{ url_for('projects.task_detail', tid=t.id) }}">{{ t.title }}</a>
+          <a class="projects-kanban-card-title" href="{{ url_for('projects.task_detail', tid=t.id, arm_view='kanban') }}">{{ t.title }}</a>
           {% endif %}
           {% if t.project %}<p class="projects-kanban-meta">{{ t.project.name }}{% if t.stage %} · {{ t.stage.title }}{% endif %}</p>{% endif %}
           {% if t.due_date %}<p class="projects-kanban-due">до {{ t.due_date.strftime('%d.%m.%Y') }}{% if t.overdue_days %} · +{{ t.overdue_days }} д.{% endif %}</p>{% endif %}

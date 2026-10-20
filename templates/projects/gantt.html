@@ -4,9 +4,9 @@
 
 {% block head %}
 
-<link rel="stylesheet" href="{{ url_for('static', filename='css/projects.css') }}?v=47">
+<link rel="stylesheet" href="{{ url_for('static', filename='css/projects.css') }}?v=57">
 
-<script defer src="{{ url_for('static', filename='js/projects-gantt.js') }}?v=20"></script>
+<script defer src="{{ url_for('static', filename='js/projects-gantt.js') }}?v=34"></script>
 
 {% endblock %}
 
@@ -47,7 +47,7 @@
   {% set fp_name = (projects|selectattr('id', 'equalto', filter_project)|map(attribute='name')|first) or ('№' ~ filter_project) %}
   {% set fp_short = fp_name if fp_name|length <= 42 else (fp_name[:41] ~ '…') %}
   <div class="projects-gantt-add-bar">
-    <a href="{{ url_for('projects.task_new', project=filter_project) }}" class="btn btn-primary btn-sm" title="{{ fp_name }}">
+    <a href="{{ url_for('projects.task_new', project=filter_project, arm_view='gantt') }}" class="btn btn-primary btn-sm" title="{{ fp_name }}">
       Новая задача в «{{ fp_short }}»
     </a>
     <span class="muted projects-gantt-add-hint">Верхний уровень проекта · подзадача — ПКМ по полоске задачи</span>
@@ -160,25 +160,33 @@
 
         {% set t = grow.task %}
 
-        <div class="projects-gantt-row{% if gantt_can_edit %} is-reorderable{% endif %}" id="gantt-row-{{ grow.display_no }}" data-task-id="{{ t.id }}">
+        <div class="projects-gantt-row{% if gantt_can_edit %} is-reorderable{% endif %}" id="gantt-row-{{ grow.display_no }}" data-task-id="{{ t.id }}" data-parent-id="{{ t.parent_id or '' }}" data-depth="{{ grow.depth|default(0) }}" data-wbs="{{ grow.wbs|default(grow.display_no) }}">
 
           <div class="projects-gantt-side">
 
-            <div class="projects-gantt-side-top">
+            <div class="projects-gantt-side-top" style="--gantt-depth: {{ grow.depth|default(0) }}">
 
               {% if gantt_can_edit %}
               <span class="projects-gantt-drag-handle" title="Перетащить для смены порядка" draggable="true" aria-hidden="true">⋮⋮</span>
               {% endif %}
-              <span class="projects-gantt-row-no">{{ grow.display_no }}</span>
+              <span class="projects-gantt-row-no" title="WBS {{ grow.wbs|default(grow.display_no) }}">{{ grow.wbs|default(grow.display_no) }}</span>
 
-              <div class="projects-gantt-side-text">
+              <div class="projects-gantt-side-text{% if grow.depth|default(0) %} is-nested depth-{{ grow.depth|default(0) }}{% endif %}">
 
-                {% if grow.open_as_ticket and grow.ticket_id %}
-                <a href="{{ url_for('tickets.detail', tid=grow.ticket_id) }}" class="projects-gantt-label" title="{{ t.title }}">{{ t.title }}</a>
-                <span class="projects-kanban-badge">Заявка</span>
-                {% else %}
-                <a href="{{ url_for('projects.task_detail', tid=t.id) }}" class="projects-gantt-label" title="{{ t.title }}">{{ t.title }}</a>
-                {% endif %}
+                <div class="projects-gantt-title-row">
+                  {% if grow.open_as_ticket and grow.ticket_id %}
+                  <a href="{{ url_for('tickets.detail', tid=grow.ticket_id) }}" class="projects-gantt-label" data-gantt-title title="{{ t.title }}">{{ t.title }}</a>
+                  <span class="projects-kanban-badge">Заявка</span>
+                  {% else %}
+                  <a href="{{ url_for('projects.task_detail', tid=t.id, arm_view='gantt') }}" class="projects-gantt-label" data-gantt-title title="{{ t.title }}">{{ t.title }}</a>
+                  {% endif %}
+                  {% if gantt_can_edit %}
+                  <span class="projects-gantt-side-actions">
+                    <button type="button" class="projects-gantt-icon-btn" data-gantt-rename="{{ t.id }}" title="Переименовать" aria-label="Переименовать">✎</button>
+                    <a class="projects-gantt-icon-btn" href="{{ url_for('projects.task_new', parent=t.id, arm_view='gantt') }}" title="Добавить подзадачу" aria-label="Добавить подзадачу">＋</a>
+                  </span>
+                  {% endif %}
+                </div>
 
                 <div class="projects-gantt-side-meta">
 
@@ -198,7 +206,7 @@
 
               {% for w in grow.waits_for %}
 
-              <span>Ожидает №<a href="#gantt-row-{{ w.no }}">{{ w.no }}</a></span>{% if not loop.last %}; {% endif %}
+              <span>Ожидает <a href="#gantt-row-{{ w.no }}">{{ w.wbs or w.no }}</a></span>{% if not loop.last %}; {% endif %}
 
               {% endfor %}
 
@@ -288,20 +296,28 @@
         </div>
         {% for grow in gantt_undated %}
         {% set t = grow.task %}
-        <div class="projects-gantt-row projects-gantt-row--undated{% if gantt_can_edit %} is-reorderable{% endif %}" id="gantt-row-{{ grow.display_no }}" data-task-id="{{ t.id }}">
+        <div class="projects-gantt-row projects-gantt-row--undated{% if gantt_can_edit %} is-reorderable{% endif %}" id="gantt-row-{{ grow.display_no }}" data-task-id="{{ t.id }}" data-parent-id="{{ t.parent_id or '' }}" data-depth="{{ grow.depth|default(0) }}" data-wbs="{{ grow.wbs|default(grow.display_no) }}">
           <div class="projects-gantt-side">
-            <div class="projects-gantt-side-top">
+            <div class="projects-gantt-side-top" style="--gantt-depth: {{ grow.depth|default(0) }}">
               {% if gantt_can_edit %}
               <span class="projects-gantt-drag-handle" title="Перетащить для смены порядка" draggable="true" aria-hidden="true">⋮⋮</span>
               {% endif %}
-              <span class="projects-gantt-row-no">{{ grow.display_no }}</span>
-              <div class="projects-gantt-side-text">
-                {% if grow.open_as_ticket and grow.ticket_id %}
-                <a href="{{ url_for('tickets.detail', tid=grow.ticket_id) }}" class="projects-gantt-label" title="{{ t.title }}">{{ t.title }}</a>
-                <span class="projects-kanban-badge">Заявка</span>
-                {% else %}
-                <a href="{{ url_for('projects.task_detail', tid=t.id) }}" class="projects-gantt-label" title="{{ t.title }}">{{ t.title }}</a>
-                {% endif %}
+              <span class="projects-gantt-row-no" title="WBS {{ grow.wbs|default(grow.display_no) }}">{{ grow.wbs|default(grow.display_no) }}</span>
+              <div class="projects-gantt-side-text{% if grow.depth|default(0) %} is-nested depth-{{ grow.depth|default(0) }}{% endif %}">
+                <div class="projects-gantt-title-row">
+                  {% if grow.open_as_ticket and grow.ticket_id %}
+                  <a href="{{ url_for('tickets.detail', tid=grow.ticket_id) }}" class="projects-gantt-label" data-gantt-title title="{{ t.title }}">{{ t.title }}</a>
+                  <span class="projects-kanban-badge">Заявка</span>
+                  {% else %}
+                  <a href="{{ url_for('projects.task_detail', tid=t.id, arm_view='gantt') }}" class="projects-gantt-label" data-gantt-title title="{{ t.title }}">{{ t.title }}</a>
+                  {% endif %}
+                  {% if gantt_can_edit %}
+                  <span class="projects-gantt-side-actions">
+                    <button type="button" class="projects-gantt-icon-btn" data-gantt-rename="{{ t.id }}" title="Переименовать" aria-label="Переименовать">✎</button>
+                    <a class="projects-gantt-icon-btn" href="{{ url_for('projects.task_new', parent=t.id, arm_view='gantt') }}" title="Добавить подзадачу" aria-label="Добавить подзадачу">＋</a>
+                  </span>
+                  {% endif %}
+                </div>
                 <div class="projects-gantt-side-meta">
                   <span class="projects-gantt-status is-{{ t.kanban_status }}">{{ grow.status_label }}</span>
                   <span class="projects-gantt-dates projects-gantt-dates--none">без дат</span>
@@ -328,76 +344,6 @@
   </div>
 
 
-
-  {% if gantt_link_edges %}
-
-  <div class="projects-gantt-links-panel card projects-cms-card">
-
-    <h3 class="projects-gantt-links-panel-title">Связи между задачами</h3>
-
-    <div class="table-wrap">
-
-      <table class="table projects-gantt-links-table">
-
-        <thead>
-
-          <tr>
-
-            <th>Тип</th>
-
-            <th>№</th>
-
-            <th>Предшественник (конец)</th>
-
-            <th></th>
-
-            <th>№</th>
-
-            <th>Последователь (начало)</th>
-
-            {% if gantt_can_edit %}<th></th>{% endif %}
-
-          </tr>
-
-        </thead>
-
-        <tbody>
-
-          {% for edge in gantt_link_edges %}
-
-          <tr data-link-id="{{ edge.id }}">
-
-            <td><span class="projects-gantt-links-kind{% if edge.kind == 'related' %} is-related{% endif %}">{{ edge.type_label }}</span></td>
-
-            <td><a href="#gantt-row-{{ edge.from_row }}">№{{ edge.from_row }}</a></td>
-
-            <td><a href="{{ url_for('projects.task_detail', tid=edge.from_task_id) }}">{{ edge.from_title }}</a></td>
-
-            <td class="projects-gantt-arrow-cell">→</td>
-
-            <td><a href="#gantt-row-{{ edge.to_row }}">№{{ edge.to_row }}</a></td>
-
-            <td><a href="{{ url_for('projects.task_detail', tid=edge.to_task_id) }}">{{ edge.to_title }}</a></td>
-
-            {% if gantt_can_edit %}
-            <td class="projects-gantt-links-actions">
-              <button type="button" class="btn btn-outline btn-icon-xs" data-gantt-link-delete="{{ edge.id }}" title="Удалить связь" aria-label="Удалить связь">×</button>
-            </td>
-            {% endif %}
-
-          </tr>
-
-          {% endfor %}
-
-        </tbody>
-
-      </table>
-
-    </div>
-
-  </div>
-
-  {% endif %}
 
 
 

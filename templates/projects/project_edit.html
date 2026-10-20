@@ -1,7 +1,7 @@
 {% extends "base.html" %}
 {% from "macros/forms.html" import csrf_field %}
 {% block title %}{{ project.name }}{% endblock %}
-{% block head %}<link rel="stylesheet" href="{{ url_for('static', filename='css/projects.css') }}?v=42">{% endblock %}
+{% block head %}<link rel="stylesheet" href="{{ url_for('static', filename='css/projects.css') }}?v=51">{% endblock %}
 {% block content %}
 <div class="container cms-page projects-cms projects-project-edit">
   <a href="{{ url_for('projects.manage_list') }}" class="back-link">← Проекты</a>
@@ -79,6 +79,17 @@
           {% if project.customer_curator_active_until %}
           <p class="projects-cms-hint muted">Роль куратора-заказчика активна до {{ project.customer_curator_active_until.strftime('%d.%m.%Y') }}</p>
           {% endif %}
+          <fieldset class="projects-workdays-opts">
+            <legend class="projects-workdays-legend">Рабочие дни</legend>
+            <label class="projects-workdays-check">
+              <input type="checkbox" name="skip_weekends" {% if project.skip_weekends %}checked{% endif %}>
+              Не ставить задачи на выходные (сб–вс); трудодни в эти дни не считаются
+            </label>
+            <label class="projects-workdays-check">
+              <input type="checkbox" name="skip_public_holidays" {% if project.skip_public_holidays %}checked{% endif %}>
+              Учитывать государственные праздники (в т.ч. 7 ноября)
+            </label>
+          </fieldset>
           <div class="form-actions">
             <button type="submit" class="btn btn-primary">Сохранить</button>
             {% if not project.is_template %}

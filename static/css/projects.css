@@ -350,13 +350,17 @@
 .projects-gantt-fs-path {
   fill: none;
   stroke: #1e40af;
-  stroke-width: 2;
+  stroke-width: 1.7;
+  stroke-linecap: round;
+  stroke-linejoin: round;
   pointer-events: none;
-  transition: stroke 0.12s ease;
+  transition: stroke 0.12s ease, stroke-width 0.12s ease;
 }
 .projects-gantt-fs-path.is-hover {
   stroke: #dc2626;
-  stroke-width: 2.5;
+  stroke-width: 2.2;
+  marker-start: url(#gantt-fs-dot-hover);
+  marker-end: url(#gantt-fs-arrow-hover);
 }
 .projects-gantt-fs-hit {
   fill: none;
@@ -589,19 +593,65 @@
 .projects-gantt-col-no { display: inline-block; min-width: 1.5em; margin-right: 6px; color: var(--muted); }
 .projects-gantt-side-top { display: flex; align-items: flex-start; gap: 10px; min-width: 0; }
 .projects-gantt-side-text { flex: 1; min-width: 0; }
+.projects-gantt-side-text.is-nested {
+  padding-left: calc(var(--gantt-depth, 1) * 14px);
+  border-left: 2px solid #c7d2fe;
+  margin-left: 2px;
+}
+.projects-gantt-title-row {
+  display: flex;
+  align-items: flex-start;
+  gap: 6px;
+  min-width: 0;
+}
+.projects-gantt-title-row .projects-gantt-label { flex: 1; min-width: 0; }
+.projects-gantt-side-actions {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  flex-shrink: 0;
+  opacity: 0.55;
+  transition: opacity 0.12s ease;
+}
+.projects-gantt-side:hover .projects-gantt-side-actions,
+.projects-gantt-side:focus-within .projects-gantt-side-actions { opacity: 1; }
+.projects-gantt-icon-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 22px;
+  padding: 0;
+  border: 1px solid transparent;
+  border-radius: 999px;
+  background: #f8fafc;
+  color: #334155;
+  font-size: 13px;
+  line-height: 1;
+  text-decoration: none;
+  cursor: pointer;
+}
+.projects-gantt-icon-btn:hover {
+  border-color: #bfdbfe;
+  background: #eff6ff;
+  color: #1d4ed8;
+}
 .projects-gantt-row-no {
-  flex: 0 0 28px;
-  width: 28px;
+  flex: 0 0 auto;
+  min-width: 28px;
   height: 28px;
-  line-height: 28px;
+  padding: 0 7px;
+  line-height: 26px;
   text-align: center;
-  font-size: 12px;
+  font-size: 11px;
   font-weight: 800;
+  font-variant-numeric: tabular-nums;
   color: #475569;
   background: #f1f5f9;
   border-radius: 8px;
   border: 1px solid #e2e8f0;
   margin-top: 2px;
+  white-space: nowrap;
 }
 .projects-gantt-dep-hint {
   margin: 6px 0 0 38px;
@@ -930,6 +980,39 @@
 }
 
 /* CMS проектов — отступы без наложений */
+.projects-workdays-opts {
+  margin: 14px 0 4px;
+  padding: 12px 14px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: #f8fafc;
+}
+.projects-workdays-legend {
+  padding: 0 6px;
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--primary-dark);
+}
+.projects-workdays-check {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  margin: 8px 0;
+  font-size: 13px;
+  line-height: 1.4;
+  cursor: pointer;
+}
+.projects-workdays-check input { margin-top: 2px; flex-shrink: 0; }
+.projects-task-topbar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  margin-bottom: 12px;
+}
+.projects-task-topbar .back-link { margin-bottom: 0; }
+.projects-task-topbar-new { white-space: nowrap; }
 .projects-cms .back-link { display: inline-block; margin-bottom: 16px; }
 .projects-cms-card { margin-bottom: 20px; }
 .projects-cms-card:last-child { margin-bottom: 0; }

@@ -8,7 +8,7 @@
   <link rel="icon" href="{{ url_for('static', filename='img/belnipi-logo.png') }}?v=19" type="image/png">
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="{{ url_for('static', filename='css/main.css') }}?v=55">
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/main.css') }}?v=56">
   {% block head %}{% endblock %}
 </head>
 <body class="{% if not current_user.is_authenticated %}auth-body{% endif %}">
@@ -91,8 +91,19 @@
     </div>
   </div>
 </div>
+<div class="modal" id="ss-prompt-modal" aria-modal="true" role="dialog" aria-labelledby="ss-prompt-title">
+  <div class="modal-content modal-content--confirm">
+    <h3 id="ss-prompt-title">Ввод</h3>
+    <label class="ss-prompt-label" id="ss-prompt-label" for="ss-prompt-input">Значение</label>
+    <input type="text" class="form-control" id="ss-prompt-input" autocomplete="off">
+    <div class="modal-actions">
+      <button type="button" class="btn btn-primary" id="ss-prompt-ok">Сохранить</button>
+      <button type="button" class="btn btn-outline" id="ss-prompt-cancel">Отмена</button>
+    </div>
+  </div>
+</div>
 <script src="{{ url_for('static', filename='js/app.js') }}?v=7"></script>
-<script src="{{ url_for('static', filename='js/confirm-dialog.js') }}?v=1"></script>
+<script src="{{ url_for('static', filename='js/confirm-dialog.js') }}?v=2"></script>
 <script src="{{ url_for('static', filename='js/live-search.js') }}?v=9"></script>
 <script>
 document.querySelectorAll('form[method="post"]').forEach(function(form) {
