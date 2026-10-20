@@ -39,6 +39,8 @@ from servicesystem.project_management.services import (
     project_earliest_start,
     project_latest_due,
     project_from_template,
+    fs_link_parent_window_violation,
+    tasks_hierarchically_related,
     rollover_overdue_tasks,
     shift_task_subtree,
     sync_calendar_events_for_task,
@@ -842,14 +844,25 @@ def task_new():
 
             pred = db.session.get(ProjectTask, pred_id)
             if pred and pred.project_id == project_id and pred.id != task.id:
-                db.session.add(
-                    ProjectTaskLink(
-                        from_task_id=pred.id,
-                        to_task_id=task.id,
-                        link_type="blocks",
+                if tasks_hierarchically_related(pred, task):
+                    flash(
+                        "Нельзя связать родительскую задачу с её подзадачей "
+                        "(родитель = совокупность подзадач).",
+                        "warning",
                     )
-                )
-                cascade_fs_schedule(task)
+                else:
+                    bound_msg = fs_link_parent_window_violation(pred, task)
+                    if bound_msg:
+                        flash(bound_msg, "warning")
+                    else:
+                        db.session.add(
+                            ProjectTaskLink(
+                                from_task_id=pred.id,
+                                to_task_id=task.id,
+                                link_type="blocks",
+                            )
+                        )
+                        cascade_fs_schedule(task)
         sync_calendar_events_for_task(task)
         db.session.commit()
         flash("Задача создана.", "success")
@@ -1192,6 +1205,16 @@ def gantt_link_add():
         from_task, to_task = to_task, from_task
     if link_type not in ("blocks", "related"):
         return jsonify({"error": "bad_type"}), 400
+    if tasks_hierarchically_related(from_task, to_task):
+        return jsonify({
+            "error": "parent_child",
+            "message": "Нельзя связать родительскую задачу с её подзадачей "
+            "(родитель = совокупность подзадач). Связи между подзадачами допустимы.",
+        }), 400
+    if link_type == "blocks":
+        bound_msg = fs_link_parent_window_violation(from_task, to_task)
+        if bound_msg:
+            return jsonify({"error": "parent_window", "message": bound_msg}), 400
     exists = ProjectTaskLink.query.filter_by(
         from_task_id=from_id, to_task_id=to_id, link_type=link_type
     ).first()

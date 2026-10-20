@@ -135,23 +135,42 @@ def task_update(tid):
         elif store_type is None or store_type not in TASK_LINK_TYPES:
             flash("Неверный тип связи.", "warning")
         else:
-            exists = ProjectTaskLink.query.filter_by(
-                from_task_id=from_id, to_task_id=to_id, link_type=store_type
-            ).first()
-            if exists:
-                flash("Такая связь уже есть.", "warning")
-            else:
-                db.session.add(
-                    ProjectTaskLink(from_task_id=from_id, to_task_id=to_id, link_type=store_type)
-                )
-                if store_type == "blocks":
-                    from servicesystem.project_management.services import cascade_fs_schedule
+            from servicesystem.project_management.services import (
+                cascade_fs_schedule,
+                fs_link_parent_window_violation,
+                tasks_hierarchically_related,
+            )
 
-                    succ = db.session.get(ProjectTask, to_id)
-                    if succ:
-                        cascade_fs_schedule(succ)
-                db.session.commit()
-                flash("Связь добавлена.", "success")
+            if tasks_hierarchically_related(task, other):
+                flash(
+                    "Нельзя связать родительскую задачу с её подзадачей "
+                    "(родитель = совокупность подзадач). Связи между подзадачами допустимы.",
+                    "warning",
+                )
+            else:
+                pred = db.session.get(ProjectTask, from_id)
+                succ = db.session.get(ProjectTask, to_id)
+                bound_msg = None
+                if store_type == "blocks" and pred and succ:
+                    bound_msg = fs_link_parent_window_violation(pred, succ)
+                if bound_msg:
+                    flash(bound_msg, "warning")
+                else:
+                    exists = ProjectTaskLink.query.filter_by(
+                        from_task_id=from_id, to_task_id=to_id, link_type=store_type
+                    ).first()
+                    if exists:
+                        flash("Такая связь уже есть.", "warning")
+                    else:
+                        db.session.add(
+                            ProjectTaskLink(
+                                from_task_id=from_id, to_task_id=to_id, link_type=store_type
+                            )
+                        )
+                        if store_type == "blocks" and succ:
+                            cascade_fs_schedule(succ)
+                        db.session.commit()
+                        flash("Связь добавлена.", "success")
         return redirect(url_for("projects.task_detail", tid=tid, tab="links"))
     if action == "link_remove":
         lid = request.form.get("link_id", type=int)

@@ -38,6 +38,14 @@
     window.location.reload();
   }
 
+  function ganttAlert(message, title) {
+    if (typeof window.ssAlert === "function") {
+      return window.ssAlert(message, { title: title || "Внимание" });
+    }
+    window.alert(message);
+    return Promise.resolve(true);
+  }
+
   function parseIso(s) {
 
     if (!s) return null;
@@ -636,9 +644,9 @@
         headers: { "X-CSRFToken": csrf },
       });
       if (res.ok) reloadGantt();
-      else alert("Не удалось удалить связь.");
+      else ganttAlert("Не удалось удалить связь.");
     } catch (err) {
-      alert("Ошибка сети.");
+      ganttAlert("Ошибка сети.");
     }
   }
 
@@ -748,10 +756,10 @@
           }),
         });
         if (res.ok) reloadGantt();
-        else if (res.status === 409) alert("Нельзя сменить статус: есть блокирующие связи.");
-        else alert("Не удалось сохранить.");
+        else if (res.status === 409) ganttAlert("Нельзя сменить статус: есть блокирующие связи.");
+        else ganttAlert("Не удалось сохранить.");
       } catch (err) {
-        alert("Ошибка сети.");
+        ganttAlert("Ошибка сети.");
       }
     });
   }
@@ -763,10 +771,15 @@
         headers: { "Content-Type": "application/json", "X-CSRFToken": csrf },
         body: JSON.stringify({ from_task_id: fromId, to_task_id: toId, link_type: "blocks" }),
       });
-      if (res.ok) reloadGantt();
-      else alert("Не удалось создать связь.");
+      if (res.ok) {
+        reloadGantt();
+        return;
+      }
+      var data = {};
+      try { data = await res.json(); } catch (e) {}
+      ganttAlert((data && data.message) || "Не удалось создать связь.");
     } catch (err) {
-      alert("Ошибка сети.");
+      ganttAlert("Ошибка сети.");
     }
   }
 
@@ -986,7 +999,7 @@
         });
         var data = await res.json().catch(function () { return {}; });
         if (!res.ok) {
-          alert((data && data.error) || "Не удалось сохранить название");
+          ganttAlert((data && data.error) || "Не удалось сохранить название");
           return;
         }
         var title = (data && data.title) || next;
@@ -997,7 +1010,7 @@
         var bar = chart.querySelector('.projects-gantt-bar[data-task-id="' + tid + '"]');
         if (bar) bar.setAttribute("data-title", title);
       } catch (err) {
-        alert("Ошибка сети");
+        ganttAlert("Ошибка сети");
       }
     });
   });

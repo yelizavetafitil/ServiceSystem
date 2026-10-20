@@ -413,6 +413,111 @@ def clamp_task_dates_to_parent(task: ProjectTask) -> bool:
     return True
 
 
+def is_task_ancestor(ancestor: ProjectTask, descendant: ProjectTask) -> bool:
+    """True, если ancestor выше descendant в иерархии parent_id."""
+    if not ancestor or not descendant or ancestor.id == descendant.id:
+        return False
+    cur = descendant
+    seen: set[int] = set()
+    while cur and cur.parent_id:
+        if cur.parent_id in seen:
+            break
+        seen.add(cur.parent_id)
+        if cur.parent_id == ancestor.id:
+            return True
+        cur = cur.parent if cur.parent is not None else db.session.get(ProjectTask, cur.parent_id)
+    return False
+
+
+def tasks_hierarchically_related(a: ProjectTask | None, b: ProjectTask | None) -> bool:
+    """Родитель ↔ подзадача (любой глубины): такие пары нельзя связывать FS."""
+    if not a or not b or a.id == b.id:
+        return False
+    return is_task_ancestor(a, b) or is_task_ancestor(b, a)
+
+
+def forecast_fs_dates_after_predecessor(
+    succ: ProjectTask,
+    pred: ProjectTask,
+) -> tuple[date | None, date | None]:
+    """start/due последователя после FS от pred (без записи в БД)."""
+    from servicesystem.project_management.work_calendar import (
+        add_workday_steps,
+        project_uses_work_calendar,
+        snap_to_workday,
+        workday_steps,
+    )
+
+    pred_due = pred.due_date or pred.start_date
+    if not pred_due:
+        return succ.start_date, succ.due_date
+    other_ends = [
+        p.due_date
+        for p in _fs_predecessor_tasks(succ)
+        if p.due_date and p.id != pred.id
+    ]
+    min_start = max(other_ends + [pred_due]) + timedelta(days=1)
+    project = succ.project
+    if project_uses_work_calendar(project):
+        min_start = snap_to_workday(min_start, project)
+    cur_start = succ.start_date or succ.due_date
+    if cur_start is None:
+        return min_start, min_start
+    if cur_start >= min_start:
+        return succ.start_date, succ.due_date
+    if succ.start_date and succ.due_date:
+        if project_uses_work_calendar(project):
+            duration_days = workday_steps(succ.start_date, succ.due_date, project)
+        else:
+            duration_days = max(0, (succ.due_date - succ.start_date).days)
+    else:
+        duration_days = 0
+    new_start = min_start
+    if project_uses_work_calendar(project):
+        new_due = add_workday_steps(new_start, duration_days, project)
+    else:
+        new_due = new_start + timedelta(days=duration_days)
+    return new_start, new_due
+
+
+def fs_link_parent_window_violation(
+    pred: ProjectTask,
+    succ: ProjectTask,
+) -> str | None:
+    """
+    Связь подзадач недопустима, если у одной сроки вне родителя
+    или FS сдвинет последователя за окно родителя.
+    """
+    for task, role in ((pred, "предшественника"), (succ, "последователя")):
+        if not task.parent_id:
+            continue
+        parent = task.parent or db.session.get(ProjectTask, task.parent_id)
+        if not dates_within_parent(task.start_date, task.due_date, parent):
+            p_start, p_due = parent_date_window(parent)
+            if p_start and p_due:
+                return (
+                    f"Сроки {role} выходят за рамки родителя "
+                    f"({p_start.strftime('%d.%m.%Y')} — {p_due.strftime('%d.%m.%Y')}) — связь недопустима."
+                )
+            return f"Сроки {role} выходят за рамки родителя — связь недопустима."
+
+    new_start, new_due = forecast_fs_dates_after_predecessor(succ, pred)
+    if succ.parent_id:
+        parent = succ.parent or db.session.get(ProjectTask, succ.parent_id)
+        if not dates_within_parent(new_start, new_due, parent):
+            p_start, p_due = parent_date_window(parent)
+            if p_start and p_due:
+                return (
+                    "Связь сдвинет подзадачу за сроки родителя "
+                    f"({p_start.strftime('%d.%m.%Y')} — {p_due.strftime('%d.%m.%Y')})."
+                )
+            return "Связь сдвинет подзадачу за сроки родителя."
+    proj_msg = project_dates_violation_message(new_start, new_due, succ.project)
+    if proj_msg:
+        return proj_msg
+    return None
+
+
 def project_earliest_start(project: Project | None) -> date | None:
     """Старт проекта — нижняя граница сроков задач."""
     if not project:

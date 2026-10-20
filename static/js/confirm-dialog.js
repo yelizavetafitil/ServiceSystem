@@ -7,10 +7,13 @@
   const okBtn = document.getElementById('ss-confirm-ok');
   const cancelBtn = document.getElementById('ss-confirm-cancel');
   let resolver = null;
+  var alertMode = false;
 
   function close(result) {
     modal.classList.remove('open');
     document.body.classList.remove('modal-open');
+    cancelBtn.hidden = false;
+    alertMode = false;
     const r = resolver;
     resolver = null;
     if (r) r(result);
@@ -18,11 +21,13 @@
 
   function open(message, options) {
     const opts = options || {};
-    titleEl.textContent = opts.title || 'Подтверждение';
+    alertMode = !!opts.alertOnly;
+    titleEl.textContent = opts.title || (alertMode ? 'Сообщение' : 'Подтверждение');
     msgEl.textContent = message || '';
-    okBtn.textContent = opts.confirmLabel || 'Подтвердить';
+    okBtn.textContent = opts.confirmLabel || (alertMode ? 'OK' : 'Подтвердить');
     cancelBtn.textContent = opts.cancelLabel || 'Отмена';
     okBtn.className = opts.danger ? 'btn btn-outline btn-danger-text' : 'btn btn-primary';
+    cancelBtn.hidden = alertMode;
     modal.classList.add('open');
     document.body.classList.add('modal-open');
     okBtn.focus();
@@ -31,21 +36,35 @@
     });
   }
 
+  function openAlert(message, options) {
+    const opts = options || {};
+    opts.alertOnly = true;
+    if (!opts.title) opts.title = 'Внимание';
+    if (!opts.confirmLabel) opts.confirmLabel = 'OK';
+    return open(message, opts).then(function () { return true; });
+  }
+
   okBtn.addEventListener('click', function () {
     close(true);
   });
   cancelBtn.addEventListener('click', function () {
+    if (alertMode) return;
     close(false);
   });
   modal.addEventListener('click', function (e) {
-    if (e.target === modal) close(false);
+    if (e.target === modal) close(alertMode ? true : false);
   });
   document.addEventListener('keydown', function (e) {
     if (!modal.classList.contains('open')) return;
-    if (e.key === 'Escape') close(false);
+    if (e.key === 'Escape') close(alertMode ? true : false);
+    if (alertMode && e.key === 'Enter') {
+      e.preventDefault();
+      close(true);
+    }
   });
 
   window.ssConfirm = open;
+  window.ssAlert = openAlert;
 
   /* ---- ssPrompt: ввод текста в стиле сайта ---- */
   (function setupPrompt() {
