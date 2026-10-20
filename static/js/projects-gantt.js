@@ -318,17 +318,20 @@
     visible.setAttribute("marker-start", "url(#gantt-fs-dot)");
     visible.setAttribute("marker-end", "url(#gantt-fs-arrow)");
 
+    var tip = (link && link.label)
+      ? ("FS: " + link.label)
+      : "Связь FS (конец → начало)";
     if (link && link.id) {
       visible.setAttribute("data-link-id", String(link.id));
     }
+    visible.setAttribute("title", tip);
+    var titleEl = document.createElementNS("http://www.w3.org/2000/svg", "title");
+    titleEl.textContent = tip;
+    visible.appendChild(titleEl);
 
     svg.appendChild(visible);
 
-
-
     if (!uiFlags.canEdit || !link || !link.id) return;
-
-
 
     var hit = document.createElementNS("http://www.w3.org/2000/svg", "path");
 
@@ -342,9 +345,12 @@
 
     hit.setAttribute("tabindex", "0");
 
-    hit.setAttribute("aria-label", "Удалить связь FS");
+    hit.setAttribute("aria-label", tip + ". Клик — удалить");
 
-    hit.setAttribute("title", "Удалить связь");
+    hit.setAttribute("title", tip + " · клик — удалить");
+    var hitTitle = document.createElementNS("http://www.w3.org/2000/svg", "title");
+    hitTitle.textContent = tip + " · клик — удалить";
+    hit.appendChild(hitTitle);
 
     hit.addEventListener("mouseenter", function () {
 
@@ -546,14 +552,19 @@
     ctxTaskId = bar.getAttribute("data-task-id");
     var subtaskLink = ctxMenu.querySelector('[data-gantt-ctx="subtask"]');
     var startBtn = ctxMenu.querySelector('[data-gantt-ctx="start-link"]');
+    var clearPredBtn = ctxMenu.querySelector('[data-gantt-ctx="clear-predecessors"]');
     var finishBtn = ctxMenu.querySelector('[data-gantt-ctx="finish-link"]');
     var cancelBtn = ctxMenu.querySelector('[data-gantt-ctx="cancel-link"]');
     var canFinish = !!(linkMode && linkFromId && String(linkFromId) !== String(ctxTaskId));
+    var waits = parseBarLinks(bar, "data-waits");
+    var hasPredecessors = waits.some(function (w) { return w && w.link_id; });
     if (subtaskLink && ctxTaskId) {
       subtaskLink.href = "/projects/tasks/new?parent=" + encodeURIComponent(ctxTaskId) + "&arm_view=gantt";
       subtaskLink.hidden = false;
     }
-    if (startBtn) startBtn.hidden = false;
+    // Уже есть предшественник — предложить очистить; иначе — создать стрелку
+    if (startBtn) startBtn.hidden = hasPredecessors;
+    if (clearPredBtn) clearPredBtn.hidden = !hasPredecessors;
     if (finishBtn) finishBtn.hidden = !canFinish;
     if (cancelBtn) cancelBtn.hidden = !linkMode;
     ctxMenu.hidden = false;
@@ -589,6 +600,14 @@
         hideCtxMenu();
         return;
       }
+      if (action === "clear-predecessors") {
+        var bar = chart.querySelector('.projects-gantt-bar[data-task-id="' + ctxTaskId + '"]');
+        var waits = bar ? parseBarLinks(bar, "data-waits") : [];
+        var ids = waits.map(function (w) { return w && w.link_id; }).filter(Boolean);
+        hideCtxMenu();
+        clearPredecessorLinks(ids);
+        return;
+      }
       if (action === "finish-link" && linkFromId) {
         createGanttLink(linkFromId, ctxTaskId);
         hideCtxMenu();
@@ -599,6 +618,39 @@
         hideCtxMenu();
       }
     });
+  }
+
+  async function clearPredecessorLinks(linkIds) {
+    if (!linkIds || !linkIds.length) return;
+    var ok = true;
+    if (typeof window.ssConfirm === "function") {
+      ok = await window.ssConfirm(
+        linkIds.length > 1
+          ? "Убрать всех предшественников у этой задачи?"
+          : "Убрать предшественника у этой задачи?",
+        {
+          title: "Очистить предшественника",
+          confirmLabel: "Очистить",
+          danger: true,
+        }
+      );
+    }
+    if (!ok) return;
+    try {
+      for (var i = 0; i < linkIds.length; i++) {
+        var res = await fetch("/projects/gantt/links/" + linkIds[i], {
+          method: "DELETE",
+          headers: { "X-CSRFToken": csrf },
+        });
+        if (!res.ok) {
+          ganttAlert("Не удалось удалить связь.");
+          return;
+        }
+      }
+      reloadGantt();
+    } catch (err) {
+      ganttAlert("Ошибка сети.");
+    }
   }
 
   document.addEventListener("click", function (e) {
@@ -709,10 +761,18 @@
     if (panelStart) {
       panelStart.value = bar.getAttribute("data-start") || "";
       panelStart.disabled = !canEdit;
+      var winMin = bar.getAttribute("data-parent-start") || bar.getAttribute("data-project-start") || "";
+      var winMax = bar.getAttribute("data-parent-due") || bar.getAttribute("data-project-deadline") || "";
+      if (winMin) panelStart.min = winMin; else panelStart.removeAttribute("min");
+      if (winMax) panelStart.max = winMax; else panelStart.removeAttribute("max");
     }
     if (panelDue) {
       panelDue.value = bar.getAttribute("data-due") || "";
       panelDue.disabled = !canEdit;
+      var dueMin = bar.getAttribute("data-parent-start") || bar.getAttribute("data-project-start") || "";
+      var dueMax = bar.getAttribute("data-parent-due") || bar.getAttribute("data-project-deadline") || "";
+      if (dueMin) panelDue.min = dueMin; else panelDue.removeAttribute("min");
+      if (dueMax) panelDue.max = dueMax; else panelDue.removeAttribute("max");
     }
     if (panelStage) {
       var pid = bar.getAttribute("data-project-id");

@@ -369,8 +369,16 @@ def clamp_dates_to_parent(
     start: date | None,
     due: date | None,
     parent: ProjectTask | None,
+    project: Project | None = None,
 ) -> tuple[date | None, date | None]:
     """Подрезать start/due под окно родителя (длительность по возможности сохранить)."""
+    from servicesystem.project_management.work_calendar import (
+        add_workday_steps,
+        project_uses_work_calendar,
+        sub_workday_steps,
+        workday_steps,
+    )
+
     p_start, p_due = parent_date_window(parent)
     if not p_start or not p_due:
         return start, due
@@ -383,6 +391,22 @@ def clamp_dates_to_parent(
     if due is None:
         due = start
     assert start is not None and due is not None
+    proj = project or (parent.project if parent else None)
+    use_wc = project_uses_work_calendar(proj)
+    if use_wc:
+        span = workday_steps(start, due, proj)
+        window = workday_steps(p_start, p_due, proj)
+        if span > window:
+            return p_start, p_due
+        if start < p_start:
+            start = p_start
+            due = add_workday_steps(start, span, proj)
+        if due > p_due:
+            due = p_due
+            start = sub_workday_steps(due, span, proj)
+            if start < p_start:
+                start = p_start
+        return start, due
     span = max(0, (due - start).days)
     window = max(0, (p_due - p_start).days)
     if span > window:
@@ -405,8 +429,11 @@ def clamp_task_dates_to_parent(task: ProjectTask) -> bool:
     parent = task.parent
     if parent is None and task.parent_id:
         parent = db.session.get(ProjectTask, task.parent_id)
+    project = task.project
+    if project is None and task.project_id:
+        project = db.session.get(Project, task.project_id)
     old_s, old_d = task.start_date, task.due_date
-    ns, nd = clamp_dates_to_parent(task.start_date, task.due_date, parent)
+    ns, nd = clamp_dates_to_parent(task.start_date, task.due_date, parent, project=project)
     if (ns, nd) == (old_s, old_d):
         return False
     task.start_date, task.due_date = ns, nd
@@ -559,6 +586,13 @@ def clamp_dates_to_project(
     project: Project | None,
 ) -> tuple[date | None, date | None]:
     """Уложить сроки в окно проекта (не раньше старта, не позже дедлайна)."""
+    from servicesystem.project_management.work_calendar import (
+        add_workday_steps,
+        project_uses_work_calendar,
+        sub_workday_steps,
+        workday_steps,
+    )
+
     floor = project_earliest_start(project)
     ceil = project_latest_due(project)
     if not floor and not ceil:
@@ -572,6 +606,25 @@ def clamp_dates_to_project(
     if due is None:
         due = start
     assert start is not None and due is not None
+    use_wc = project_uses_work_calendar(project)
+    if use_wc:
+        span = workday_steps(start, due, project)
+        if floor and start < floor:
+            start = floor
+            due = add_workday_steps(start, span, project)
+        if ceil and due > ceil:
+            due = ceil
+            start = sub_workday_steps(due, span, project)
+            if floor and start < floor:
+                start = floor
+                due = ceil if ceil >= floor else floor
+        if floor and start < floor:
+            start = floor
+        if ceil and due > ceil:
+            due = ceil
+        if start > due:
+            start = due
+        return start, due
     span = max(0, (due - start).days)
     if floor and start < floor:
         start = floor
@@ -607,11 +660,73 @@ def clamp_task_dates_to_project(task: ProjectTask) -> bool:
 
 
 def clamp_task_dates(task: ProjectTask) -> bool:
-    """Родитель + окно проекта."""
-    changed = clamp_task_dates_to_parent(task)
-    if clamp_task_dates_to_project(task):
-        changed = True
+    """Родитель + окно проекта + рабочие дни (итеративно, без выхода за родителя)."""
+    changed = False
+    for _ in range(4):
+        round_changed = False
+        if clamp_task_dates_to_parent(task):
+            round_changed = True
+        if clamp_task_dates_to_project(task):
+            round_changed = True
+        if _snap_task_dates_to_workdays(task):
+            round_changed = True
+        if round_changed:
+            changed = True
+        else:
+            break
     return changed
+
+
+def _task_depth(task: ProjectTask, cache: dict[int, int]) -> int:
+    """Глубина в иерархии (корень = 0) для порядка snap/clamp."""
+    tid = task.id
+    if tid in cache:
+        return cache[tid]
+    depth = 0
+    cur = task
+    seen: set[int] = set()
+    while cur and cur.parent_id and cur.parent_id not in seen:
+        seen.add(cur.parent_id)
+        depth += 1
+        parent = cur.parent
+        if parent is None:
+            parent = db.session.get(ProjectTask, cur.parent_id)
+        cur = parent
+        if cur is None:
+            break
+    cache[tid] = depth
+    return depth
+
+
+def reschedule_project_tasks_to_workdays(project: Project) -> int:
+    """
+    После включения «не ставить на выходные/праздники» —
+    сдвинуть сроки всех задач проекта с нерабочих дней (длительность в трудоднях).
+    Родители раньше детей, затем clamp в окна и FS.
+    """
+    from servicesystem.project_management.work_calendar import project_uses_work_calendar
+
+    if not project or not project_uses_work_calendar(project):
+        return 0
+    n = 0
+    depth_cache: dict[int, int] = {}
+    tasks = sorted(
+        ProjectTask.query.filter_by(project_id=project.id).all(),
+        key=lambda t: (_task_depth(t, depth_cache), gantt_sort_key(t)),
+    )
+    for task in tasks:
+        if _snap_task_dates_to_workdays(task):
+            sync_calendar_events_for_task(task)
+            n += 1
+    # Сначала укладываем в окна (родители уже на рабочих днях)
+    for task in tasks:
+        if clamp_task_dates(task):
+            sync_calendar_events_for_task(task)
+            n += 1
+    # Подтянуть FS после сдвига с выходных
+    for task in tasks:
+        cascade_fs_from_task(task)
+    return n
 
 
 def effective_date_window(

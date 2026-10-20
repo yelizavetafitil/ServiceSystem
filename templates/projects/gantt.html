@@ -6,7 +6,7 @@
 
 <link rel="stylesheet" href="{{ url_for('static', filename='css/projects.css') }}?v=57">
 
-<script defer src="{{ url_for('static', filename='js/projects-gantt.js') }}?v=36"></script>
+<script defer src="{{ url_for('static', filename='js/projects-gantt.js') }}?v=40"></script>
 
 {% endblock %}
 
@@ -38,6 +38,7 @@
   <div id="gantt-bar-menu" class="projects-gantt-ctx-menu" hidden role="menu">
     <a class="projects-gantt-ctx-item projects-gantt-ctx-link" data-gantt-ctx="subtask" role="menuitem" href="#">Создать подзадачу</a>
     <button type="button" class="projects-gantt-ctx-item" data-gantt-ctx="start-link" role="menuitem">Сделать предшественником (стрелка)</button>
+    <button type="button" class="projects-gantt-ctx-item" data-gantt-ctx="clear-predecessors" role="menuitem" hidden>Очистить предшественника</button>
     <button type="button" class="projects-gantt-ctx-item" data-gantt-ctx="finish-link" role="menuitem" hidden>Связать сюда как последователя</button>
     <button type="button" class="projects-gantt-ctx-item" data-gantt-ctx="cancel-link" role="menuitem" hidden>Отменить стрелку</button>
   </div>
@@ -206,7 +207,7 @@
 
               {% for w in grow.waits_for %}
 
-              <span>Ожидает <a href="#gantt-row-{{ w.no }}">{{ w.wbs or w.no }}</a></span>{% if not loop.last %}; {% endif %}
+              <span>Ожидает <a href="#gantt-row-{{ w.no }}" title="{{ w.title }}">{{ w.wbs or w.no }}{% if w.title %} · {{ w.title[:28] }}{% if w.title|length > 28 %}…{% endif %}{% endif %}</a></span>{% if not loop.last %}; {% endif %}
 
               {% endfor %}
 
@@ -246,15 +247,21 @@
 
                      data-ticket-id="{{ grow.ticket_id or '' }}"
 
-                     data-waits="{{ grow.waits_for|tojson|e }}"
+                     data-waits='{{ grow.waits_for|tojson }}'
 
-                     data-blocks="{{ grow.blocks|tojson|e }}"
+                     data-blocks='{{ grow.blocks|tojson }}'
 
                      data-title="{{ t.title }}"
 
                      data-start="{{ grow.start_iso }}"
 
                      data-due="{{ grow.due_iso }}"
+
+                     data-parent-start="{{ grow.parent_start_iso }}"
+
+                     data-parent-due="{{ grow.parent_due_iso }}"
+
+                     data-project-start="{{ grow.project_start_iso }}"
 
                      data-stage-id="{{ grow.stage_id or '' }}"
 

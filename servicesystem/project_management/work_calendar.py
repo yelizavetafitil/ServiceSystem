@@ -77,6 +77,21 @@ def add_workday_steps(start: date, steps: int, project: Project | None) -> date:
     return d
 
 
+def sub_workday_steps(end: date, steps: int, project: Project | None) -> date:
+    """На `steps` рабочих дней раньше end (результат — рабочий день)."""
+    if steps <= 0 or not project_uses_work_calendar(project):
+        return end - timedelta(days=max(0, steps))
+    d = end
+    removed = 0
+    guard = 0
+    while removed < steps and guard < 4000:
+        d -= timedelta(days=1)
+        guard += 1
+        if is_working_day(d, project):
+            removed += 1
+    return d
+
+
 def workday_steps(start: date, end: date, project: Project | None) -> int:
     """Аналог (end - start).days с учётом только рабочих дней между ними."""
     if end <= start:

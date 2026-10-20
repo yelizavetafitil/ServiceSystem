@@ -100,6 +100,10 @@
 .projects-calendar-grid { display: grid; grid-template-columns: repeat(7, minmax(0, 1fr)); gap: 4px; }
 .projects-calendar-cell { min-height: 72px; border: 1px solid var(--border); border-radius: 8px; padding: 4px; background: #fff; font-size: 11px; }
 .projects-calendar-cell.is-muted { opacity: .45; }
+.projects-calendar-cell.is-weekend {
+  background: #f1f5f9;
+}
+.projects-calendar-cell.is-weekend .projects-calendar-day { color: #94a3b8; }
 .projects-calendar-day { font-weight: 700; color: var(--muted); }
 .projects-calendar-event {
   display: block;

@@ -43,6 +43,7 @@ from servicesystem.project_management.services import (
     tasks_hierarchically_related,
     rollover_overdue_tasks,
     shift_task_subtree,
+    reschedule_project_tasks_to_workdays,
     sync_calendar_events_for_task,
     task_opens_as_ticket,
     tasks_for_user_query,
@@ -691,8 +692,15 @@ def manage_edit(pid):
             proj.customer_curator_id = request.form.get("customer_curator_id", type=int) or None
             proj.description = (request.form.get("description") or "").strip() or None
             update_customer_curator_window(proj)
+            snapped = reschedule_project_tasks_to_workdays(proj)
             db.session.commit()
             flash("Сохранено.", "success")
+            if snapped:
+                flash(
+                    f"Сроки {snapped} задач сдвинуты с нерабочих дней "
+                    "(выходные/праздники по настройкам проекта).",
+                    "info",
+                )
         return redirect(url_for("projects.manage_edit", pid=pid))
     contracts = Contract.query.order_by(Contract.number).all()
     staff = User.query.filter(User.role.in_(("auditor", "executor")), User.is_active.is_(True)).all()
@@ -1332,7 +1340,9 @@ def _task_date_range(t) -> tuple[date, date] | None:
 
 
 def _tasks_by_day(tasks, days: list[date]) -> dict[date, list]:
-    """Задачи на каждый день сетки: весь диапазон start…due, не только дедлайн."""
+    """Задачи на каждый день сетки: start…due, без нерабочих дней проекта."""
+    from servicesystem.project_management.work_calendar import is_non_working_day
+
     day_set = set(days)
     out: dict[date, list] = {d: [] for d in days}
     for t in tasks:
@@ -1340,9 +1350,10 @@ def _tasks_by_day(tasks, days: list[date]) -> dict[date, list]:
         if not rng:
             continue
         s, e = rng
+        proj = t.project
         d = s
         while d <= e:
-            if d in day_set:
+            if d in day_set and not is_non_working_day(d, proj):
                 out[d].append(t)
             d += timedelta(days=1)
             if (d - s).days > 800:
@@ -1351,16 +1362,20 @@ def _tasks_by_day(tasks, days: list[date]) -> dict[date, list]:
 
 
 def _team_load(tasks):
-    """Нагрузка по дням: задача считается во все дни своего диапазона."""
+    """Нагрузка по дням: только рабочие дни проекта."""
+    from servicesystem.project_management.work_calendar import is_non_working_day
+
     load: dict[date, int] = {}
     for t in tasks:
         rng = _task_date_range(t)
         if not rng:
             continue
         s, e = rng
+        proj = t.project
         d = s
         while d <= e:
-            load[d] = load.get(d, 0) + 1
+            if not is_non_working_day(d, proj):
+                load[d] = load.get(d, 0) + 1
             d += timedelta(days=1)
             if (d - s).days > 800:
                 break
@@ -1419,7 +1434,9 @@ def _task_involves_user(t, user_id: int) -> bool:
 
 
 def _executor_workload(tasks, days: list[date]) -> list[dict]:
-    """Загрузка исполнителей: число человеко-дней задач в видимой сетке."""
+    """Загрузка исполнителей: человеко-дни только по рабочим дням проекта."""
+    from servicesystem.project_management.work_calendar import is_non_working_day
+
     day_set = set(days)
     load: dict[int, int] = {}
     names: dict[int, str] = {}
@@ -1428,10 +1445,11 @@ def _executor_workload(tasks, days: list[date]) -> list[dict]:
         if not rng:
             continue
         s, e = rng
+        proj = t.project
         days_in = 0
         d = s
         while d <= e:
-            if d in day_set:
+            if d in day_set and not is_non_working_day(d, proj):
                 days_in += 1
             d += timedelta(days=1)
             if (d - s).days > 800:
@@ -1928,6 +1946,21 @@ def _gantt_build_bars(
                 "project_deadline": t.project.deadline.isoformat()
                 if t.project and t.project.deadline
                 else "",
+                "parent_start_iso": (
+                    (t.parent.start_date or t.parent.due_date).isoformat()
+                    if t.parent and (t.parent.start_date or t.parent.due_date)
+                    else ""
+                ),
+                "parent_due_iso": (
+                    (t.parent.due_date or t.parent.start_date).isoformat()
+                    if t.parent and (t.parent.start_date or t.parent.due_date)
+                    else ""
+                ),
+                "project_start_iso": (
+                    t.project.planned_start.isoformat()
+                    if t.project and t.project.planned_start
+                    else ""
+                ),
             }
         )
     return bars
@@ -2052,6 +2085,9 @@ def _gantt_layout(
                 "id": e["id"],
                 "from_id": e["from_task_id"],
                 "to_id": e["to_task_id"],
+                "from_title": e.get("from_title") or "",
+                "to_title": e.get("to_title") or "",
+                "label": f"{e.get('from_title') or '…'} → {e.get('to_title') or '…'}",
             }
             for e in link_edges
             if e.get("kind") == "blocks"

@@ -1,6 +1,6 @@
 {% extends "base.html" %}
 {% block title %}Проекты — календарь{% endblock %}
-{% block head %}<link rel="stylesheet" href="{{ url_for('static', filename='css/projects.css') }}?v=50">{% endblock %}
+{% block head %}<link rel="stylesheet" href="{{ url_for('static', filename='css/projects.css') }}?v=58">{% endblock %}
 {% block content %}
 <div class="container cms-page projects-page">
   {% include "projects/_arm_header.html" %}
@@ -61,7 +61,7 @@
     {% for d in month_grid %}
     {% set load = team_load.get(d) if team_load else 0 %}
     {% set day_tasks = tasks_by_day.get(d, []) if tasks_by_day is defined else [] %}
-    <div class="projects-calendar-cell{% if d.month != today.month and cal_mode == 'month' %} is-muted{% endif %}{% if load %} projects-load-{{ 'high' if load >= 5 else ('mid' if load >= 3 else 'low') }}{% endif %}">
+    <div class="projects-calendar-cell{% if d.weekday() >= 5 %} is-weekend{% endif %}{% if d.month != today.month and cal_mode == 'month' %} is-muted{% endif %}{% if load %} projects-load-{{ 'high' if load >= 5 else ('mid' if load >= 3 else 'low') }}{% endif %}">
       <span class="projects-calendar-day">{% if cal_mode == 'month' %}{{ d.day }}{% else %}{% set wd = ('Пн','Вт','Ср','Чт','Пт','Сб','Вс') %}{{ wd[d.weekday()] }} {{ d.strftime('%d.%m') }}{% endif %}</span>
       {% if cal_mode == 'team' %}<span class="projects-calendar-load">{{ load }} задач</span>{% endif %}
       {% for t in day_tasks %}
