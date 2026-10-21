@@ -4,7 +4,7 @@
 
 {% block title %}{{ task.title }}{% endblock %}
 
-{% block head %}<link rel="stylesheet" href="{{ url_for('static', filename='css/projects.css') }}?v=53">{% endblock %}
+{% block head %}<link rel="stylesheet" href="{{ url_for('static', filename='css/projects.css') }}?v=60">{% endblock %}
 
 {% block content %}
 
@@ -13,15 +13,21 @@
   <div class="projects-task-topbar">
     <a href="{{ arm_back_url or url_for('projects.arm') }}" class="back-link">← К модулю проектов</a>
     {% if task.project_id and (current_user.is_admin or current_user.is_auditor or current_user.is_staff) %}
-    {% if arm_back_view %}
-    <a href="{{ url_for('projects.task_new', project=task.project_id, arm_view=arm_back_view) }}"
-       class="btn btn-primary btn-sm projects-task-topbar-new"
-       title="Создать новую задачу в текущем проекте">Новая задача</a>
-    {% else %}
-    <a href="{{ url_for('projects.task_new', project=task.project_id) }}"
-       class="btn btn-primary btn-sm projects-task-topbar-new"
-       title="Создать новую задачу в текущем проекте">Новая задача</a>
-    {% endif %}
+    <div class="projects-task-topbar-actions">
+      {% if task.parent_id %}
+      <a href="{% if arm_back_view %}{{ url_for('projects.task_new', parent=task.parent_id, project=task.project_id, arm_view=arm_back_view) }}{% else %}{{ url_for('projects.task_new', parent=task.parent_id, project=task.project_id) }}{% endif %}"
+         class="btn btn-outline btn-sm"
+         title="Ещё одна подзадача к тому же родителю (тот же уровень)">Ещё к родителю</a>
+      {% endif %}
+      <a href="{% if arm_back_view %}{{ url_for('projects.task_new', parent=task.id, project=task.project_id, arm_view=arm_back_view) }}{% else %}{{ url_for('projects.task_new', parent=task.id, project=task.project_id) }}{% endif %}"
+         class="btn btn-outline btn-sm"
+         title="Подзадача уровнем ниже">Подзадача</a>
+      {% if current_user.is_admin or current_user.is_auditor %}
+      <a href="{% if arm_back_view %}{{ url_for('projects.task_new', project=task.project_id, arm_view=arm_back_view) }}{% else %}{{ url_for('projects.task_new', project=task.project_id) }}{% endif %}"
+         class="btn btn-primary btn-sm projects-task-topbar-new"
+         title="Задача верхнего уровня в проекте">Новая задача</a>
+      {% endif %}
+    </div>
     {% endif %}
   </div>
 
@@ -34,10 +40,6 @@
     {% endfor %}
 
   </div>
-
-
-
-  {% if blocked %}<p class="alert alert-warning">Задача ждёт предшественника — сначала завершите предыдущую задачу.</p>{% endif %}
 
 
 
@@ -116,7 +118,7 @@
 
       </div>
 
-      <div class="form-group"><label>Этап (надзадача)</label>
+      <div class="form-group"><label>Этап</label>
         <select name="stage_id" class="form-control">
           <option value="">— без этапа —</option>
           {% for s in project_stages %}
@@ -124,6 +126,40 @@
           {% endfor %}
         </select>
       </div>
+
+      {% if current_user.is_admin or current_user.is_auditor or current_user.is_staff %}
+      <div class="projects-task-hierarchy" data-task-hierarchy
+           data-task-id="{{ task.id }}"
+           data-url="{{ url_for('projects.task_hierarchy', tid=task.id) }}"
+           data-link-count="{{ task_link_count|default(0) }}"
+           data-csrf="{{ csrf_token() }}">
+        <label>Вложенность</label>
+        {% if task.parent_id and task.parent %}
+        <p class="muted projects-cms-hint">Сейчас подзадача «{{ task.parent.title }}»
+          <a href="{{ url_for('projects.task_detail', tid=task.parent.id) }}">открыть родителя</a>
+        </p>
+        {% if current_user.is_admin or current_user.is_auditor %}
+        <button type="button" class="btn btn-outline btn-sm" data-hierarchy-promote>Сделать отдельной задачей</button>
+        {% endif %}
+        {% else %}
+        <p class="muted projects-cms-hint">Задача верхнего уровня (не подзадача).</p>
+        {% endif %}
+        {% if hierarchy_parents %}
+        <div class="projects-task-hierarchy-attach form-row" style="margin-top:10px;align-items:flex-end;">
+          <div class="form-group" style="flex:1;margin-bottom:0;">
+            <label for="hierarchy-parent-select">{% if task.parent_id %}Сменить родителя{% else %}Сделать подзадачей{% endif %}</label>
+            <select id="hierarchy-parent-select" class="form-control" data-hierarchy-parent>
+              <option value="">— выберите задачу —</option>
+              {% for p in hierarchy_parents %}
+              <option value="{{ p.id }}" {% if task.parent_id == p.id %}selected{% endif %}>{{ p.title }}</option>
+              {% endfor %}
+            </select>
+          </div>
+          <button type="button" class="btn btn-outline btn-sm" data-hierarchy-attach>Применить</button>
+        </div>
+        {% endif %}
+      </div>
+      {% endif %}
 
       <div class="form-group"><label>Исполнитель</label>
 
@@ -169,7 +205,10 @@
 
       </form>
 
-      <a href="{{ url_for('projects.task_new', parent=task.id) }}" class="btn btn-outline btn-sm">Подзадача</a>
+      {% if task.parent_id %}
+      <a href="{{ url_for('projects.task_new', parent=task.parent_id, project=task.project_id) }}" class="btn btn-outline btn-sm" title="Параллельная подзадача (тот же родитель)">Ещё к родителю</a>
+      {% endif %}
+      <a href="{{ url_for('projects.task_new', parent=task.id) }}" class="btn btn-outline btn-sm">Подзадача ↓</a>
 
       <form method="post" action="{{ url_for('projects.task_duplicate', tid=task.id) }}" class="inline-form">
 
@@ -502,4 +541,132 @@
 
 </div>
 
+{% endblock %}
+
+{% block scripts %}
+<script>
+(function () {
+  var box = document.querySelector("[data-task-hierarchy]");
+  if (!box) return;
+  var url = box.getAttribute("data-url");
+  var csrf = box.getAttribute("data-csrf") || (document.querySelector('meta[name="csrf-token"]') || {}).content || "";
+
+  async function postHierarchy(payload) {
+    var body = Object.assign({}, payload || {});
+    if (body.break_links) body.break_links = true;
+    var res = await fetch(url, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "X-CSRFToken": csrf,
+        "Accept": "application/json",
+      },
+      body: JSON.stringify(body),
+    });
+    var data = {};
+    var ct = (res.headers.get("content-type") || "").toLowerCase();
+    if (ct.indexOf("application/json") >= 0) {
+      try { data = await res.json(); } catch (e) { data = {}; }
+    }
+    return { res: res, data: data };
+  }
+
+  async function confirmBreakLinks(message, linkCount) {
+    var msg = message || "У задачи есть связи. Разорвать?";
+    if (typeof window.ssConfirm === "function") {
+      return window.ssConfirm("", {
+        title: msg,
+        confirmLabel: "Разорвать",
+        cancelLabel: "Отмена",
+        danger: true,
+      });
+    }
+    return window.confirm(msg);
+  }
+
+  async function runChange(payload) {
+    var first = await postHierarchy(payload);
+    var needsBreak = (first.res.status === 409 && first.data && first.data.error === "has_links")
+      || (first.data && first.data.error === "has_links");
+    if (needsBreak) {
+      var ok = await confirmBreakLinks(first.data.message, first.data.link_count);
+      if (!ok) return;
+      first = await postHierarchy(Object.assign({}, payload, { break_links: true }));
+    }
+    if (first.res.ok) {
+      window.location.reload();
+      return;
+    }
+    var err = (first.data && first.data.message) || "Не удалось изменить вложенность.";
+    if (typeof window.ssAlert === "function") window.ssAlert(err);
+    else window.alert(err);
+  }
+
+  var promoteBtn = box.querySelector("[data-hierarchy-promote]");
+  if (promoteBtn) {
+    promoteBtn.addEventListener("click", function () {
+      runChange({ action: "promote", parent_id: null });
+    });
+  }
+  var attachBtn = box.querySelector("[data-hierarchy-attach]");
+  var parentSel = box.querySelector("[data-hierarchy-parent]");
+  if (attachBtn && parentSel) {
+    attachBtn.addEventListener("click", function () {
+      var pid = parentSel.value;
+      if (!pid) {
+        if (typeof window.ssAlert === "function") window.ssAlert("Выберите задачу-родителя.");
+        else window.alert("Выберите задачу-родителя.");
+        return;
+      }
+      runChange({ action: "attach", parent_id: parseInt(pid, 10) });
+    });
+  }
+})();
+</script>
+{% if (offer_sibling and sibling_new_url and task.parent_id) or (offer_child and child_new_url) %}
+<script>
+(function () {
+  function clearParam(name) {
+    if (!(window.history && window.history.replaceState)) return;
+    try {
+      var u = new URL(window.location.href);
+      u.searchParams.delete(name);
+      window.history.replaceState({}, "", u.pathname + u.search + u.hash);
+    } catch (e) {}
+  }
+  function ask(msg, title, url, paramName) {
+    function go() { window.location.href = url; }
+    if (typeof window.ssConfirm === "function") {
+      window.ssConfirm(msg, {
+        title: title || "Подзадача",
+        confirmLabel: "Добавить",
+        cancelLabel: "Нет, остаться",
+      }).then(function (ok) {
+        if (ok) go();
+        else clearParam(paramName);
+      });
+    } else if (window.confirm(msg)) {
+      go();
+    } else {
+      clearParam(paramName);
+    }
+  }
+  {% if offer_sibling and sibling_new_url and task.parent_id %}
+  ask(
+    "Подзадача к «" + {{ sibling_parent_title|tojson }} + "» создана. Добавить новую подзадачу?",
+    "Ещё подзадача?",
+    {{ sibling_new_url|tojson }},
+    "offer_sibling"
+  );
+  {% elif offer_child and child_new_url %}
+  ask(
+    "Задача «" + {{ task.title|tojson }} + "» создана. Добавить подзадачу?",
+    "Подзадача?",
+    {{ child_new_url|tojson }},
+    "offer_child"
+  );
+  {% endif %}
+})();
+</script>
+{% endif %}
 {% endblock %}

@@ -1,13 +1,13 @@
 {% extends "base.html" %}
 {% from "macros/forms.html" import csrf_field %}
 {% block title %}{% if parent_task %}Подзадача{% else %}Новая задача{% endif %}{% endblock %}
-{% block head %}<link rel="stylesheet" href="{{ url_for('static', filename='css/projects.css') }}?v=55">{% endblock %}
+{% block head %}<link rel="stylesheet" href="{{ url_for('static', filename='css/projects.css') }}?v=63">{% endblock %}
 {% block content %}
 <div class="container cms-page projects-cms projects-task-create">
-  {% if parent_task %}
-  <a href="{{ url_for('projects.task_detail', tid=parent_task.id) }}" class="back-link">← К задаче «{{ parent_task.title }}»</a>
-  {% elif arm_back_url %}
+  {% if arm_back_url %}
   <a href="{{ arm_back_url }}" class="back-link">← К модулю проектов</a>
+  {% elif parent_task %}
+  <a href="{{ url_for('projects.task_detail', tid=parent_task.id) }}" class="back-link">← К задаче «{{ parent_task.title }}»</a>
   {% elif preset_project_id %}
   <a href="{{ url_for('projects.manage_edit', pid=preset_project_id) }}" class="back-link">← К карточке проекта</a>
   {% else %}
@@ -17,8 +17,14 @@
   <div class="projects-task-create-layout">
     <aside class="card projects-cms-card projects-task-tree-panel" aria-label="Иерархия проекта">
       <h2 class="projects-task-tree-heading">Структура проекта</h2>
-      <p class="muted projects-cms-hint">Проект → этап → задачи. Клик по этапу выбирает его в форме.</p>
-      <div id="task-project-tree" class="projects-task-tree" data-parent-id="{{ parent_task.id if parent_task else '' }}"></div>
+      <p class="muted projects-cms-hint">Даты у задач · наведите и нажмите ＋ — добавить подзадачу. Клик по этапу выбирает его в форме.</p>
+      <div id="task-project-tree" class="projects-task-tree"
+           data-parent-id="{{ parent_task.id if parent_task else '' }}"
+           data-arm-view="{{ arm_view or '' }}"
+           data-date-min="{{ parent_window_start.isoformat() if parent_window_start else '' }}"
+           data-date-max="{{ parent_window_due.isoformat() if parent_window_due else '' }}"
+           data-default-start="{{ default_start.isoformat() if default_start else '' }}"
+           data-default-due="{{ default_due.isoformat() if default_due else '' }}"></div>
     </aside>
 
     <div class="card projects-cms-card projects-task-create-form-card">
@@ -40,6 +46,7 @@
       <form method="post" class="projects-cms-form" id="task-create-form">
         {{ csrf_field() }}
         <input type="hidden" name="parent_id" value="{{ parent_task.id if parent_task else '' }}">
+        {% if arm_view %}<input type="hidden" name="arm_view" value="{{ arm_view }}">{% endif %}
         {% if parent_task %}
         <input type="hidden" name="project_id" id="task-project-id" value="{{ parent_task.project_id }}">
         <p class="projects-cms-hint muted">Проект: <strong>{{ parent_task.project.name if parent_task.project else '—' }}</strong> (родитель задан автоматически)</p>
@@ -70,68 +77,100 @@
             {% endif %}
           </select>
         </div>
-        <div class="form-group"><label>Название</label><input name="title" id="task-title-input" class="form-control" required></div>
-        <div class="form-group"><label>Описание</label><textarea name="description" class="form-control" rows="4"></textarea></div>
         <div class="form-row">
-          <div class="form-group"><label>Критичность</label><select name="priority" class="form-control">{% for n, lbl in project_priority_labels.items() %}<option value="{{ n }}">{{ lbl }}</option>{% endfor %}</select></div>
-          <div class="form-group"><label>Исполнитель</label>
+          <div class="form-group"><label>Критичность (по умолчанию)</label><select name="priority" class="form-control">{% for n, lbl in project_priority_labels.items() %}<option value="{{ n }}">{{ lbl }}</option>{% endfor %}</select></div>
+          <div class="form-group"><label>Исполнитель (по умолчанию)</label>
             <select name="assignee_id" id="task-assignee-id" class="form-control">
               <option value="">—</option>
               {% for u in executors %}<option value="{{ u.id }}">{{ u.full_name }}</option>{% endfor %}
             </select>
-            <p class="muted projects-cms-hint">Только участники выбранного проекта</p>
           </div>
         </div>
-        <div class="form-row">
-          <div class="form-group"><label>Начало</label>
-            <input type="date" name="start_date" id="task-start-date" class="form-control"
-                   value="{{ default_start.isoformat() if default_start else '' }}"
-                   {% if parent_window_start %}min="{{ parent_window_start.isoformat() }}"{% endif %}
-                   {% if parent_window_due %}max="{{ parent_window_due.isoformat() }}"{% endif %}>
-          </div>
-          <div class="form-group"><label>Дедлайн</label>
-            <input type="date" name="due_date" id="task-due-date" class="form-control"
-                   value="{{ default_due.isoformat() if default_due else '' }}"
-                   {% if parent_window_start %}min="{{ parent_window_start.isoformat() }}"{% endif %}
-                   {% if parent_window_due %}max="{{ parent_window_due.isoformat() }}"{% endif %}>
-            {% if parent_window_start or parent_window_due %}
-            <p class="muted projects-cms-hint">
-              {% if parent_window_start and parent_window_due %}
-              В периоде проекта{% if parent_task %}/родителя{% endif %}: {{ parent_window_start.strftime('%d.%m.%Y') }} — {{ parent_window_due.strftime('%d.%m.%Y') }}
-              {% elif parent_window_start %}
-              Не раньше {{ parent_window_start.strftime('%d.%m.%Y') }}
-              {% elif parent_window_due %}
-              Не позже {{ parent_window_due.strftime('%d.%m.%Y') }}
+        {% if parent_window_start or parent_window_due %}
+        <p class="muted projects-cms-hint">
+          Период проекта{% if parent_task %}/родителя{% endif %}:
+          {% if parent_window_start %}{{ parent_window_start.strftime('%d.%m.%Y') }}{% endif %}
+          —
+          {% if parent_window_due %}{{ parent_window_due.strftime('%d.%m.%Y') }}{% endif %}
+        </p>
+        {% endif %}
+
+        <div class="projects-task-pred-dates" id="task-pred-dates"
+             data-skip-weekends="{{ '1' if proj_for_form and proj_for_form.skip_weekends else '0' }}"
+             data-skip-holidays="{{ '1' if proj_for_form and proj_for_form.skip_public_holidays else '0' }}">
+          <div class="form-group">
+            <label for="task-predecessor-id">Предшественник</label>
+            <select name="predecessor_task_id" id="task-predecessor-id" class="form-control">
+              <option value="">— нет —</option>
+              {% if parent_task %}
+                {% for t in tasks_by_project.get(parent_task.project_id, []) %}
+                <option value="{{ t.id }}"
+                        data-due="{{ t.due or '' }}"
+                        data-start="{{ t.start or '' }}"
+                        {% if preset_pred_id == t.id %}selected{% endif %}>{{ t.title }}{% if t.dates_label %} · {{ t.dates_label }}{% endif %}</option>
+                {% endfor %}
+              {% elif preset_project_id %}
+                {% for t in tasks_by_project.get(preset_project_id, []) %}
+                <option value="{{ t.id }}"
+                        data-due="{{ t.due or '' }}"
+                        data-start="{{ t.start or '' }}"
+                        {% if preset_pred_id == t.id %}selected{% endif %}>{{ t.title }}{% if t.dates_label %} · {{ t.dates_label }}{% endif %}</option>
+                {% endfor %}
+              {% elif projects %}
+                {% for t in tasks_by_project.get(projects[0].id, []) %}
+                <option value="{{ t.id }}"
+                        data-due="{{ t.due or '' }}"
+                        data-start="{{ t.start or '' }}"
+                        {% if preset_pred_id == t.id %}selected{% endif %}>{{ t.title }}{% if t.dates_label %} · {{ t.dates_label }}{% endif %}</option>
+                {% endfor %}
               {% endif %}
-            </p>
-            {% else %}
-            <p class="muted projects-cms-hint">По умолчанию — сегодня, чтобы задача сразу была на Ганте</p>
+            </select>
+            <p class="muted projects-cms-hint" id="task-pred-hint">Сначала выберите предшественника — подставим начало = окончание предыдущей + 1 день.</p>
+          </div>
+          <div class="form-row">
+            <div class="form-group"><label for="task-start-date">Начало</label>
+              <input type="date" name="start_date" id="task-start-date" class="form-control"
+                     value="{{ default_start.isoformat() if default_start else '' }}"
+                     {% if parent_window_start %}min="{{ parent_window_start.isoformat() }}"{% endif %}
+                     {% if parent_window_due %}max="{{ parent_window_due.isoformat() }}"{% endif %}>
+            </div>
+            <div class="form-group"><label for="task-due-date">Дедлайн</label>
+              <input type="date" name="due_date" id="task-due-date" class="form-control"
+                     value="{{ default_due.isoformat() if default_due else '' }}"
+                     {% if parent_window_start %}min="{{ parent_window_start.isoformat() }}"{% endif %}
+                     {% if parent_window_due %}max="{{ parent_window_due.isoformat() }}"{% endif %}>
+            </div>
+          </div>
+        </div>
+
+        <div class="projects-task-batch" id="task-batch" data-batch>
+          <div class="projects-task-batch-head">
+            <h2 class="projects-task-batch-title">Список задач</h2>
+            <p class="muted projects-cms-hint">Несколько строк сразу. ← / → или кнопки — уровень (вложить / поднять). Ориентируйтесь на структуру слева.</p>
+          </div>
+          <div class="projects-task-batch-rows" id="task-batch-rows"></div>
+          <div class="projects-task-batch-toolbar">
+            <button type="button" class="btn btn-outline btn-sm" id="task-batch-add">＋ Строка</button>
+            <button type="submit" name="create_mode" value="batch" class="btn btn-primary" formnovalidate>Создать все</button>
+            {% if arm_back_url %}
+            <a href="{{ arm_back_url }}" class="btn btn-outline btn-sm">К Ганту</a>
             {% endif %}
           </div>
         </div>
-        <div class="form-group">
-          <label>Предыдущая задача (предшественник)</label>
-          <select name="predecessor_task_id" id="task-predecessor-id" class="form-control">
-            <option value="">— нет —</option>
-            {% if parent_task %}
-              {% for t in tasks_by_project.get(parent_task.project_id, []) %}
-              <option value="{{ t.id }}">{{ t.title }}</option>
-              {% endfor %}
-            {% elif preset_project_id %}
-              {% for t in tasks_by_project.get(preset_project_id, []) %}
-              <option value="{{ t.id }}">{{ t.title }}</option>
-              {% endfor %}
-            {% elif projects %}
-              {% for t in tasks_by_project.get(projects[0].id, []) %}
-              <option value="{{ t.id }}">{{ t.title }}</option>
-              {% endfor %}
-            {% endif %}
-          </select>
-          <p class="muted projects-cms-hint">Стрелка на Ганте: конец предыдущей → начало этой задачи</p>
-        </div>
-        <div class="form-actions">
-          <button type="submit" class="btn btn-primary">Создать</button>
-        </div>
+
+        <details class="projects-task-single-details" open>
+          <summary>Одна задача с названием и описанием</summary>
+          <div class="projects-task-single-fields">
+            <div class="form-group"><label>Название</label><input name="title" id="task-title-input" class="form-control"></div>
+            <div class="form-group"><label>Описание</label><textarea name="description" class="form-control" rows="3"></textarea></div>
+            <div class="form-actions projects-task-create-actions">
+              <button type="submit" name="after_create" value="view" class="btn btn-primary">Создать одну</button>
+              <button type="submit" name="after_create" value="another" class="btn btn-outline">
+                {% if parent_task %}Создать и ещё подзадачу{% else %}Создать и ещё одну{% endif %}
+              </button>
+            </div>
+          </div>
+        </details>
       </form>
     </div>
   </div>
@@ -145,6 +184,10 @@
   var sel = document.getElementById("task-project-id");
   var stageSel = document.getElementById("task-stage-id");
   var predSel = document.getElementById("task-predecessor-id");
+  var startInp = document.getElementById("task-start-date");
+  var dueInp = document.getElementById("task-due-date");
+  var predHint = document.getElementById("task-pred-hint");
+  var predBox = document.getElementById("task-pred-dates");
   var assigneeSel = document.getElementById("task-assignee-id");
   var titleInput = document.getElementById("task-title-input");
   var treeEl = document.getElementById("task-project-tree");
@@ -152,7 +195,15 @@
   var tasksEl = document.getElementById("tasks-by-project-json");
   var execEl = document.getElementById("executors-by-project-json");
   var namesEl = document.getElementById("projects-name-json");
+  var batchRows = document.getElementById("task-batch-rows");
+  var batchAdd = document.getElementById("task-batch-add");
   if (!sel || !stageSel || !dataEl) return;
+  var skipWeekends = predBox && predBox.getAttribute("data-skip-weekends") === "1";
+  var holidaySet = {
+    "01-01": 1, "01-02": 1, "01-07": 1, "03-08": 1, "05-01": 1,
+    "05-09": 1, "07-03": 1, "11-07": 1, "12-25": 1
+  };
+  var skipHolidays = predBox && predBox.getAttribute("data-skip-holidays") === "1";
 
   var map = {};
   var tasksMap = {};
@@ -164,6 +215,11 @@
   try { if (namesEl) namesMap = JSON.parse(namesEl.textContent || "{}"); } catch (e) { namesMap = {}; }
 
   var highlightParentId = treeEl ? (treeEl.getAttribute("data-parent-id") || "") : "";
+  var armView = treeEl ? (treeEl.getAttribute("data-arm-view") || "") : "";
+  var dateMin = treeEl ? (treeEl.getAttribute("data-date-min") || "") : "";
+  var dateMax = treeEl ? (treeEl.getAttribute("data-date-max") || "") : "";
+  var defaultStart = treeEl ? (treeEl.getAttribute("data-default-start") || "") : "";
+  var defaultDue = treeEl ? (treeEl.getAttribute("data-default-due") || "") : "";
 
   function esc(s) {
     return String(s == null ? "" : s)
@@ -195,13 +251,118 @@
     if (!predSel) return;
     var pid = projectId();
     var tasks = tasksMap[pid] || tasksMap[String(pid)] || [];
+    var cur = predSel.value;
     predSel.innerHTML = '<option value="">— нет —</option>';
     tasks.forEach(function (t) {
       var o = document.createElement("option");
       o.value = t.id;
-      o.textContent = t.title;
+      o.textContent = t.title + (t.dates_label ? " · " + t.dates_label : "");
+      if (t.due) o.setAttribute("data-due", t.due);
+      if (t.start) o.setAttribute("data-start", t.start);
+      if (String(t.id) === String(cur)) o.selected = true;
       predSel.appendChild(o);
     });
+  }
+
+  function pad2(n) { return n < 10 ? "0" + n : String(n); }
+
+  function toIso(d) {
+    return d.getFullYear() + "-" + pad2(d.getMonth() + 1) + "-" + pad2(d.getDate());
+  }
+
+  function parseIsoLocal(s) {
+    if (!s) return null;
+    var p = String(s).split("-");
+    if (p.length < 3) return null;
+    return new Date(+p[0], +p[1] - 1, +p[2], 12, 0, 0);
+  }
+
+  function formatRu(d) {
+    return pad2(d.getDate()) + "." + pad2(d.getMonth() + 1) + "." + d.getFullYear();
+  }
+
+  function isNonWorking(d) {
+    var wd = d.getDay();
+    if (skipWeekends && (wd === 0 || wd === 6)) return true;
+    if (skipHolidays) {
+      var key = pad2(d.getMonth() + 1) + "-" + pad2(d.getDate());
+      if (holidaySet[key]) return true;
+    }
+    return false;
+  }
+
+  function nextWorkdayAfter(isoDue) {
+    var d = parseIsoLocal(isoDue);
+    if (!d) return null;
+    d.setDate(d.getDate() + 1);
+    var guard = 0;
+    while (isNonWorking(d) && guard < 40) {
+      d.setDate(d.getDate() + 1);
+      guard += 1;
+    }
+    return d;
+  }
+
+  function daySpan(isoA, isoB) {
+    var a = parseIsoLocal(isoA);
+    var b = parseIsoLocal(isoB);
+    if (!a || !b) return 0;
+    return Math.max(0, Math.round((b - a) / 86400000));
+  }
+
+  function suggestDatesFromPredecessor() {
+    if (!predSel || !startInp || !dueInp) return;
+    var opt = predSel.options[predSel.selectedIndex];
+    if (!opt || !opt.value) {
+      if (predHint) {
+        predHint.textContent = "Сначала выберите предшественника — подставим начало = окончание предыдущей + 1 день.";
+        predHint.classList.remove("is-suggest");
+      }
+      return;
+    }
+    var predDue = opt.getAttribute("data-due") || opt.getAttribute("data-start") || "";
+    if (!predDue) {
+      if (predHint) {
+        predHint.textContent = "У «" + opt.textContent.trim() + "» нет срока окончания — укажите даты вручную.";
+        predHint.classList.add("is-suggest");
+      }
+      return;
+    }
+    var startD = nextWorkdayAfter(predDue);
+    if (!startD) return;
+    var span = daySpan(startInp.value, dueInp.value);
+    if (!(span >= 0)) span = 0;
+    var dueD = new Date(startD.getTime());
+    dueD.setDate(dueD.getDate() + span);
+    var guard = 0;
+    while (isNonWorking(dueD) && guard < 40) {
+      dueD.setDate(dueD.getDate() + 1);
+      guard += 1;
+    }
+    var startIso = toIso(startD);
+    var dueIso = toIso(dueD);
+    if (dateMin && startIso < dateMin) startIso = dateMin;
+    if (dateMax && startIso > dateMax) startIso = dateMax;
+    if (dateMin && dueIso < dateMin) dueIso = dateMin;
+    if (dateMax && dueIso > dateMax) dueIso = dateMax;
+    if (dueIso < startIso) dueIso = startIso;
+    startInp.value = startIso;
+    dueInp.value = dueIso;
+    if (batchRows && batchRows.firstElementChild) {
+      var bs = batchRows.firstElementChild.querySelector('[name="batch_start"]');
+      var bd = batchRows.firstElementChild.querySelector('[name="batch_due"]');
+      if (bs && !bs.value) bs.value = startIso;
+      if (bd && !bd.value) bd.value = dueIso;
+      if (bs) bs.value = startIso;
+      if (bd) bd.value = dueIso;
+    }
+    if (predHint) {
+      predHint.textContent = "Подсказано по FS: окончание «" +
+        (opt.textContent.split("·")[0].trim()) + "» " + formatRu(parseIsoLocal(predDue)) +
+        " → начало " + formatRu(startD) +
+        (skipWeekends ? " (с учётом выходных)." : ".");
+      predHint.classList.add("is-suggest");
+    }
   }
 
   function fillAssignees() {
@@ -230,19 +391,36 @@
   }
 
   function draftNodeHtml() {
-    var draft = (titleInput && titleInput.value.trim()) || "Новая задача…";
+    var draft = (titleInput && titleInput.value.trim()) || "Новые задачи…";
     return '<li class="projects-task-tree-item projects-task-tree-item--draft">' +
       '<span class="projects-task-tree-draft">' + esc(draft) + "</span></li>";
+  }
+
+  function addSubtaskHref(taskId) {
+    var href = "/projects/tasks/new?parent=" + encodeURIComponent(taskId) +
+      "&project=" + encodeURIComponent(projectId());
+    if (armView) href += "&arm_view=" + encodeURIComponent(armView);
+    return href;
   }
 
   function renderTaskNodes(tasks, byParent, depth) {
     var html = "";
     tasks.forEach(function (t) {
       var isParent = highlightParentId && String(t.id) === String(highlightParentId);
+      var tip = t.title + (t.dates_label ? " · " + t.dates_label : " · без дат");
       html += '<li class="projects-task-tree-item projects-task-tree-item--task' +
         (isParent ? " is-parent-of-new" : "") +
         '" style="--depth:' + depth + '">';
-      html += '<a class="projects-task-tree-link" href="/projects/tasks/' + t.id + '">' + esc(t.title) + "</a>";
+      html += '<div class="projects-task-tree-row">';
+      html += '<a class="projects-task-tree-link" href="/projects/tasks/' + t.id + '" title="' + esc(tip) + '">' +
+        '<span class="projects-task-tree-name">' + esc(t.title) + "</span>";
+      if (t.dates_label) {
+        html += '<span class="projects-task-tree-dates">' + esc(t.dates_label) + "</span>";
+      }
+      html += "</a>";
+      html += '<a class="projects-task-tree-add" href="' + addSubtaskHref(t.id) +
+        '" title="Добавить подзадачу" aria-label="Добавить подзадачу">＋</a>';
+      html += "</div>";
       var kids = byParent[String(t.id)] || [];
       var showDraftHere = isParent;
       if (kids.length || showDraftHere) {
@@ -310,6 +488,108 @@
     treeEl.innerHTML = html;
   }
 
+  /* ---- пакетный список ---- */
+  function maxDepthForRow(row) {
+    var prev = row.previousElementSibling;
+    if (!prev) return 0;
+    return (parseInt(prev.getAttribute("data-depth") || "0", 10) || 0) + 1;
+  }
+
+  function syncRowDepth(row) {
+    var depth = parseInt(row.getAttribute("data-depth") || "0", 10) || 0;
+    var maxD = maxDepthForRow(row);
+    if (depth > maxD) depth = maxD;
+    if (depth < 0) depth = 0;
+    row.setAttribute("data-depth", String(depth));
+    row.style.setProperty("--batch-depth", String(depth));
+    var hidden = row.querySelector('[name="batch_depth"]');
+    if (hidden) hidden.value = String(depth);
+    var label = row.querySelector("[data-depth-label]");
+    if (label) label.textContent = depth ? ("↳".repeat(Math.min(depth, 4)) + " " + depth) : "•";
+  }
+
+  function addBatchRow(opts) {
+    if (!batchRows) return;
+    opts = opts || {};
+    var row = document.createElement("div");
+    row.className = "projects-task-batch-row";
+    row.setAttribute("data-depth", String(opts.depth || 0));
+    var minAttr = dateMin ? ' min="' + dateMin + '"' : "";
+    var maxAttr = dateMax ? ' max="' + dateMax + '"' : "";
+    row.innerHTML =
+      '<button type="button" class="btn btn-outline btn-icon-xs" data-batch-outdent title="Уровень выше (влево)" aria-label="Уровень выше">←</button>' +
+      '<button type="button" class="btn btn-outline btn-icon-xs" data-batch-indent title="Уровень ниже (вправо)" aria-label="Уровень ниже">→</button>' +
+      '<span class="projects-task-batch-depth" data-depth-label>•</span>' +
+      '<input type="hidden" name="batch_depth" value="0">' +
+      '<input type="text" name="batch_title" class="form-control projects-task-batch-title-input" placeholder="Название задачи" value="' + esc(opts.title || "") + '">' +
+      '<input type="date" name="batch_start" class="form-control projects-task-batch-date"' + minAttr + maxAttr + ' value="' + esc(opts.start || defaultStart) + '">' +
+      '<input type="date" name="batch_due" class="form-control projects-task-batch-date"' + minAttr + maxAttr + ' value="' + esc(opts.due || defaultDue) + '">' +
+      '<button type="button" class="btn btn-outline btn-icon-xs" data-batch-remove title="Удалить строку" aria-label="Удалить">×</button>';
+    batchRows.appendChild(row);
+    syncRowDepth(row);
+    var titleInp = row.querySelector('[name="batch_title"]');
+    if (titleInp && !opts.title) titleInp.focus();
+  }
+
+  function reflowBatchDepths() {
+    if (!batchRows) return;
+    Array.prototype.forEach.call(batchRows.children, syncRowDepth);
+  }
+
+  if (batchRows) {
+    addBatchRow();
+    if (batchAdd) {
+      batchAdd.addEventListener("click", function () { addBatchRow(); });
+    }
+    batchRows.addEventListener("click", function (e) {
+      var row = e.target.closest(".projects-task-batch-row");
+      if (!row) return;
+      if (e.target.closest("[data-batch-remove]")) {
+        if (batchRows.children.length <= 1) {
+          row.querySelector('[name="batch_title"]').value = "";
+          return;
+        }
+        row.remove();
+        reflowBatchDepths();
+        return;
+      }
+      if (e.target.closest("[data-batch-indent]")) {
+        var d = parseInt(row.getAttribute("data-depth") || "0", 10) || 0;
+        row.setAttribute("data-depth", String(Math.min(8, d + 1)));
+        syncRowDepth(row);
+        return;
+      }
+      if (e.target.closest("[data-batch-outdent]")) {
+        var d2 = parseInt(row.getAttribute("data-depth") || "0", 10) || 0;
+        row.setAttribute("data-depth", String(Math.max(0, d2 - 1)));
+        syncRowDepth(row);
+      }
+    });
+    batchRows.addEventListener("keydown", function (e) {
+      var row = e.target.closest(".projects-task-batch-row");
+      if (!row || !e.target.matches('[name="batch_title"]')) return;
+      if (e.key === "Tab" && !e.shiftKey && e.target.selectionStart === e.target.value.length) {
+        // Tab at end of title → indent (optional: only with ctrl)
+      }
+      if (e.key === "Enter") {
+        e.preventDefault();
+        addBatchRow({ depth: parseInt(row.getAttribute("data-depth") || "0", 10) || 0 });
+      }
+      if (e.key === "Tab" && e.shiftKey === false && e.altKey) {
+        e.preventDefault();
+        var d = parseInt(row.getAttribute("data-depth") || "0", 10) || 0;
+        row.setAttribute("data-depth", String(Math.min(8, d + 1)));
+        syncRowDepth(row);
+      }
+      if (e.key === "Tab" && e.shiftKey && e.altKey) {
+        e.preventDefault();
+        var d3 = parseInt(row.getAttribute("data-depth") || "0", 10) || 0;
+        row.setAttribute("data-depth", String(Math.max(0, d3 - 1)));
+        syncRowDepth(row);
+      }
+    });
+  }
+
   function fill() {
     fillStages();
     fillPredecessors();
@@ -324,6 +604,9 @@
   if (titleInput) {
     titleInput.addEventListener("input", renderTree);
   }
+  if (predSel) {
+    predSel.addEventListener("change", suggestDatesFromPredecessor);
+  }
   if (treeEl) {
     treeEl.addEventListener("click", function (e) {
       var btn = e.target.closest(".projects-task-tree-stage");
@@ -334,6 +617,7 @@
   }
 
   renderTree();
+  if (predSel && predSel.value) suggestDatesFromPredecessor();
 })();
 </script>
 {% endblock %}

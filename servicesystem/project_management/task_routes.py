@@ -24,10 +24,12 @@ from servicesystem.project_management.routes import KANBAN_LABELS, bp
 from servicesystem.project_management.services import (
     add_manual_time,
     build_ics_for_user,
+    change_task_parent,
     delete_project_task,
     delete_task_attachment,
     save_task_attachment,
     task_attachment_path,
+    user_can_create_task,
     user_can_delete_task_attachment,
     task_is_completion_blocked,
     timer_start,
@@ -136,7 +138,7 @@ def task_update(tid):
             flash("Неверный тип связи.", "warning")
         else:
             from servicesystem.project_management.services import (
-                cascade_fs_schedule,
+                apply_fs_cascade_and_expand,
                 fs_link_parent_window_violation,
                 tasks_hierarchically_related,
             )
@@ -168,7 +170,7 @@ def task_update(tid):
                             )
                         )
                         if store_type == "blocks" and succ:
-                            cascade_fs_schedule(succ)
+                            apply_fs_cascade_and_expand(succ)
                         db.session.commit()
                         flash("Связь добавлена.", "success")
         return redirect(url_for("projects.task_detail", tid=tid, tab="links"))
@@ -390,3 +392,125 @@ def api_task_dates(tid):
 
     try_push_task_to_caldav(task)
     return jsonify({"ok": True})
+
+
+def _hierarchy_wants_json() -> bool:
+    if request.is_json:
+        return True
+    accept = (request.accept_mimetypes.best or "") if request.accept_mimetypes else ""
+    return "application/json" in (request.headers.get("Accept") or "") or accept == "application/json"
+
+
+@bp.route("/tasks/<int:tid>/hierarchy", methods=["POST"])
+@login_required
+def task_hierarchy(tid):
+    """Подзадача ↔ отдельная задача. При наличии связей — 409, пока break_links=true."""
+    wants_json = _hierarchy_wants_json()
+    task = db.session.get(ProjectTask, tid)
+    if not task:
+        if wants_json:
+            return jsonify({"error": "not_found", "message": "Задача не найдена."}), 404
+        abort(404)
+    if not user_can_edit_task(current_user, task):
+        msg = "Недостаточно прав, чтобы менять вложенность этой задачи."
+        if wants_json:
+            return jsonify({"error": "forbidden", "message": msg}), 403
+        flash(msg, "danger")
+        return redirect(url_for("projects.task_detail", tid=tid))
+
+    data = request.get_json(silent=True) if request.is_json else None
+    if not isinstance(data, dict):
+        data = {
+            "action": request.form.get("action"),
+            "parent_id": request.form.get("parent_id"),
+            "break_links": request.form.get("break_links"),
+        }
+
+    action = (data.get("action") or "").strip().lower()
+    raw_break = data.get("break_links")
+    if isinstance(raw_break, bool):
+        break_links = raw_break
+    else:
+        break_links = str(raw_break or "").strip().lower() in ("1", "true", "yes", "on")
+
+    if action == "promote" or (action != "attach" and data.get("parent_id") in ("", None) and "parent_id" in data):
+        new_parent_id = None
+        promote = True
+    elif action == "attach" or data.get("parent_id") not in ("", None):
+        try:
+            new_parent_id = int(data.get("parent_id"))
+        except (TypeError, ValueError):
+            msg = "Выберите задачу-родителя."
+            if not wants_json:
+                flash(msg, "warning")
+                return redirect(url_for("projects.task_detail", tid=tid))
+            return jsonify({"error": "bad_parent", "message": msg}), 400
+        promote = False
+    else:
+        msg = "Укажите действие: сделать отдельной или подзадачей."
+        if not wants_json:
+            flash(msg, "warning")
+            return redirect(url_for("projects.task_detail", tid=tid))
+        return jsonify({"error": "bad_request", "message": msg}), 400
+
+    if promote:
+        if not user_can_create_task(current_user, parent_id=None):
+            msg = "Отдельную задачу верхнего уровня может создать только ГИП."
+            if not wants_json:
+                flash(msg, "danger")
+                return redirect(url_for("projects.task_detail", tid=tid))
+            return jsonify({"error": "forbidden", "message": msg}), 403
+    else:
+        parent = db.session.get(ProjectTask, new_parent_id)
+        if not parent or not user_can_edit_task(current_user, parent):
+            msg = "Нет прав на выбранного родителя."
+            if not wants_json:
+                flash(msg, "danger")
+                return redirect(url_for("projects.task_detail", tid=tid))
+            return jsonify({"error": "forbidden", "message": msg}), 403
+
+    try:
+        err, extra = change_task_parent(task, new_parent_id, break_links=break_links)
+    except Exception:
+        current_app.logger.exception("task_hierarchy failed tid=%s", tid)
+        msg = "Ошибка при смене вложенности. Обновите страницу и попробуйте снова."
+        if not wants_json:
+            flash(msg, "danger")
+            return redirect(url_for("projects.task_detail", tid=tid))
+        return jsonify({"error": "server", "message": msg}), 500
+
+    if err == "has_links":
+        if not wants_json:
+            # Форма без JS: повтор с break_links через скрытое поле после confirm
+            flash(extra.get("message") or "Сначала разорвите связи задачи.", "warning")
+            return redirect(url_for("projects.task_detail", tid=tid))
+        return jsonify({"error": "has_links", **extra}), 409
+    if err:
+        messages = {
+            "cycle": extra.get("message") or "Нельзя сделать родителем свою подзадачу.",
+            "same": "Нельзя выбрать саму задачу.",
+            "bad_parent": "Родитель не найден в этом проекте.",
+        }
+        msg = messages.get(err) or extra.get("message") or "Ошибка."
+        if not wants_json:
+            flash(msg, "danger")
+            return redirect(url_for("projects.task_detail", tid=tid))
+        return jsonify({"error": err, "message": msg}), 400
+
+    db.session.commit()
+    if not wants_json:
+        if extra.get("unchanged"):
+            flash("Вложенность не изменилась.", "info")
+        elif promote:
+            flash("Задача стала отдельной (верхний уровень).", "success")
+        else:
+            flash("Задача стала подзадачей.", "success")
+        if extra.get("links_cleared"):
+            flash(f"Разорвано связей: {extra['links_cleared']}.", "info")
+        return redirect(url_for("projects.task_detail", tid=tid))
+    return jsonify({
+        "ok": True,
+        "parent_id": task.parent_id,
+        "links_cleared": extra.get("links_cleared") or 0,
+        "unchanged": bool(extra.get("unchanged")),
+    })

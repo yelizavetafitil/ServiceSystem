@@ -288,6 +288,23 @@ def _snap_task_dates_to_workdays(task: ProjectTask) -> bool:
     return changed or (old_start, old_due) != (task.start_date, task.due_date)
 
 
+def _fs_move_task_with_subtree(task: ProjectTask) -> list[int]:
+    """FS/snap задачи и сдвиг всех подзадач на тот же delta (как drag на Ганте)."""
+    old_start = task.start_date or task.due_date
+    if not (enforce_task_fs_start(task) or _snap_task_dates_to_workdays(task)):
+        return []
+    changed = [task.id]
+    sync_calendar_events_for_task(task)
+    new_start = task.start_date or task.due_date
+    if old_start and new_start:
+        delta = (new_start - old_start).days
+        if delta:
+            for cid in shift_task_subtree(task, delta):
+                if cid not in changed:
+                    changed.append(cid)
+    return changed
+
+
 def cascade_fs_schedule(root: ProjectTask) -> list[int]:
     """Применить FS к задаче и цепочке последователей. Возвращает id изменённых задач."""
     changed: list[int] = []
@@ -298,24 +315,33 @@ def cascade_fs_schedule(root: ProjectTask) -> list[int]:
         if task.id in visited:
             continue
         visited.add(task.id)
-        if enforce_task_fs_start(task) or _snap_task_dates_to_workdays(task):
-            if task.id not in changed:
-                changed.append(task.id)
-            sync_calendar_events_for_task(task)
+        for tid in _fs_move_task_with_subtree(task):
+            if tid not in changed:
+                changed.append(tid)
+        for pid in expand_ancestors_to_fit(task):
+            if pid not in changed:
+                changed.append(pid)
         for succ in _fs_successor_tasks(task):
             if succ.id not in visited:
                 queue.append(succ)
     return changed
 
 
-def cascade_fs_from_task(task: ProjectTask) -> list[int]:
-    """После сдвига сроков: подтянуть саму задачу к предшественникам и сдвинуть последователей."""
-    changed = []
-    if enforce_task_fs_start(task) or _snap_task_dates_to_workdays(task):
-        changed.append(task.id)
-        sync_calendar_events_for_task(task)
+def cascade_fs_successors_only(task: ProjectTask) -> list[int]:
+    """Сдвинуть только последователей FS (саму задачу не откатывать к предшественникам/выходным)."""
+    changed: list[int] = []
     for succ in _fs_successor_tasks(task):
         changed.extend(cascade_fs_schedule(succ))
+    return changed
+
+
+def cascade_fs_from_task(task: ProjectTask) -> list[int]:
+    """После сдвига сроков: подтянуть саму задачу к предшественникам и сдвинуть последователей."""
+    changed = list(_fs_move_task_with_subtree(task))
+    for succ in _fs_successor_tasks(task):
+        for tid in cascade_fs_schedule(succ):
+            if tid not in changed:
+                changed.append(tid)
     # После FS снова уложить в окна родителя и старт проекта
     if clamp_task_dates(task):
         if task.id not in changed:
@@ -326,14 +352,10 @@ def cascade_fs_from_task(task: ProjectTask) -> list[int]:
             if child.id not in changed:
                 changed.append(child.id)
             sync_calendar_events_for_task(child)
-    # уникальные с сохранением порядка
-    seen: set[int] = set()
-    out: list[int] = []
-    for tid in changed:
-        if tid not in seen:
-            seen.add(tid)
-            out.append(tid)
-    return out
+    for pid in expand_ancestors_to_fit(task):
+        if pid not in changed:
+            changed.append(pid)
+    return changed
 
 
 def parent_date_window(parent: ProjectTask | None) -> tuple[date | None, date | None]:
@@ -507,38 +529,69 @@ def forecast_fs_dates_after_predecessor(
     return new_start, new_due
 
 
+def expand_ancestors_to_fit(task: ProjectTask) -> list[int]:
+    """Расширить сроки родителей (вверх по цепочке), чтобы покрыть задачу.
+
+    Нужно после FS между подзадачами: родитель = совокупность подзадач.
+    """
+    changed: list[int] = []
+    cur = task
+    guard = 0
+    while cur and cur.parent_id and guard < 40:
+        guard += 1
+        parent = cur.parent if cur.parent is not None else db.session.get(ProjectTask, cur.parent_id)
+        if not parent:
+            break
+        t_start = cur.start_date or cur.due_date
+        t_due = cur.due_date or cur.start_date
+        if not t_start and not t_due:
+            cur = parent
+            continue
+        dirty = False
+        if t_start and (parent.start_date is None or parent.start_date > t_start):
+            parent.start_date = t_start
+            dirty = True
+        if t_due and (parent.due_date is None or parent.due_date < t_due):
+            parent.due_date = t_due
+            dirty = True
+        if parent.start_date and parent.due_date and parent.due_date < parent.start_date:
+            parent.due_date = parent.start_date
+            dirty = True
+        if dirty:
+            if parent.id not in changed:
+                changed.append(parent.id)
+            sync_calendar_events_for_task(parent)
+        cur = parent
+    return changed
+
+
+def apply_fs_cascade_and_expand(succ: ProjectTask) -> list[int]:
+    """FS-каскад по последователю + расширение родителей под новые сроки."""
+    shifted = cascade_fs_schedule(succ)
+    ids = list(shifted)
+    if succ.id not in ids:
+        ids.append(succ.id)
+    out = list(shifted)
+    for tid in ids:
+        t = succ if tid == succ.id else db.session.get(ProjectTask, tid)
+        if not t:
+            continue
+        for pid in expand_ancestors_to_fit(t):
+            if pid not in out:
+                out.append(pid)
+    return out
+
+
 def fs_link_parent_window_violation(
     pred: ProjectTask,
     succ: ProjectTask,
 ) -> str | None:
     """
-    Связь подзадач недопустима, если у одной сроки вне родителя
-    или FS сдвинет последователя за окно родителя.
+    Перед FS-связью: нельзя выйти за окно проекта.
+    Окно родителя не блокирует связь подзадач — после каскада родителя расширяем
+    (родитель = совокупность подзадач).
     """
-    for task, role in ((pred, "предшественника"), (succ, "последователя")):
-        if not task.parent_id:
-            continue
-        parent = task.parent or db.session.get(ProjectTask, task.parent_id)
-        if not dates_within_parent(task.start_date, task.due_date, parent):
-            p_start, p_due = parent_date_window(parent)
-            if p_start and p_due:
-                return (
-                    f"Сроки {role} выходят за рамки родителя "
-                    f"({p_start.strftime('%d.%m.%Y')} — {p_due.strftime('%d.%m.%Y')}) — связь недопустима."
-                )
-            return f"Сроки {role} выходят за рамки родителя — связь недопустима."
-
     new_start, new_due = forecast_fs_dates_after_predecessor(succ, pred)
-    if succ.parent_id:
-        parent = succ.parent or db.session.get(ProjectTask, succ.parent_id)
-        if not dates_within_parent(new_start, new_due, parent):
-            p_start, p_due = parent_date_window(parent)
-            if p_start and p_due:
-                return (
-                    "Связь сдвинет подзадачу за сроки родителя "
-                    f"({p_start.strftime('%d.%m.%Y')} — {p_due.strftime('%d.%m.%Y')})."
-                )
-            return "Связь сдвинет подзадачу за сроки родителя."
     proj_msg = project_dates_violation_message(new_start, new_due, succ.project)
     if proj_msg:
         return proj_msg
@@ -659,8 +712,45 @@ def clamp_task_dates_to_project(task: ProjectTask) -> bool:
     return True
 
 
-def clamp_task_dates(task: ProjectTask) -> bool:
-    """Родитель + окно проекта + рабочие дни (итеративно, без выхода за родителя)."""
+def non_working_dates_message(
+    start: date | None,
+    due: date | None,
+    project: Project | None,
+) -> str | None:
+    """Предупреждение, если начало/конец на выходном или празднике (без автосдвига)."""
+    from servicesystem.project_management.work_calendar import (
+        is_non_working_day,
+        is_public_holiday,
+        is_weekend,
+        project_uses_work_calendar,
+    )
+
+    if not project_uses_work_calendar(project):
+        return None
+
+    def _label(d: date) -> str:
+        parts = [d.strftime("%d.%m.%Y")]
+        if getattr(project, "skip_weekends", False) and is_weekend(d):
+            parts.append("сб" if d.weekday() == 5 else "вс")
+        if getattr(project, "skip_public_holidays", False) and is_public_holiday(d):
+            parts.append("праздник")
+        return " · ".join(parts)
+
+    if start and is_non_working_day(start, project):
+        return (
+            f"Начало попадает на нерабочий день ({_label(start)}). "
+            "Укажите рабочий день — дата не сдвигается автоматически."
+        )
+    if due and is_non_working_day(due, project):
+        return (
+            f"Дедлайн попадает на нерабочий день ({_label(due)}). "
+            "Укажите рабочий день — дата не сдвигается автоматически."
+        )
+    return None
+
+
+def clamp_task_dates(task: ProjectTask, *, snap_workdays: bool = True) -> bool:
+    """Родитель + окно проекта (+ рабочие дни, если snap_workdays)."""
     changed = False
     for _ in range(4):
         round_changed = False
@@ -668,7 +758,7 @@ def clamp_task_dates(task: ProjectTask) -> bool:
             round_changed = True
         if clamp_task_dates_to_project(task):
             round_changed = True
-        if _snap_task_dates_to_workdays(task):
+        if snap_workdays and _snap_task_dates_to_workdays(task):
             round_changed = True
         if round_changed:
             changed = True
@@ -1257,6 +1347,86 @@ def user_can_manage_project(user: User, project: Project) -> bool:
     if user.is_auditor and project.curator_auditor_id == user.id:
         return True
     return False
+
+
+def count_task_links(task: ProjectTask) -> int:
+    """Число входящих и исходящих связей задачи."""
+    tid = task.id
+    return ProjectTaskLink.query.filter(
+        or_(ProjectTaskLink.from_task_id == tid, ProjectTaskLink.to_task_id == tid)
+    ).count()
+
+
+def clear_all_task_links(task: ProjectTask) -> int:
+    """Удалить все связи задачи. Возвращает число удалённых."""
+    tid = task.id
+    n = ProjectTaskLink.query.filter(
+        or_(ProjectTaskLink.from_task_id == tid, ProjectTaskLink.to_task_id == tid)
+    ).delete(synchronize_session=False)
+    return int(n or 0)
+
+
+def change_task_parent(
+    task: ProjectTask,
+    new_parent_id: int | None,
+    *,
+    break_links: bool = False,
+) -> tuple[str | None, dict]:
+    """
+    Сменить родителя: None — отдельная задача верхнего уровня; иначе — подзадача.
+    Возвращает (error_code|None, payload). error_code:
+      has_links — нужны break_links;
+      bad_parent / cycle / same — некорректный родитель.
+    """
+    extra: dict = {"link_count": count_task_links(task)}
+    if new_parent_id is not None:
+        try:
+            new_parent_id = int(new_parent_id)
+        except (TypeError, ValueError):
+            return "bad_parent", extra
+        if new_parent_id == task.id:
+            return "same", extra
+        parent = db.session.get(ProjectTask, new_parent_id)
+        if not parent or parent.project_id != task.project_id:
+            return "bad_parent", extra
+        if is_task_ancestor(task, parent):
+            return "cycle", {
+                **extra,
+                "message": "Нельзя сделать родителем свою подзадачу.",
+            }
+        # уже этот родитель
+        if task.parent_id == new_parent_id:
+            return None, {**extra, "unchanged": True}
+    else:
+        if not task.parent_id:
+            return None, {**extra, "unchanged": True}
+
+    link_n = int(extra["link_count"] or 0)
+    if link_n and not break_links:
+        return "has_links", {
+            **extra,
+            "link_count": link_n,
+            "message": "У задачи есть связи. Разорвать?",
+        }
+
+    if break_links and link_n:
+        cleared = clear_all_task_links(task)
+        db.session.flush()
+        extra["links_cleared"] = cleared
+        extra["link_count"] = 0
+
+    if new_parent_id is None:
+        task.parent_id = None
+    else:
+        parent = db.session.get(ProjectTask, new_parent_id)
+        assert parent is not None
+        task.parent_id = parent.id
+        if parent.stage_id and not task.stage_id:
+            task.stage_id = parent.stage_id
+        clamp_task_dates(task)
+        sync_calendar_events_for_task(task)
+
+    return None, extra
 
 
 def delete_project_task(task: ProjectTask) -> None:

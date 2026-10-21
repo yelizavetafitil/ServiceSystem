@@ -21,6 +21,7 @@ from servicesystem.project_management.models import (
 )
 from servicesystem.project_management.dates import parse_optional_date as _parse_form_date
 from servicesystem.project_management.services import (
+    apply_fs_cascade_and_expand,
     cascade_fs_from_task,
     cascade_fs_schedule,
     clamp_task_dates,
@@ -34,6 +35,8 @@ from servicesystem.project_management.services import (
     kanban_sort_key,
     move_task_kanban,
     next_gantt_sort,
+    non_working_dates_message,
+    cascade_fs_successors_only,
     parent_date_window,
     project_dates_violation_message,
     project_earliest_start,
@@ -751,17 +754,36 @@ def task_new():
     tasks_by_project: dict[int, list] = {}
     executors_by_project: dict[int, list] = {}
     def _tasks_tree_payload(project_id: int):
-        return [
-            {
-                "id": t.id,
-                "title": t.title,
-                "stage_id": t.stage_id,
-                "parent_id": t.parent_id,
-            }
-            for t in ProjectTask.query.filter_by(project_id=project_id)
+        out = []
+        for t in (
+            ProjectTask.query.filter_by(project_id=project_id)
             .order_by(ProjectTask.gantt_sort.asc(), ProjectTask.id.asc())
             .limit(400)
-        ]
+        ):
+            s, e = t.start_date, t.due_date
+            if s and e:
+                dates_label = (
+                    f"{s.strftime('%d.%m')}–{e.strftime('%d.%m.%Y')}"
+                    if s != e
+                    else s.strftime("%d.%m.%Y")
+                )
+            elif s or e:
+                d = s or e
+                dates_label = d.strftime("%d.%m.%Y")
+            else:
+                dates_label = ""
+            out.append(
+                {
+                    "id": t.id,
+                    "title": t.title,
+                    "stage_id": t.stage_id,
+                    "parent_id": t.parent_id,
+                    "start": s.isoformat() if s else "",
+                    "due": e.isoformat() if e else "",
+                    "dates_label": dates_label,
+                }
+            )
+        return out
 
     for p in projects:
         stages_by_project[p.id] = [
@@ -785,17 +807,133 @@ def task_new():
             for u in executors_for_project(parent_task.project_id)
         ]
     if request.method == "POST":
-        title = (request.form.get("title") or "").strip()
+        from servicesystem.project_management.models import ProjectTaskLink
+
         project_id = request.form.get("project_id", type=int)
         if parent_task:
             project_id = parent_task.project_id
-        if not title or not project_id:
-            flash("Укажите проект и название задачи.", "warning")
-            return redirect(url_for("projects.task_new", project=preset_project_id, parent=parent_id))
         stage_id = request.form.get("stage_id", type=int) or None
         if parent_task and not stage_id:
             stage_id = parent_task.stage_id
         assignee_id = request.form.get("assignee_id", type=int) or None
+        priority = int(request.form.get("priority") or 2)
+        arm_next = (request.form.get("arm_view") or "").strip().lower()
+        if arm_next not in _ARM_VIEWS:
+            arm_next = _arm_view_from_request()
+
+        def _back_new(**extra):
+            q = {"project": project_id or preset_project_id, "parent": parent_id}
+            if stage_id:
+                q["stage"] = stage_id
+            if arm_next:
+                q["arm_view"] = arm_next
+            q.update({k: v for k, v in extra.items() if v is not None})
+            return redirect(url_for("projects.task_new", **{k: v for k, v in q.items() if v is not None}))
+
+        # --- пакетное создание (структура + уровни + даты) ---
+        if (request.form.get("create_mode") or "") == "batch":
+            if not project_id:
+                flash("Укажите проект.", "warning")
+                return _back_new()
+            if assignee_id and not is_project_member(project_id, assignee_id):
+                flash("Исполнитель должен быть участником проекта.", "warning")
+                return _back_new()
+            titles = request.form.getlist("batch_title")
+            depths_raw = request.form.getlist("batch_depth")
+            starts_raw = request.form.getlist("batch_start")
+            dues_raw = request.form.getlist("batch_due")
+            rows: list[dict] = []
+            for i, raw_title in enumerate(titles):
+                title = (raw_title or "").strip()
+                if not title:
+                    continue
+                try:
+                    depth = max(0, min(8, int(depths_raw[i] if i < len(depths_raw) else 0)))
+                except (TypeError, ValueError):
+                    depth = 0
+                start_d = _parse_form_date(starts_raw[i] if i < len(starts_raw) else None)
+                due_d = _parse_form_date(dues_raw[i] if i < len(dues_raw) else None)
+                rows.append({"title": title, "depth": depth, "start": start_d, "due": due_d})
+            if not rows:
+                flash("Добавьте хотя бы одну строку с названием.", "warning")
+                return _back_new()
+            # depth 0 без parent_task — верхний уровень (только ГИП)
+            if any(r["depth"] == 0 for r in rows) and not parent_task:
+                if not user_can_create_task(current_user, parent_id=None):
+                    flash("Задачи верхнего уровня может создавать только ГИП.", "danger")
+                    return _back_new()
+            proj_for_dates = db.session.get(Project, project_id)
+            stack: list[tuple[int, ProjectTask]] = []  # (depth, task)
+            created: list[ProjectTask] = []
+            try:
+                for r in rows:
+                    depth = r["depth"]
+                    while stack and stack[-1][0] >= depth:
+                        stack.pop()
+                    if depth > 0 and not stack:
+                        depth = 0
+                    row_parent = stack[-1][1] if stack else parent_task
+                    row_parent_id = row_parent.id if row_parent else None
+                    start_date, due_date = r["start"], r["due"]
+                    if not start_date and not due_date:
+                        start_date, due_date = default_dates_within_parent(
+                            row_parent, project=proj_for_dates
+                        )
+                    elif start_date and not due_date:
+                        due_date = start_date
+                    elif due_date and not start_date:
+                        start_date = due_date
+                    if row_parent and not dates_within_parent(start_date, due_date, row_parent):
+                        p_start, p_due = parent_date_window(row_parent)
+                        flash(
+                            f"«{r['title']}»: сроки вне родителя "
+                            f"({p_start.strftime('%d.%m.%Y')} — {p_due.strftime('%d.%m.%Y')}).",
+                            "warning",
+                        )
+                        db.session.rollback()
+                        return _back_new()
+                    proj_msg = project_dates_violation_message(start_date, due_date, proj_for_dates)
+                    if proj_msg:
+                        flash(f"«{r['title']}»: {proj_msg}", "warning")
+                        db.session.rollback()
+                        return _back_new()
+                    t = ProjectTask(
+                        project_id=project_id,
+                        stage_id=(row_parent.stage_id if row_parent and row_parent.stage_id else stage_id),
+                        parent_id=row_parent_id,
+                        title=r["title"],
+                        priority=priority,
+                        assignee_id=assignee_id,
+                        start_date=start_date,
+                        due_date=due_date,
+                        kanban_status="todo",
+                        gantt_sort=next_gantt_sort(project_id),
+                        created_by_id=current_user.id,
+                    )
+                    db.session.add(t)
+                    db.session.flush()
+                    clamp_task_dates(t)
+                    sync_calendar_events_for_task(t)
+                    created.append(t)
+                    stack.append((depth, t))
+                db.session.commit()
+            except Exception:
+                db.session.rollback()
+                current_app.logger.exception("batch task create failed")
+                flash("Не удалось создать список задач.", "danger")
+                return _back_new()
+            flash(f"Создано задач: {len(created)}.", "success")
+            if arm_next and project_id:
+                return redirect(url_for("projects.arm", view=arm_next, project=project_id))
+            if created:
+                return redirect(url_for("projects.task_detail", tid=created[0].id))
+            return _back_new()
+
+        # --- одна задача ---
+        title = (request.form.get("title") or "").strip()
+        if not title or not project_id:
+            flash("Укажите проект и название задачи.", "warning")
+            return redirect(url_for("projects.task_new", project=preset_project_id, parent=parent_id))
         if assignee_id and not is_project_member(project_id, assignee_id):
             flash("Исполнитель должен быть участником проекта.", "warning")
             return redirect(
@@ -833,7 +971,7 @@ def task_new():
             parent_id=parent_task.id if parent_task else (request.form.get("parent_id", type=int) or None),
             title=title,
             description=(request.form.get("description") or "").strip() or None,
-            priority=int(request.form.get("priority") or 2),
+            priority=priority,
             assignee_id=assignee_id,
             due_date=due_date,
             start_date=start_date,
@@ -848,8 +986,6 @@ def task_new():
                 db.session.add(ProjectTaskCollaborator(task_id=task.id, user_id=int(uid)))
         pred_id = request.form.get("predecessor_task_id", type=int) or None
         if pred_id:
-            from servicesystem.project_management.models import ProjectTaskLink
-
             pred = db.session.get(ProjectTask, pred_id)
             if pred and pred.project_id == project_id and pred.id != task.id:
                 if tasks_hierarchically_related(pred, task):
@@ -870,11 +1006,40 @@ def task_new():
                                 link_type="blocks",
                             )
                         )
-                        cascade_fs_schedule(task)
+                        apply_fs_cascade_and_expand(task)
         sync_calendar_events_for_task(task)
         db.session.commit()
-        flash("Задача создана.", "success")
-        return redirect(url_for("projects.task_detail", tid=task.id))
+        after = (request.form.get("after_create") or "view").strip().lower()
+        if after == "another":
+            flash(
+                f"«{task.title}» создана. Можно сразу добавить следующую "
+                + ("подзадачу к тому же родителю." if parent_task else "задачу в этом проекте."),
+                "success",
+            )
+            q = {"project": project_id}
+            if parent_task:
+                q["parent"] = parent_task.id
+            if stage_id:
+                q["stage"] = stage_id
+            if arm_next:
+                q["arm_view"] = arm_next
+            return redirect(url_for("projects.task_new", **q))
+        if parent_task:
+            flash(
+                f"Подзадача к «{parent_task.title}» создана.",
+                "success",
+            )
+        else:
+            flash("Задача создана.", "success")
+        detail_q = {"tid": task.id}
+        if arm_next:
+            detail_q["arm_view"] = arm_next
+        if parent_task:
+            detail_q["offer_sibling"] = 1
+        else:
+            # Предложить сразу добавить подзадачу к новой задаче
+            detail_q["offer_child"] = 1
+        return redirect(url_for("projects.task_detail", **detail_q))
     proj_for_form = (
         parent_task.project
         if parent_task
@@ -904,6 +1069,7 @@ def task_new():
     if parent_task and parent_task.project and str(parent_task.project_id) not in project_names:
         project_names[str(parent_task.project_id)] = parent_task.project.name
     date_min, date_max = effective_date_window(parent=parent_task, project=proj_for_form)
+    preset_pred_id = request.args.get("pred", type=int)
     return render_template(
         "projects/task_form.html",
         task=None,
@@ -917,12 +1083,15 @@ def task_new():
         executors_by_project=executors_by_project,
         project_names=project_names,
         preset_stage_id=preset_stage_id,
+        preset_pred_id=preset_pred_id,
         default_start=default_start,
         default_due=default_due,
         parent_window_start=date_min,
         parent_window_due=date_max,
         project_start=project_earliest_start(proj_for_form),
         project_deadline=project_latest_due(proj_for_form),
+        proj_for_form=proj_for_form,
+        arm_view=arm_view,
         arm_back_url=_arm_back_url(project_id=preset_project_id or (parent_task.project_id if parent_task else None)),
         **projects_ui_context(),
     )
@@ -1014,6 +1183,25 @@ def task_detail(tid):
             if user_can_delete_task_attachment(current_user, task, f):
                 deletable_file_ids.add(f.id)
     date_min, date_max = effective_date_window(parent=task.parent, project=task.project)
+    from servicesystem.project_management.services import count_task_links, iter_task_descendants
+
+    desc_ids = {c.id for c in iter_task_descendants(task)} | {task.id}
+    hierarchy_parents = [t for t in sibling_tasks if t.id not in desc_ids]
+    task_link_count = count_task_links(task)
+    offer_sibling = bool(request.args.get("offer_sibling")) and bool(task.parent_id)
+    offer_child = bool(request.args.get("offer_child")) and not bool(task.parent_id)
+    sibling_new_url = None
+    child_new_url = None
+    if offer_sibling and task.parent_id:
+        sq = {"parent": task.parent_id, "project": task.project_id}
+        if session.get(_ARM_BACK_VIEW_KEY):
+            sq["arm_view"] = session.get(_ARM_BACK_VIEW_KEY)
+        sibling_new_url = url_for("projects.task_new", **sq)
+    if offer_child:
+        cq = {"parent": task.id, "project": task.project_id}
+        if session.get(_ARM_BACK_VIEW_KEY):
+            cq["arm_view"] = session.get(_ARM_BACK_VIEW_KEY)
+        child_new_url = url_for("projects.task_new", **cq)
     return render_template(
         "projects/task_detail.html",
         task=task,
@@ -1027,6 +1215,13 @@ def task_detail(tid):
         link_rows=link_rows,
         link_rows_in=link_rows_in,
         sibling_tasks=sibling_tasks,
+        hierarchy_parents=hierarchy_parents,
+        task_link_count=task_link_count,
+        offer_sibling=offer_sibling,
+        offer_child=offer_child,
+        sibling_new_url=sibling_new_url,
+        child_new_url=child_new_url,
+        sibling_parent_title=(task.parent.title if task.parent else ""),
         project_stages=project_stages,
         blocked=blocked,
         subtasks=subtasks,
@@ -1090,8 +1285,29 @@ def gantt_task_dates(tid):
         task.due_date = task.start_date
     if task.due_date and not task.start_date:
         task.start_date = task.due_date
-    # Подзадача — внутри родителя; все — не раньше старта проекта; с подзадачами вместе
-    clamp_task_dates(task)
+    nw = non_working_dates_message(task.start_date, task.due_date, task.project)
+    if nw:
+        db.session.rollback()
+        return jsonify({"error": "non_working", "message": nw}), 400
+    parent = task.parent
+    if parent and not dates_within_parent(task.start_date, task.due_date, parent):
+        p_start, p_due = parent_date_window(parent)
+        db.session.rollback()
+        return jsonify({
+            "error": "parent_window",
+            "message": (
+                "Сроки должны быть внутри родителя "
+                f"({p_start.strftime('%d.%m.%Y')} — {p_due.strftime('%d.%m.%Y')})."
+                if p_start and p_due
+                else "Сроки должны быть внутри родителя."
+            ),
+        }), 400
+    proj_msg = project_dates_violation_message(task.start_date, task.due_date, task.project)
+    if proj_msg:
+        db.session.rollback()
+        return jsonify({"error": "project_window", "message": proj_msg}), 400
+    # Без автосдвига с выходных — только укладка уже проверенных дат
+    clamp_task_dates(task, snap_workdays=False)
     new_start = task.start_date or task.due_date
     if old_start and new_start:
         delta = (new_start - old_start).days
@@ -1101,7 +1317,7 @@ def gantt_task_dates(tid):
     if sla and task.project:
         task.is_critical_path = True
     sync_calendar_events_for_task(task)
-    shifted = cascade_fs_from_task(task)
+    shifted = cascade_fs_successors_only(task)
     db.session.commit()
     from servicesystem.project_management.caldav_sync import try_push_task_to_caldav
 
@@ -1139,11 +1355,33 @@ def gantt_task_panel(tid):
         if due_s:
             task.due_date = date.fromisoformat(due_s)
     except ValueError:
-        return jsonify({"error": "bad_date"}), 400
+        return jsonify({"error": "bad_date", "message": "Некорректная дата."}), 400
     if task.start_date and task.due_date and task.due_date < task.start_date:
         task.start_date, task.due_date = task.due_date, task.start_date
-    clamp_task_dates(task)
     if start_s or due_s:
+        nw = non_working_dates_message(task.start_date, task.due_date, task.project)
+        if nw:
+            db.session.rollback()
+            return jsonify({"error": "non_working", "message": nw}), 400
+        parent = task.parent
+        if parent and not dates_within_parent(task.start_date, task.due_date, parent):
+            p_start, p_due = parent_date_window(parent)
+            db.session.rollback()
+            return jsonify({
+                "error": "parent_window",
+                "message": (
+                    "Сроки должны быть внутри родителя "
+                    f"({p_start.strftime('%d.%m.%Y')} — {p_due.strftime('%d.%m.%Y')}). "
+                    "Измените даты или сначала сдвиньте родителя."
+                    if p_start and p_due
+                    else "Сроки должны быть внутри родителя."
+                ),
+            }), 400
+        proj_msg = project_dates_violation_message(task.start_date, task.due_date, task.project)
+        if proj_msg:
+            db.session.rollback()
+            return jsonify({"error": "project_window", "message": proj_msg}), 400
+        clamp_task_dates(task, snap_workdays=False)
         new_start = task.start_date or task.due_date
         if old_start and new_start:
             delta = (new_start - old_start).days
@@ -1178,9 +1416,15 @@ def gantt_task_panel(tid):
             return jsonify({"error": "title_too_long"}), 400
         task.title = title
     sync_calendar_events_for_task(task)
-    shifted = cascade_fs_from_task(task)
+    shifted = cascade_fs_successors_only(task) if (start_s or due_s) else []
     db.session.commit()
-    return jsonify({"ok": True, "fs_shifted": shifted, "title": task.title})
+    return jsonify({
+        "ok": True,
+        "fs_shifted": shifted,
+        "title": task.title,
+        "start_date": task.start_date.isoformat() if task.start_date else None,
+        "due_date": task.due_date.isoformat() if task.due_date else None,
+    })
 
 
 @bp.route("/gantt/links", methods=["POST"])
@@ -1231,8 +1475,9 @@ def gantt_link_add():
     db.session.add(ProjectTaskLink(from_task_id=from_id, to_task_id=to_id, link_type=link_type))
     shifted: list[int] = []
     if link_type == "blocks":
-        # После связи: вторая задача не раньше дня после окончания первой
-        shifted = cascade_fs_schedule(to_task)
+        # После связи: вторая задача не раньше дня после окончания первой;
+        # родителей расширяем, чтобы окно покрывало подзадачи.
+        shifted = apply_fs_cascade_and_expand(to_task)
     db.session.commit()
     return jsonify({"ok": True, "fs_shifted": shifted})
 
@@ -1859,21 +2104,53 @@ def _gantt_milestones(
             in_r, left, w = _bar_geometry(st.deadline, st.deadline, span_start, span_end, scale, n_cols)
             if not in_r:
                 continue
+            # Центр колонки дня/слота дедлайна (без раздувания min-width полосок)
+            col_w = 100.0 / max(1, n_cols)
+            center = min(99.5, left + col_w / 2.0)
             pname = st.project.name if st.project else ""
             cap = _gantt_short_title(st.title, 28)
             out.append(
                 {
+                    "id": st.id,
                     "title": st.title,
                     "short_title": cap,
                     "project": pname,
+                    "deadline": st.deadline,
                     "date_label": st.deadline.strftime("%d.%m.%Y"),
                     "left_pct": left,
-                    "width_pct": max(w, 100 / n_cols),
-                    "center_pct": min(99.0, left + max(w, 100 / n_cols) / 2),
+                    "width_pct": col_w,
+                    "center_pct": center,
                 }
             )
     out.sort(key=lambda m: m["left_pct"])
     return out[:20]
+
+
+def _mark_stage_deadline_columns(columns: list[dict], milestones: list[dict], scale: str) -> None:
+    """Пометить колонки шкалы, на которые попадают дедлайны этапов."""
+    for col in columns:
+        col.setdefault("is_stage_deadline", False)
+        col.setdefault("stage_deadline_titles", [])
+    if not milestones:
+        return
+    for m in milestones:
+        d = m.get("deadline")
+        if not d:
+            continue
+        for col in columns:
+            cd = col.get("date")
+            if not cd:
+                continue
+            if scale == "quarter":
+                hit = cd.month == d.month and cd.year == d.year
+            else:
+                hit = cd == d
+            if hit:
+                col["is_stage_deadline"] = True
+                title = m.get("short_title") or m.get("title") or "Этап"
+                tip = f"{title} · {m.get('date_label') or d.strftime('%d.%m.%Y')}"
+                if tip not in col["stage_deadline_titles"]:
+                    col["stage_deadline_titles"].append(tip)
 
 
 def _gantt_milestone_groups(milestones: list[dict], *, min_gap_pct: float = 5.0) -> list[dict]:
@@ -2068,9 +2345,11 @@ def _gantt_layout(
 
     link_edges = _gantt_link_edges(gantt_bars, links)
     gantt_milestones = _gantt_milestones(task_list, span_start, span_end, scale, n_cols)
+    _mark_stage_deadline_columns(columns, gantt_milestones, scale)
     gantt_milestone_groups = _gantt_milestone_groups(gantt_milestones)
     milestone_stack_max = max((len(g["milestones"]) for g in gantt_milestone_groups), default=0)
-
+    # Полоска вех: ромб + короткая подпись этапа
+    milestone_lane_h = (28 if milestone_stack_max else 0)
     return {
         "gantt_bars": gantt_bars,
         "gantt_groups": groups,
@@ -2078,8 +2357,7 @@ def _gantt_layout(
         "gantt_columns": columns,
         "gantt_milestones": gantt_milestones,
         "gantt_milestone_groups": gantt_milestone_groups,
-        # Компактная полоска вех: только маркеры, подписи в title (без «губы»)
-        "gantt_milestone_lane_min_h": 18 if milestone_stack_max else 0,
+        "gantt_milestone_lane_min_h": milestone_lane_h,
         "gantt_fs_links": [
             {
                 "id": e["id"],

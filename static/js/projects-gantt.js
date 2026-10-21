@@ -264,6 +264,8 @@
       var fromRow = chart.querySelector('.projects-gantt-row[data-task-id="' + link.from_id + '"]');
       var toRow = chart.querySelector('.projects-gantt-row[data-task-id="' + link.to_id + '"]');
       if (!fromRow || !toRow) return;
+      if (fromRow.classList.contains("is-gantt-folded") || toRow.classList.contains("is-gantt-folded")) return;
+      if (fromRow.hidden || toRow.hidden) return;
       var fromBar = fromRow.querySelector(".projects-gantt-bar");
       var toBar = toRow.querySelector(".projects-gantt-bar");
       if (!fromBar || !toBar) return;
@@ -512,6 +514,8 @@
 
   var linkMode = false;
   var linkFromId = null;
+  var nestMode = false;
+  var nestChildId = null;
   var linkBtn = document.getElementById("gantt-link-mode-btn");
   var linkHint = document.getElementById("gantt-link-hint");
   var ctxMenu = document.getElementById("gantt-bar-menu");
@@ -523,22 +527,55 @@
     });
   }
 
-  function setLinkMode(on, fromId) {
-    linkMode = !!on;
-    linkFromId = fromId || null;
-    if (linkBtn) linkBtn.classList.toggle("is-active", linkMode);
-    if (linkHint) {
-      linkHint.hidden = !linkMode;
+  function barParentId(bar) {
+    var row = bar && bar.closest ? bar.closest(".projects-gantt-row") : null;
+    return row ? (row.getAttribute("data-parent-id") || "") : "";
+  }
+
+  function updateModeHint() {
+    if (!linkHint) return;
+    if (nestMode) {
+      linkHint.hidden = false;
+      linkHint.textContent = nestChildId
+        ? "Выберите родителя для подзадачи (клик или ПКМ)"
+        : "Режим вложения";
+      return;
+    }
+    if (linkMode) {
+      linkHint.hidden = false;
       linkHint.textContent = linkFromId
         ? "Теперь выберите последователя (клик или ПКМ)"
         : "Выберите предшественника, затем последователя";
+      return;
     }
+    linkHint.hidden = true;
+  }
+
+  function setLinkMode(on, fromId) {
+    if (on) setNestMode(false);
+    linkMode = !!on;
+    linkFromId = fromId || null;
+    if (linkBtn) linkBtn.classList.toggle("is-active", linkMode);
     chart.classList.toggle("is-link-mode", linkMode);
     clearLinkSourceMarks();
     if (linkFromId) {
       var src = chart.querySelector('.projects-gantt-bar[data-task-id="' + linkFromId + '"]');
       if (src) src.classList.add("is-link-source");
     }
+    updateModeHint();
+  }
+
+  function setNestMode(on, childId) {
+    if (on) setLinkMode(false);
+    nestMode = !!on;
+    nestChildId = childId || null;
+    chart.classList.toggle("is-nest-mode", nestMode);
+    clearLinkSourceMarks();
+    if (nestChildId) {
+      var src = chart.querySelector('.projects-gantt-bar[data-task-id="' + nestChildId + '"]');
+      if (src) src.classList.add("is-link-source");
+    }
+    updateModeHint();
   }
 
   function hideCtxMenu() {
@@ -551,22 +588,30 @@
     if (!ctxMenu || !uiFlags.canEdit) return;
     ctxTaskId = bar.getAttribute("data-task-id");
     var subtaskLink = ctxMenu.querySelector('[data-gantt-ctx="subtask"]');
+    var promoteBtn = ctxMenu.querySelector('[data-gantt-ctx="promote"]');
+    var nestStartBtn = ctxMenu.querySelector('[data-gantt-ctx="nest-start"]');
+    var nestFinishBtn = ctxMenu.querySelector('[data-gantt-ctx="nest-finish"]');
     var startBtn = ctxMenu.querySelector('[data-gantt-ctx="start-link"]');
     var clearPredBtn = ctxMenu.querySelector('[data-gantt-ctx="clear-predecessors"]');
     var finishBtn = ctxMenu.querySelector('[data-gantt-ctx="finish-link"]');
     var cancelBtn = ctxMenu.querySelector('[data-gantt-ctx="cancel-link"]');
     var canFinish = !!(linkMode && linkFromId && String(linkFromId) !== String(ctxTaskId));
+    var canNestFinish = !!(nestMode && nestChildId && String(nestChildId) !== String(ctxTaskId));
     var waits = parseBarLinks(bar, "data-waits");
     var hasPredecessors = waits.some(function (w) { return w && w.link_id; });
+    var hasParent = !!barParentId(bar);
     if (subtaskLink && ctxTaskId) {
       subtaskLink.href = "/projects/tasks/new?parent=" + encodeURIComponent(ctxTaskId) + "&arm_view=gantt";
-      subtaskLink.hidden = false;
+      subtaskLink.hidden = !!nestMode || !!linkMode;
     }
+    if (promoteBtn) promoteBtn.hidden = !hasParent || nestMode || linkMode;
+    if (nestStartBtn) nestStartBtn.hidden = !!nestMode || !!linkMode;
+    if (nestFinishBtn) nestFinishBtn.hidden = !canNestFinish;
     // Уже есть предшественник — предложить очистить; иначе — создать стрелку
-    if (startBtn) startBtn.hidden = hasPredecessors;
-    if (clearPredBtn) clearPredBtn.hidden = !hasPredecessors;
+    if (startBtn) startBtn.hidden = hasPredecessors || nestMode;
+    if (clearPredBtn) clearPredBtn.hidden = !hasPredecessors || nestMode || linkMode;
     if (finishBtn) finishBtn.hidden = !canFinish;
-    if (cancelBtn) cancelBtn.hidden = !linkMode;
+    if (cancelBtn) cancelBtn.hidden = !(linkMode || nestMode);
     ctxMenu.hidden = false;
     var pad = 8;
     var w = ctxMenu.offsetWidth || 240;
@@ -584,6 +629,64 @@
     });
   }
 
+  async function changeTaskHierarchy(taskId, payload, _retried) {
+    try {
+      var body = Object.assign({}, payload || {});
+      if (body.break_links) body.break_links = true;
+      var res = await fetch("/projects/tasks/" + taskId + "/hierarchy", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "X-CSRFToken": csrf,
+          "Accept": "application/json",
+        },
+        body: JSON.stringify(body),
+      });
+      var data = {};
+      var ct = (res.headers.get("content-type") || "").toLowerCase();
+      if (ct.indexOf("application/json") >= 0) {
+        try { data = await res.json(); } catch (e) { data = {}; }
+      } else {
+        ganttAlert("Сессия устарела или ответ сервера неверный. Обновите страницу (Ctrl+F5).");
+        return false;
+      }
+      var needsBreak = (res.status === 409 && data && data.error === "has_links")
+        || (data && data.error === "has_links");
+      if (needsBreak && !_retried) {
+        var ask = (data && data.message) || "У задачи есть связи. Разорвать?";
+        var ok = true;
+        if (typeof window.ssConfirm === "function") {
+          ok = await window.ssConfirm("", {
+            title: ask,
+            confirmLabel: "Разорвать",
+            cancelLabel: "Отмена",
+            danger: true,
+          });
+        } else {
+          ok = window.confirm(ask);
+        }
+        if (!ok) return false;
+        return changeTaskHierarchy(taskId, Object.assign({}, body, { break_links: true }), true);
+      }
+      if (!res.ok) {
+        var msg = (data && data.message) || "";
+        if (!msg || msg === "Не найдено.") {
+          if (res.status === 404) msg = "Задача не найдена. Обновите Гант (Ctrl+F5) и повторите.";
+          else if (res.status === 403) msg = "Недостаточно прав для смены вложенности (верхний уровень — только ГИП).";
+          else if (res.status === 400) msg = "Нельзя так изменить вложенность (например, вложить задачу в свою подзадачу).";
+          else msg = "Не удалось изменить вложенность.";
+        }
+        ganttAlert(msg);
+        return false;
+      }
+      reloadGantt();
+      return true;
+    } catch (err) {
+      ganttAlert("Ошибка сети.");
+      return false;
+    }
+  }
+
   if (ctxMenu) {
     ctxMenu.addEventListener("click", function (e) {
       var btn = e.target.closest("[data-gantt-ctx]");
@@ -595,13 +698,40 @@
         return;
       }
       e.preventDefault();
+      var taskId = ctxTaskId;
+      if (action === "promote") {
+        hideCtxMenu();
+        if (!taskId) {
+          ganttAlert("Не выбрана задача.");
+          return;
+        }
+        changeTaskHierarchy(taskId, { action: "promote", parent_id: null });
+        return;
+      }
+      if (action === "nest-start") {
+        setNestMode(true, taskId);
+        hideCtxMenu();
+        return;
+      }
+      if (action === "nest-finish" && nestChildId) {
+        var parentId = taskId;
+        var childId = nestChildId;
+        hideCtxMenu();
+        setNestMode(false);
+        if (!parentId || !childId) {
+          ganttAlert("Не выбраны задачи для вложения.");
+          return;
+        }
+        changeTaskHierarchy(childId, { action: "attach", parent_id: parseInt(parentId, 10) });
+        return;
+      }
       if (action === "start-link") {
-        setLinkMode(true, ctxTaskId);
+        setLinkMode(true, taskId);
         hideCtxMenu();
         return;
       }
       if (action === "clear-predecessors") {
-        var bar = chart.querySelector('.projects-gantt-bar[data-task-id="' + ctxTaskId + '"]');
+        var bar = chart.querySelector('.projects-gantt-bar[data-task-id="' + taskId + '"]');
         var waits = bar ? parseBarLinks(bar, "data-waits") : [];
         var ids = waits.map(function (w) { return w && w.link_id; }).filter(Boolean);
         hideCtxMenu();
@@ -609,12 +739,13 @@
         return;
       }
       if (action === "finish-link" && linkFromId) {
-        createGanttLink(linkFromId, ctxTaskId);
+        createGanttLink(linkFromId, taskId);
         hideCtxMenu();
         return;
       }
       if (action === "cancel-link") {
         setLinkMode(false);
+        setNestMode(false);
         hideCtxMenu();
       }
     });
@@ -662,6 +793,7 @@
     if (e.key === "Escape") {
       hideCtxMenu();
       if (linkMode) setLinkMode(false);
+      if (nestMode) setNestMode(false);
     }
   });
 
@@ -815,9 +947,17 @@
             kanban_status: panelStatus ? panelStatus.value : "",
           }),
         });
-        if (res.ok) reloadGantt();
-        else if (res.status === 409) ganttAlert("Нельзя сменить статус: есть блокирующие связи.");
-        else ganttAlert("Не удалось сохранить.");
+        var data = {};
+        try { data = await res.json(); } catch (e) {}
+        if (res.ok) {
+          reloadGantt();
+          return;
+        }
+        if (res.status === 409) {
+          ganttAlert("Нельзя сменить статус: есть блокирующие связи.");
+          return;
+        }
+        ganttAlert((data && data.message) || "Не удалось сохранить.");
       } catch (err) {
         ganttAlert("Ошибка сети.");
       }
@@ -854,8 +994,8 @@
   chart.querySelectorAll(".projects-gantt-bar").forEach(function (bar) {
     if (bar.getAttribute("data-can-drag") === "1") {
       bar.addEventListener("pointerdown", function (e) {
-        if (linkMode) return;
-        if (bar.getAttribute("data-can-drag") !== "1") return;
+      if (linkMode || nestMode) return;
+      if (bar.getAttribute("data-can-drag") !== "1") return;
         e.preventDefault();
         e.stopPropagation();
         var slot = bar.closest(".projects-gantt-bar-slot");
@@ -893,6 +1033,17 @@
       }
       var id = bar.getAttribute("data-task-id");
       if (!id) return;
+      if (nestMode) {
+        if (!nestChildId) {
+          setNestMode(true, id);
+          return;
+        }
+        if (String(nestChildId) === String(id)) return;
+        var childId = nestChildId;
+        setNestMode(false);
+        changeTaskHierarchy(childId, { action: "attach", parent_id: parseInt(id, 10) });
+        return;
+      }
       if (linkMode) {
         if (!linkFromId) {
           setLinkMode(true, id);
@@ -1023,6 +1174,83 @@
     });
   })();
 
+  // Свернуть / развернуть подзадачи (− / +)
+  (function initGanttFold() {
+    var rows = Array.prototype.slice.call(chart.querySelectorAll(".projects-gantt-row[data-task-id]"));
+    if (!rows.length) return;
+    var byParent = {};
+    rows.forEach(function (row) {
+      var pid = row.getAttribute("data-parent-id") || "";
+      if (!pid) return;
+      if (!byParent[pid]) byParent[pid] = [];
+      byParent[pid].push(row);
+    });
+    var foldKey = "gantt-fold:" + location.pathname + location.search;
+    var collapsed = {};
+    try {
+      collapsed = JSON.parse(sessionStorage.getItem(foldKey) || "{}") || {};
+    } catch (e) {
+      collapsed = {};
+    }
+
+    function isFoldedAway(row) {
+      var pid = row.getAttribute("data-parent-id") || "";
+      var guard = 0;
+      while (pid && guard < 40) {
+        if (collapsed[pid]) return true;
+        var prow = chart.querySelector('.projects-gantt-row[data-task-id="' + pid + '"]');
+        pid = prow ? (prow.getAttribute("data-parent-id") || "") : "";
+        guard += 1;
+      }
+      return false;
+    }
+
+    function applyFold() {
+      rows.forEach(function (row) {
+        var id = row.getAttribute("data-task-id");
+        var kids = byParent[id];
+        var isParent = !!(kids && kids.length);
+        var isCollapsed = !!(isParent && collapsed[id]);
+        row.classList.toggle("is-collapsed", isCollapsed);
+        var hide = isFoldedAway(row);
+        row.classList.toggle("is-gantt-folded", hide);
+        row.hidden = hide;
+        var btn = row.querySelector(".projects-gantt-fold");
+        if (btn) {
+          btn.textContent = isCollapsed ? "+" : "−";
+          btn.setAttribute("aria-expanded", isCollapsed ? "false" : "true");
+          btn.title = isCollapsed ? "Развернуть подзадачи" : "Свернуть подзадачи";
+        }
+      });
+      try {
+        sessionStorage.setItem(foldKey, JSON.stringify(collapsed));
+      } catch (e) {}
+      scheduleDraw();
+    }
+
+    rows.forEach(function (row) {
+      var id = row.getAttribute("data-task-id");
+      if (!byParent[id] || !byParent[id].length) return;
+      var top = row.querySelector(".projects-gantt-side-top");
+      if (!top || top.querySelector(".projects-gantt-fold")) return;
+      var btn = document.createElement("button");
+      btn.type = "button";
+      btn.className = "projects-gantt-fold";
+      btn.setAttribute("aria-label", "Свернуть или развернуть подзадачи");
+      btn.addEventListener("click", function (e) {
+        e.preventDefault();
+        e.stopPropagation();
+        if (collapsed[id]) delete collapsed[id];
+        else collapsed[id] = 1;
+        applyFold();
+      });
+      var no = row.querySelector(".projects-gantt-row-no");
+      if (no) top.insertBefore(btn, no);
+      else top.insertBefore(btn, top.firstChild);
+    });
+    applyFold();
+  })();
+
   // Быстрое переименование в боковой колонке
   chart.querySelectorAll("[data-gantt-rename]").forEach(function (btn) {
     btn.addEventListener("click", async function (e) {
@@ -1118,6 +1346,59 @@
     if (!host) return;
     host.scrollTo({ left: left, behavior: smooth ? "smooth" : "auto" });
   }
+
+  /** Центрирует полоску задачи в видимой области шкалы (с учётом текущего зума). */
+  function centerTaskInView(taskId, smooth) {
+    if (!host || !taskId) return false;
+    var row = chart.querySelector('.projects-gantt-row[data-task-id="' + taskId + '"]');
+    if (!row || row.hidden) return false;
+    var slot = row.querySelector(".projects-gantt-bar-slot");
+    if (!slot) return false;
+    var hostRect = host.getBoundingClientRect();
+    var rowRect = row.getBoundingClientRect();
+    if (rowRect.top < hostRect.top + 4) {
+      host.scrollTop += rowRect.top - hostRect.top - 4;
+    } else if (rowRect.bottom > hostRect.bottom - 4) {
+      host.scrollTop += rowRect.bottom - hostRect.bottom + 4;
+    }
+    hostRect = host.getBoundingClientRect();
+    var slotRect = slot.getBoundingClientRect();
+    var sw = sideW();
+    var slotCenter = slotRect.left + slotRect.width / 2;
+    var viewCenter = hostRect.left + sw + Math.max(40, hostRect.width - sw) / 2;
+    scrollGanttTo(host.scrollLeft + (slotCenter - viewCenter), !!smooth);
+    saveGanttScroll();
+    row.classList.add("is-gantt-flash");
+    window.setTimeout(function () { row.classList.remove("is-gantt-flash"); }, 900);
+    scheduleDraw();
+    return true;
+  }
+
+  chart.querySelectorAll("[data-gantt-focus]").forEach(function (btn) {
+    btn.addEventListener("click", function (e) {
+      e.preventDefault();
+      e.stopPropagation();
+      centerTaskInView(btn.getAttribute("data-gantt-focus"), true);
+    });
+  });
+
+  chart.addEventListener("click", function (e) {
+    var a = e.target.closest && e.target.closest('a[href^="#gantt-row-"]');
+    if (!a) return;
+    var id = (a.getAttribute("href") || "").replace(/^#/, "");
+    if (!id) return;
+    var targetRow = document.getElementById(id);
+    if (!targetRow) return;
+    e.preventDefault();
+    var tid = targetRow.getAttribute("data-task-id");
+    if (tid) centerTaskInView(tid, true);
+    else {
+      targetRow.scrollIntoView({ block: "nearest", behavior: "smooth" });
+      targetRow.classList.add("is-gantt-flash");
+      window.setTimeout(function () { targetRow.classList.remove("is-gantt-flash"); }, 900);
+    }
+  });
+
 
   function restoreGanttScroll() {
     if (!host) return false;

@@ -172,16 +172,37 @@ def create_app(config_class=Config):
 
     @app.errorhandler(403)
     def forbidden(e):
+        from flask import jsonify, request
+        wants_json = (
+            request.is_json
+            or "application/json" in (request.headers.get("Accept") or "")
+        )
+        if wants_json:
+            return jsonify({"error": "forbidden", "message": "Недостаточно прав."}), 403
         return render_template("errors/403.html"), 403
 
     @app.errorhandler(404)
     def not_found(e):
+        from flask import jsonify, request
+        wants_json = (
+            request.is_json
+            or "application/json" in (request.headers.get("Accept") or "")
+        )
+        if wants_json:
+            return jsonify({"error": "not_found", "message": "Не найдено."}), 404
         return render_template("errors/404.html"), 404
 
     @app.errorhandler(CSRFError)
     def handle_csrf(e):
-        from flask import flash, redirect, request, url_for
-        flash("Сессия устарела. Обновите страницу (Ctrl+F5) и повторите действие.", "warning")
+        from flask import flash, jsonify, redirect, request, url_for
+        msg = "Сессия устарела. Обновите страницу (Ctrl+F5) и повторите действие."
+        wants_json = (
+            request.is_json
+            or "application/json" in (request.headers.get("Accept") or "")
+        )
+        if wants_json:
+            return jsonify({"error": "csrf", "message": msg}), 400
+        flash(msg, "warning")
         return redirect(request.referrer or url_for("auth.login"))
 
     with app.app_context():

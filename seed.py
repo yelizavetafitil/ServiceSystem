@@ -279,10 +279,11 @@ def seed(force: bool = False):
         db.session.flush()
 
         contracts_cfg = [
-            ("060-194-25", orgs[1], "active_warranty", today + timedelta(days=25), "master_brest"),
-            ("060-194-26", orgs[2], "active_post_warranty", date(2027, 8, 1), "master_vitebsk"),
-            ("060-194-27", orgs[3], "suspended", date(2027, 6, 1), "master_minsk"),
-            ("060-194-28", orgs[4], "terminated", date(2025, 1, 1), "master_gomel"),
+            # Не ставить короткий срок: is_blocked режет вход заказчиков после service_end_date.
+            ("060-194-25", orgs[1], "active_warranty", today + timedelta(days=400), "master_brest"),
+            ("060-194-26", orgs[2], "active_post_warranty", today + timedelta(days=600), "master_vitebsk"),
+            ("060-194-27", orgs[3], "suspended", today + timedelta(days=500), "master_minsk"),
+            ("060-194-28", orgs[4], "terminated", today - timedelta(days=600), "master_gomel"),
         ]
         contracts = []
         for num, org, status, end_date, master_login in contracts_cfg:

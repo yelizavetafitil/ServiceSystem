@@ -34,7 +34,7 @@ services:
       MAIL_ENABLED: ${MAIL_ENABLED:-0}
       STORAGE_BACKEND: ${STORAGE_BACKEND:-local}
       TEMPLATES_AUTO_RELOAD: "1"
-      PUBLIC_BASE_URL: ${PUBLIC_BASE_URL:-http://192.168.3.125:8095}
+      PUBLIC_BASE_URL: ${PUBLIC_BASE_URL:-http://192.168.1.4:8095}
     volumes:
       - upload_data:/app/data/uploads
       # Код с хоста: правки templates/static/python без пересборки образа (docker compose restart web)

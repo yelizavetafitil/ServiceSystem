@@ -9,10 +9,16 @@
   let resolver = null;
   var alertMode = false;
 
+  function setCancelVisible(visible) {
+    cancelBtn.hidden = !visible;
+    // .btn { display: inline-flex } перекрывает UA-стиль [hidden]
+    cancelBtn.style.display = visible ? '' : 'none';
+  }
+
   function close(result) {
     modal.classList.remove('open');
     document.body.classList.remove('modal-open');
-    cancelBtn.hidden = false;
+    setCancelVisible(true);
     alertMode = false;
     const r = resolver;
     resolver = null;
@@ -27,7 +33,7 @@
     okBtn.textContent = opts.confirmLabel || (alertMode ? 'OK' : 'Подтвердить');
     cancelBtn.textContent = opts.cancelLabel || 'Отмена';
     okBtn.className = opts.danger ? 'btn btn-outline btn-danger-text' : 'btn btn-primary';
-    cancelBtn.hidden = alertMode;
+    setCancelVisible(!alertMode);
     modal.classList.add('open');
     document.body.classList.add('modal-open');
     okBtn.focus();
@@ -48,15 +54,18 @@
     close(true);
   });
   cancelBtn.addEventListener('click', function () {
-    if (alertMode) return;
-    close(false);
+    // В alert «Отмена» только закрывает окно (связь уже отклонена сервером)
+    close(alertMode ? true : false);
   });
   modal.addEventListener('click', function (e) {
     if (e.target === modal) close(alertMode ? true : false);
   });
   document.addEventListener('keydown', function (e) {
     if (!modal.classList.contains('open')) return;
-    if (e.key === 'Escape') close(alertMode ? true : false);
+    if (e.key === 'Escape') {
+      e.preventDefault();
+      close(alertMode ? true : false);
+    }
     if (alertMode && e.key === 'Enter') {
       e.preventDefault();
       close(true);
