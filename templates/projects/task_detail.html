@@ -4,7 +4,11 @@
 
 {% block title %}{{ task.title }}{% endblock %}
 
-{% block head %}<link rel="stylesheet" href="{{ url_for('static', filename='css/projects.css') }}?v=60">{% endblock %}
+{% block head %}
+<link rel="stylesheet" href="{{ url_for('static', filename='css/projects.css') }}?v=77">
+<script src="{{ url_for('static', filename='js/task-date-duration.js') }}?v=1"></script>
+<script src="{{ url_for('static', filename='js/task-project-tree-nav.js') }}?v=1"></script>
+{% endblock %}
 
 {% block content %}
 
@@ -31,23 +35,28 @@
     {% endif %}
   </div>
 
-  <div class="projects-task-tabs">
+  <div class="projects-task-detail-layout">
+    {% if task.project_id %}
+    <aside class="card projects-cms-card projects-task-tree-panel" aria-label="Структура проекта">
+      <h2 class="projects-task-tree-heading">Структура проекта</h2>
+      <p class="muted projects-cms-hint">Этапы и задачи · текущая выделена.</p>
+      <script type="application/json" id="task-tree-stages-json">{{ task_tree_stages|default([])|tojson }}</script>
+      <script type="application/json" id="task-tree-tasks-json">{{ task_tree_tasks|default([])|tojson }}</script>
+      <script type="application/json" id="task-tree-project-json">{{ task_tree_project|default({'name': 'Проект', 'dates_label': ''})|tojson }}</script>
+      <div id="task-project-tree-nav" class="projects-task-tree" data-current-task-id="{{ task.id }}"></div>
+    </aside>
+    {% endif %}
 
-    {% for key, label in [('main','Карточка'),('files','Файлы'),('links','Связи'),('comments','Комментарии'),('custom','Поля'),('time','Время')] %}
-
-    <a class="projects-view-tab{% if tab == key %} is-active{% endif %}" href="{{ url_for('projects.task_detail', tid=task.id, tab=key, preview=preview_att.id if key == 'files' and preview_att else none) }}">{{ label }}</a>
-
-    {% endfor %}
-
-  </div>
-
-
-
-  {% if tab == 'main' %}
+    <div class="projects-task-detail-main">
 
   <div class="card projects-task-main-card">
 
     {% if current_user.is_staff %}
+    <nav class="projects-task-jump" aria-label="Разделы карточки">
+      <a href="#task-files">Файлы{% if task_files %} ({{ task_files|length }}){% endif %}</a>
+      <a href="#task-comments">Комментарии</a>
+      <a href="#task-links">Связи</a>
+    </nav>
 
     <form method="post" action="{{ url_for('projects.task_update', tid=task.id) }}">
 
@@ -57,7 +66,7 @@
 
       <div class="form-group"><label>Название</label><input name="title" class="form-control" required value="{{ task.title }}"></div>
 
-      <div class="form-group"><label>Описание</label><textarea name="description" class="form-control" rows="5">{{ task.description or '' }}</textarea></div>
+      <div class="form-group"><label>Описание</label><textarea name="description" class="form-control" rows="3">{{ task.description or '' }}</textarea></div>
 
       <div class="form-row">
 
@@ -91,31 +100,48 @@
 
       </div>
 
-      <div class="form-row">
+      <div class="form-row projects-task-date-row">
 
-        <div class="form-group"><label>Начало</label>
-          <input type="date" name="start_date" class="form-control" value="{{ task.start_date or '' }}"
+        <div class="form-group"><label for="task-edit-start-date">Начало</label>
+          <input type="date" name="start_date" id="task-edit-start-date" class="form-control" value="{{ task.start_date or '' }}"
                  {% if parent_window_start %}min="{{ parent_window_start.isoformat() }}"{% endif %}
                  {% if parent_window_due %}max="{{ parent_window_due.isoformat() }}"{% endif %}>
         </div>
 
-        <div class="form-group"><label>Дедлайн</label>
-          <input type="date" name="due_date" class="form-control" value="{{ task.due_date or '' }}"
+        <div class="form-group form-group--duration">
+          <label for="task-edit-duration-days">Дней</label>
+          <input type="number" id="task-edit-duration-days" class="form-control" min="1" max="9999" step="1"
+                 value="1" inputmode="numeric" autocomplete="off"
+                 title="Длительность{% if task.project and (task.project.skip_weekends or task.project.skip_public_holidays) %} в рабочих днях{% endif %}">
+        </div>
+
+        <div class="form-group"><label for="task-edit-due-date">Дедлайн</label>
+          <input type="date" name="due_date" id="task-edit-due-date" class="form-control" value="{{ task.due_date or '' }}"
                  {% if parent_window_start %}min="{{ parent_window_start.isoformat() }}"{% endif %}
                  {% if parent_window_due %}max="{{ parent_window_due.isoformat() }}"{% endif %}>
-          {% if parent_window_start or parent_window_due %}
-          <p class="muted projects-cms-hint">
-            {% if parent_window_start and parent_window_due %}
-            В периоде проекта{% if task.parent_id %}/родителя{% endif %}: {{ parent_window_start.strftime('%d.%m.%Y') }} — {{ parent_window_due.strftime('%d.%m.%Y') }}
-            {% elif parent_window_start %}
-            Не раньше {{ parent_window_start.strftime('%d.%m.%Y') }}
-            {% elif parent_window_due %}
-            Не позже {{ parent_window_due.strftime('%d.%m.%Y') }}
-            {% endif %}
-          </p>
+        </div>
+
+      </div>
+      <div class="muted projects-task-date-row-hints">
+        {% if task.project and (task.project.skip_weekends or task.project.skip_public_holidays) %}
+        <p class="projects-cms-hint projects-task-duration-hint">Длительность в рабочих днях (выходные и праздники проекта).</p>
+        {% else %}
+        <p class="projects-cms-hint projects-task-duration-hint">Длительность в календарных днях (включая начало).</p>
+        {% endif %}
+        {% if project_start or project_deadline %}
+        <p class="projects-cms-hint">
+          {% if project_start and project_deadline %}
+          Сроки проекта: {{ project_start.strftime('%d.%m.%Y') }} — {{ project_deadline.strftime('%d.%m.%Y') }}
+          {% elif project_start %}
+          Старт проекта: {{ project_start.strftime('%d.%m.%Y') }}
+          {% elif project_deadline %}
+          Дедлайн проекта: {{ project_deadline.strftime('%d.%m.%Y') }}
           {% endif %}
-        </div>
-
+          {% if task.parent_id and parent_window_start and parent_window_due and (parent_window_start != project_start or parent_window_due != project_deadline) %}
+          · родитель: {{ parent_window_start.strftime('%d.%m.%Y') }} — {{ parent_window_due.strftime('%d.%m.%Y') }}
+          {% endif %}
+        </p>
+        {% endif %}
       </div>
 
       <div class="form-group"><label>Этап</label>
@@ -266,11 +292,7 @@
 
   </div>
 
-
-
-  {% elif tab == 'files' %}
-
-  <div class="projects-files-layout">
+  <section id="task-files" class="card projects-task-section projects-files-layout">
     <div class="card projects-files-list-card">
       <h2>Файлы (до 100 Мб){% if task_files %} · {{ task_files|length }}{% endif %}</h2>
       {% if current_user.is_staff %}
@@ -289,7 +311,7 @@
         {% for f in task_files %}
         {% set ext = f.original_name.rsplit('.', 1)[-1].lower() if '.' in f.original_name else 'file' %}
         <li class="projects-file-item{% if preview_att and preview_att.id == f.id %} is-active{% endif %}">
-          <a class="projects-file-item-link" href="{{ url_for('projects.task_detail', tid=task.id, tab='files', preview=f.id) }}" title="Просмотр">
+          <a class="projects-file-item-link" href="{{ url_for('projects.task_detail', tid=task.id, preview=f.id) }}#task-files" title="Просмотр">
             <span class="projects-file-ext" aria-hidden="true">{{ ext[:4] }}</span>
             <span class="projects-file-item-text">
               <span class="projects-file-name">{{ f.original_name }}</span>
@@ -360,15 +382,35 @@
       <p class="muted">Выберите файл слева для просмотра (изображения, PDF, видео).</p>
       {% endif %}
     </div>
-  </div>
+  </section>
 
+  <section id="task-comments" class="card projects-task-section">
 
+    <h2>Комментарии</h2>
 
-  {% elif tab == 'links' %}
+    <ul class="projects-task-comments">{% for c in task.comments %}<li><strong>{{ c.user.full_name }}</strong> {{ c.created_at.strftime('%d.%m.%Y %H:%M') }}<br>{{ c.body }}</li>{% else %}<li class="muted">Пока нет</li>{% endfor %}</ul>
 
-  <div class="card">
+    {% if current_user.is_staff %}
 
-    <h2>Связи задач</h2>
+    <form method="post" action="{{ url_for('projects.task_update', tid=task.id) }}">
+
+      {{ csrf_field() }}<input type="hidden" name="action" value="comment">
+
+      <textarea name="body" class="form-control" rows="3" required placeholder="Комментарий…"></textarea>
+
+      <button type="submit" class="btn btn-primary btn-sm">Отправить</button>
+
+    </form>
+
+    {% endif %}
+
+  </section>
+
+  <details id="task-links" class="projects-task-extra"{% if link_rows or link_rows_in %} open{% endif %}>
+
+    <summary>Связи задач</summary>
+
+    <div class="projects-task-extra-body">
 
     <h3 class="projects-cms-subheading">Эта задача предшествует</h3>
     <ul class="projects-link-list">{% for l in link_rows %}
@@ -431,41 +473,15 @@
 
     {% endif %}
 
-  </div>
+    </div>
 
+  </details>
 
+  <details id="task-custom" class="projects-task-extra"{% if custom_fields %} open{% endif %}>
 
-  {% elif tab == 'comments' %}
+    <summary>Дополнительные поля</summary>
 
-  <div class="card">
-
-    <h2>Комментарии</h2>
-
-    <ul>{% for c in task.comments %}<li><strong>{{ c.user.full_name }}</strong> {{ c.created_at.strftime('%d.%m.%Y %H:%M') }}<br>{{ c.body }}</li>{% else %}<li class="muted">Пока нет</li>{% endfor %}</ul>
-
-    {% if current_user.is_staff %}
-
-    <form method="post" action="{{ url_for('projects.task_update', tid=task.id) }}">
-
-      {{ csrf_field() }}<input type="hidden" name="action" value="comment">
-
-      <textarea name="body" class="form-control" rows="3" required></textarea>
-
-      <button type="submit" class="btn btn-primary btn-sm">Отправить</button>
-
-    </form>
-
-    {% endif %}
-
-  </div>
-
-
-
-  {% elif tab == 'custom' %}
-
-  <div class="card">
-
-    <h2>Дополнительные поля</h2>
+    <div class="projects-task-extra-body">
 
     <form method="post" action="{{ url_for('projects.task_update', tid=task.id) }}">
 
@@ -487,15 +503,15 @@
 
     </form>
 
-  </div>
+    </div>
 
+  </details>
 
+  <details id="task-time" class="projects-task-extra">
 
-  {% elif tab == 'time' %}
+    <summary>Учёт времени</summary>
 
-  <div class="card projects-task-time">
-
-    <h2>Учёт времени</h2>
+    <div class="projects-task-extra-body projects-task-time">
 
     <p class="projects-time-total">Всего: {{ (task.time_spent_seconds or 0) // 3600 }} ч {{ ((task.time_spent_seconds or 0) % 3600) // 60 }} мин
       {% if task.timer_running_since %}<span class="projects-timer-live" data-since="{{ task.timer_running_since.isoformat() }}"> · таймер идёт</span>{% endif %}
@@ -535,15 +551,44 @@
 
     <ul class="projects-time-log">{% for log in time_logs %}<li>{{ log.seconds // 60 }} мин — {{ log.user.full_name }} {{ log.created_at.strftime('%d.%m.%Y') }}</li>{% else %}<li class="muted">Записей пока нет</li>{% endfor %}</ul>
 
-  </div>
+    </div>
 
-  {% endif %}
+  </details>
+
+    </div>
+  </div>
 
 </div>
 
 {% endblock %}
 
 {% block scripts %}
+<script>
+(function () {
+  var treeRoot = document.getElementById("task-project-tree-nav");
+  if (treeRoot && typeof window.renderProjectTreeNav === "function") {
+    window.renderProjectTreeNav(treeRoot);
+  }
+})();
+</script>
+<script>
+(function () {
+  var startEl = document.getElementById("task-edit-start-date");
+  var dueEl = document.getElementById("task-edit-due-date");
+  var durEl = document.getElementById("task-edit-duration-days");
+  if (startEl && dueEl && durEl && typeof window.createTaskDateDuration === "function") {
+    window.createTaskDateDuration({
+      startEl: startEl,
+      dueEl: dueEl,
+      durationEl: durEl,
+      skipWeekends: {{ 'true' if task.project and task.project.skip_weekends else 'false' }},
+      skipHolidays: {{ 'true' if task.project and task.project.skip_public_holidays else 'false' }},
+      dateMin: {{ (parent_window_start.isoformat() if parent_window_start else '')|tojson }},
+      dateMax: {{ (parent_window_due.isoformat() if parent_window_due else '')|tojson }},
+    });
+  }
+})();
+</script>
 <script>
 (function () {
   var box = document.querySelector("[data-task-hierarchy]");

@@ -100,7 +100,7 @@ def task_update(tid):
                 ProjectTaskComment(task_id=task.id, user_id=current_user.id, body=body)
             )
             db.session.commit()
-        return redirect(url_for("projects.task_detail", tid=tid, tab="comments"))
+        return redirect(url_for("projects.task_detail", tid=tid) + "#task-comments")
     if action == "upload":
         f = request.files.get("file")
         if f and f.filename:
@@ -110,11 +110,11 @@ def task_update(tid):
                 db.session.commit()
                 flash("Файл загружен.", "success")
                 return redirect(
-                    url_for("projects.task_detail", tid=tid, tab="files", preview=att.id)
+                    url_for("projects.task_detail", tid=tid, preview=att.id) + "#task-files"
                 )
             except ValueError:
                 flash("Файл превышает 100 Мб.", "danger")
-        return redirect(url_for("projects.task_detail", tid=tid, tab="files"))
+        return redirect(url_for("projects.task_detail", tid=tid) + "#task-files")
     if action == "link_add":
         other_id = request.form.get("other_task_id", type=int)
         link_type = request.form.get("link_type") or "related"
@@ -173,7 +173,7 @@ def task_update(tid):
                             apply_fs_cascade_and_expand(succ)
                         db.session.commit()
                         flash("Связь добавлена.", "success")
-        return redirect(url_for("projects.task_detail", tid=tid, tab="links"))
+        return redirect(url_for("projects.task_detail", tid=tid) + "#task-links")
     if action == "link_remove":
         lid = request.form.get("link_id", type=int)
         link = db.session.get(ProjectTaskLink, lid) if lid else None
@@ -181,7 +181,7 @@ def task_update(tid):
             db.session.delete(link)
             db.session.commit()
             flash("Связь удалена.", "success")
-        return redirect(url_for("projects.task_detail", tid=tid, tab="links"))
+        return redirect(url_for("projects.task_detail", tid=tid) + "#task-links")
     if action == "custom_save":
         proj = task.project
         if proj:
@@ -197,7 +197,7 @@ def task_update(tid):
                 row.value_text = val
         db.session.commit()
         flash("Доп. поля сохранены.", "success")
-        return redirect(url_for("projects.task_detail", tid=tid, tab="custom"))
+        return redirect(url_for("projects.task_detail", tid=tid) + "#task-custom")
 
     task.title = request.form["title"].strip()
     task.description = (request.form.get("description") or "").strip() or None
@@ -295,7 +295,7 @@ def task_file_delete(tid, aid):
     delete_task_attachment(att)
     db.session.commit()
     flash("Файл удалён.", "success")
-    return redirect(url_for("projects.task_detail", tid=tid, tab="files"))
+    return redirect(url_for("projects.task_detail", tid=tid) + "#task-files")
 
 
 @bp.route("/tasks/<int:tid>/files/<int:aid>/verify", methods=["POST"])
@@ -313,7 +313,7 @@ def task_file_verify(tid, aid):
     att.verified_by_id = current_user.id
     db.session.commit()
     flash("Файл верифицирован.", "success")
-    return redirect(url_for("projects.task_detail", tid=tid, tab="files"))
+    return redirect(url_for("projects.task_detail", tid=tid) + "#task-files")
 
 
 @bp.route("/settings/calendar", methods=["GET", "POST"])

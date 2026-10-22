@@ -129,6 +129,92 @@ def projects_ui_context() -> dict:
     }
 
 
+def _project_period_label(project) -> str:
+    """Подпись периода проекта для дерева задач и шапки Ганта."""
+    if not project:
+        return ""
+    ps = getattr(project, "planned_start", None)
+    de = getattr(project, "deadline", None)
+    if ps and de:
+        return f"{ps.strftime('%d.%m.%Y')} — {de.strftime('%d.%m.%Y')}"
+    if de:
+        return f"до {de.strftime('%d.%m.%Y')}"
+    if ps:
+        return f"с {ps.strftime('%d.%m.%Y')}"
+    return ""
+
+
+def _stage_deadline_label(stage) -> str:
+    if not stage or not getattr(stage, "deadline", None):
+        return ""
+    return stage.deadline.strftime("%d.%m.%Y")
+
+
+def _project_task_tree_payload(project_id: int) -> list[dict]:
+    out: list[dict] = []
+    for t in (
+        ProjectTask.query.filter_by(project_id=project_id)
+        .order_by(ProjectTask.gantt_sort.asc(), ProjectTask.id.asc())
+        .limit(400)
+    ):
+        s, e = t.start_date, t.due_date
+        if s and e:
+            dates_label = (
+                f"{s.strftime('%d.%m')}–{e.strftime('%d.%m.%Y')}"
+                if s != e
+                else s.strftime("%d.%m.%Y")
+            )
+        elif s or e:
+            d = s or e
+            dates_label = d.strftime("%d.%m.%Y")
+        else:
+            dates_label = ""
+        out.append(
+            {
+                "id": t.id,
+                "title": t.title,
+                "stage_id": t.stage_id,
+                "parent_id": t.parent_id,
+                "start": s.isoformat() if s else "",
+                "due": e.isoformat() if e else "",
+                "dates_label": dates_label,
+            }
+        )
+    return out
+
+
+def _project_stages_payload(project) -> list[dict]:
+    if not project:
+        return []
+    return [
+        {
+            "id": s.id,
+            "title": s.title,
+            "deadline_label": _stage_deadline_label(s),
+        }
+        for s in project.stages.order_by(ProjectStage.sort_order)
+    ]
+
+
+def _task_detail_tree_context(task: ProjectTask) -> dict:
+    """JSON для навигационного дерева в карточке задачи."""
+    if not task or not task.project_id:
+        return {
+            "task_tree_stages": [],
+            "task_tree_tasks": [],
+            "task_tree_project": {"name": "Проект", "dates_label": ""},
+        }
+    proj = task.project
+    return {
+        "task_tree_stages": _project_stages_payload(proj),
+        "task_tree_tasks": _project_task_tree_payload(task.project_id),
+        "task_tree_project": {
+            "name": proj.name if proj else "Проект",
+            "dates_label": _project_period_label(proj),
+        },
+    }
+
+
 def _staff_or_curator():
     if not current_user.is_authenticated:
         abort(403)
@@ -753,54 +839,22 @@ def task_new():
     stages_by_project: dict[int, list] = {}
     tasks_by_project: dict[int, list] = {}
     executors_by_project: dict[int, list] = {}
-    def _tasks_tree_payload(project_id: int):
-        out = []
-        for t in (
-            ProjectTask.query.filter_by(project_id=project_id)
-            .order_by(ProjectTask.gantt_sort.asc(), ProjectTask.id.asc())
-            .limit(400)
-        ):
-            s, e = t.start_date, t.due_date
-            if s and e:
-                dates_label = (
-                    f"{s.strftime('%d.%m')}–{e.strftime('%d.%m.%Y')}"
-                    if s != e
-                    else s.strftime("%d.%m.%Y")
-                )
-            elif s or e:
-                d = s or e
-                dates_label = d.strftime("%d.%m.%Y")
-            else:
-                dates_label = ""
-            out.append(
-                {
-                    "id": t.id,
-                    "title": t.title,
-                    "stage_id": t.stage_id,
-                    "parent_id": t.parent_id,
-                    "start": s.isoformat() if s else "",
-                    "due": e.isoformat() if e else "",
-                    "dates_label": dates_label,
-                }
-            )
-        return out
-
     for p in projects:
-        stages_by_project[p.id] = [
-            {"id": s.id, "title": s.title}
-            for s in p.stages.order_by(ProjectStage.sort_order)
-        ]
-        tasks_by_project[p.id] = _tasks_tree_payload(p.id)
+        stages_by_project[p.id] = _project_stages_payload(p)
+        tasks_by_project[p.id] = _project_task_tree_payload(p.id)
         executors_by_project[p.id] = [
             {"id": u.id, "name": u.full_name} for u in executors_for_project(p.id)
         ]
     if parent_task and parent_task.project_id not in stages_by_project:
-        stages_by_project[parent_task.project_id] = [
-            {"id": s.id, "title": s.title}
-            for s in parent_task.project.stages.order_by(ProjectStage.sort_order)
-        ] if parent_task.project else []
+        stages_by_project[parent_task.project_id] = (
+            _project_stages_payload(parent_task.project)
+            if parent_task.project
+            else []
+        )
     if parent_task and parent_task.project_id not in tasks_by_project:
-        tasks_by_project[parent_task.project_id] = _tasks_tree_payload(parent_task.project_id)
+        tasks_by_project[parent_task.project_id] = _project_task_tree_payload(
+            parent_task.project_id
+        )
     if parent_task and parent_task.project_id not in executors_by_project:
         executors_by_project[parent_task.project_id] = [
             {"id": u.id, "name": u.full_name}
@@ -1065,9 +1119,15 @@ def task_new():
         else (preset_project_id or (projects[0].id if projects else None))
     )
     executors = executors_for_project(initial_project_id)
-    project_names = {str(p.id): p.name for p in projects}
+    project_names = {
+        str(p.id): {"name": p.name, "dates_label": _project_period_label(p)}
+        for p in projects
+    }
     if parent_task and parent_task.project and str(parent_task.project_id) not in project_names:
-        project_names[str(parent_task.project_id)] = parent_task.project.name
+        project_names[str(parent_task.project_id)] = {
+            "name": parent_task.project.name,
+            "dates_label": _project_period_label(parent_task.project),
+        }
     date_min, date_max = effective_date_window(parent=parent_task, project=proj_for_form)
     preset_pred_id = request.args.get("pred", type=int)
     return render_template(
@@ -1109,6 +1169,24 @@ def task_detail(tid):
     if arm_view:
         _remember_arm_back(arm_view, task.project_id)
     tab = request.args.get("tab", "main")
+    if tab != "main":
+        anchor_map = {
+            "files": "task-files",
+            "comments": "task-comments",
+            "links": "task-links",
+            "custom": "task-custom",
+            "time": "task-time",
+        }
+        anchor = anchor_map.get(tab)
+        if anchor:
+            preview_q: dict = {}
+            preview_arg = request.args.get("preview", type=int)
+            if preview_arg:
+                preview_q["preview"] = preview_arg
+            return redirect(
+                url_for("projects.task_detail", tid=tid, **preview_q) + "#" + anchor
+            )
+        tab = "main"
     executors = executors_for_project(task.project_id)
     # Текущий исполнитель/соисполнители вне состава — оставляем в списке, чтобы не потерять
     seen = {u.id for u in executors}
@@ -1163,25 +1241,21 @@ def task_detail(tid):
     )
 
     preview_att = None
-    task_files: list = []
+    task_files: list = list(list_task_attachments(task.id))
     deletable_file_ids: set[int] = set()
     preview_aid = request.args.get("preview", type=int)
-    if tab == "files":
-        task_files = list(list_task_attachments(task.id))
-        known_ids = {f.id for f in task_files}
-        if preview_aid:
-            att = db.session.get(ProjectTaskAttachment, preview_aid)
-            if att and att.task_id == task.id:
-                preview_att = att
-                if att.id not in known_ids:
-                    task_files.insert(0, att)
-            else:
-                preview_att = None
-        elif task_files:
-            preview_att = task_files[0]
-        for f in task_files:
-            if user_can_delete_task_attachment(current_user, task, f):
-                deletable_file_ids.add(f.id)
+    known_ids = {f.id for f in task_files}
+    if preview_aid:
+        att = db.session.get(ProjectTaskAttachment, preview_aid)
+        if att and att.task_id == task.id:
+            preview_att = att
+            if att.id not in known_ids:
+                task_files.insert(0, att)
+    elif task_files:
+        preview_att = task_files[0]
+    for f in task_files:
+        if user_can_delete_task_attachment(current_user, task, f):
+            deletable_file_ids.add(f.id)
     date_min, date_max = effective_date_window(parent=task.parent, project=task.project)
     from servicesystem.project_management.services import count_task_links, iter_task_descendants
 
@@ -1209,7 +1283,8 @@ def task_detail(tid):
         deletable_file_ids=deletable_file_ids,
         preview_att=preview_att,
         kanban_labels=KANBAN_LABELS,
-        tab=tab,
+        tab="main",
+        **_task_detail_tree_context(task),
         executors=executors,
         custom_fields=custom_fields,
         link_rows=link_rows,
@@ -1799,6 +1874,19 @@ def _gantt_align_span(scale: str, start: date, end: date) -> tuple[date, date]:
     return start, end
 
 
+def _gantt_projects_for_span(projects, tasks) -> list:
+    """Проекты для шкалы: явный список или уникальные проекты задач."""
+    seen: dict[int, object] = {}
+    for p in projects or []:
+        if p is not None and getattr(p, "id", None) is not None:
+            seen[p.id] = p
+    for t in tasks or []:
+        p = getattr(t, "project", None)
+        if p is not None and getattr(p, "id", None) is not None and p.id not in seen:
+            seen[p.id] = p
+    return list(seen.values())
+
+
 def _gantt_project_extent(projects) -> tuple[date | None, date | None]:
     """Крайние даты проектов: planned_start … deadline (прокрутка Ганта)."""
     starts: list[date] = []
@@ -1817,6 +1905,18 @@ def _gantt_project_extent(projects) -> tuple[date | None, date | None]:
     return start, end
 
 
+def _gantt_period_label_from_projects(projects) -> str:
+    """Подпись периода проекта для Ганта (как в карточке проекта)."""
+    start, end = _gantt_project_extent(projects or [])
+    if start and end:
+        return f"{start.strftime('%d.%m.%Y')} — {end.strftime('%d.%m.%Y')}"
+    if end:
+        return f"до {end.strftime('%d.%m.%Y')}"
+    if start:
+        return f"с {start.strftime('%d.%m.%Y')}"
+    return ""
+
+
 def _gantt_span_for_scale(
     scale: str,
     today: date,
@@ -1826,32 +1926,46 @@ def _gantt_span_for_scale(
     anchor: date | None = None,
 ) -> tuple[date, date]:
     """
-    Диапазон шкалы всегда = старт…дедлайн проекта.
-    Зум меняет только шаг колонок, не границы периода.
+    Шкала = старт…дедлайн проекта (из карточки).
+    Расширяем только если задачи/этапы выходят за эти границы; не укорачиваем.
     """
     pivot = anchor or today
-    proj_s, proj_e = _gantt_project_extent(projects or [])
+    span_projects = _gantt_projects_for_span(projects, tasks)
+    proj_s, proj_e = _gantt_project_extent(span_projects)
+    work_s, work_e = _gantt_data_extent(tasks or [])
 
     if proj_s and proj_e:
-        return proj_s, proj_e
+        start, end = proj_s, proj_e
+        if work_s and work_s < start:
+            start = work_s
+        if work_e and work_e > end:
+            end = work_e
+        return _gantt_align_span(scale, start, end)
 
-    # Нет дат проекта — запасной вариант по задачам / окно вокруг сегодня
-    task_s, task_e = _gantt_data_extent(tasks or [])
-    if task_s and task_e:
-        start, end = task_s, task_e
-    else:
-        start, end = _gantt_base_window(scale, pivot)
+    if proj_s or proj_e:
+        start = proj_s or work_s or pivot
+        end = proj_e or work_e or pivot
+        if work_s and work_s < start:
+            start = work_s
+        if work_e and work_e > end:
+            end = work_e
+        return _gantt_align_span(scale, start, end)
+
+    if work_s and work_e:
+        return _gantt_align_span(scale, work_s, work_e)
+    start, end = _gantt_base_window(scale, pivot)
     return _gantt_align_span(scale, start, end)
 
 
 def _gantt_col_px(scale: str, n_cols: int) -> int:
     """Ширина колонки под масштаб — от неё зависит ползунок горизонтальной прокрутки."""
-    base = {"day": 88, "week": 64, "month": 44, "quarter": 160}.get(scale, 56)
+    # Квартал: широкие месячные колонки — подписи этапов не наезжают друг на друга
+    base = {"day": 96, "week": 72, "month": 52, "quarter": 280}.get(scale, 56)
     # На очень длинной шкале чуть ужмём, чтобы ползунок оставался управляемым
     if scale != "quarter" and n_cols > 120:
-        return max(28, base - 12)
+        return max(32, base - 12)
     if scale == "quarter" and n_cols > 18:
-        return max(100, base - 40)
+        return max(200, base - 40)
     return base
 
 
@@ -1990,6 +2104,20 @@ def _gantt_apply_row_numbers(bars: list[dict]) -> None:
         ]
 
 
+def _gantt_date_center_pct(
+    d: date,
+    span_start: date,
+    span_end: date,
+    scale: str,
+    n_cols: int,
+) -> float | None:
+    """Горизонтальная позиция (центр дня) на шкале — для вех и пунктира дедлайна."""
+    in_r, left, width = _bar_geometry(d, d, span_start, span_end, scale, n_cols)
+    if not in_r:
+        return None
+    return min(99.5, left + width / 2.0)
+
+
 def _bar_geometry(
     s: date,
     e: date,
@@ -2101,12 +2229,13 @@ def _gantt_milestones(
             if key in seen:
                 continue
             seen.add(key)
+            center = _gantt_date_center_pct(st.deadline, span_start, span_end, scale, n_cols)
+            if center is None:
+                continue
             in_r, left, w = _bar_geometry(st.deadline, st.deadline, span_start, span_end, scale, n_cols)
             if not in_r:
                 continue
-            # Центр колонки дня/слота дедлайна (без раздувания min-width полосок)
             col_w = 100.0 / max(1, n_cols)
-            center = min(99.5, left + col_w / 2.0)
             pname = st.project.name if st.project else ""
             cap = _gantt_short_title(st.title, 28)
             out.append(
@@ -2153,18 +2282,18 @@ def _mark_stage_deadline_columns(columns: list[dict], milestones: list[dict], sc
                     col["stage_deadline_titles"].append(tip)
 
 
-def _gantt_milestone_groups(milestones: list[dict], *, min_gap_pct: float = 5.0) -> list[dict]:
-    """Склеивает вехи с близкими позициями на шкале — подписи столбиком, без наложения."""
+def _gantt_milestone_groups(
+    milestones: list[dict],
+    *,
+    min_gap_pct: float = 5.0,
+    n_cols: int = 1,
+) -> list[dict]:
+    """Каждый этап — отдельная веха (не склеиваем, чтобы все этапы были видны)."""
+    del min_gap_pct, n_cols  # порог склейки больше не используем
     if not milestones:
         return []
     ordered = sorted(milestones, key=lambda m: (m["center_pct"], m["date_label"], m["title"]))
-    groups: list[dict] = []
-    for m in ordered:
-        if not groups or abs(m["center_pct"] - groups[-1]["center_pct"]) > min_gap_pct:
-            groups.append({"center_pct": m["center_pct"], "milestones": [m]})
-        else:
-            groups[-1]["milestones"].append(m)
-    return groups
+    return [{"center_pct": m["center_pct"], "milestones": [m]} for m in ordered]
 
 
 def _gantt_build_bars(
@@ -2255,9 +2384,13 @@ def _gantt_layout(
 ) -> dict:
     """Данные для диаграммы Gantt — стратегическое планирование (ТЗ 2.1)."""
     today = date.today()
+    projects = _gantt_projects_for_span(projects, tasks)
     span_start, span_end = _gantt_span_for_scale(
         scale, today, tasks=tasks, projects=projects, anchor=anchor
     )
+    if scale == "quarter":
+        span_start = _month_start(span_start)
+        span_end = _month_end(span_end)
     columns = _gantt_columns(span_start, span_end, scale)
     n_cols = max(1, len(columns))
     col_px = _gantt_col_px(scale, n_cols)
@@ -2293,6 +2426,7 @@ def _gantt_layout(
                 {
                     "project_id": pid or None,
                     "title": proj.name if proj else "Без проекта",
+                    "period_label": _project_period_label(proj),
                     "deadline_label": proj.deadline.strftime("%d.%m.%Y") if proj and proj.deadline else "",
                     "bars": bars,
                 }
@@ -2302,7 +2436,18 @@ def _gantt_layout(
             dated, span_start, span_end, scale, n_cols,
             waits_for, blocks, related_with, user, 0,
         )
-        groups.append({"project_id": project_filter, "title": "Задачи", "deadline_label": "", "bars": bars})
+        proj = None
+        if project_filter:
+            proj = db.session.get(Project, project_filter)
+        groups.append(
+            {
+                "project_id": project_filter,
+                "title": proj.name if proj else "Задачи",
+                "period_label": _project_period_label(proj),
+                "deadline_label": proj.deadline.strftime("%d.%m.%Y") if proj and proj.deadline else "",
+                "bars": bars,
+            }
+        )
 
     gantt_bars = [b for g in groups for b in g["bars"]]
     _gantt_apply_row_numbers(gantt_bars)
@@ -2342,11 +2487,12 @@ def _gantt_layout(
         span_label = span_start.strftime("%d.%m.%Y")
     else:
         span_label = f"{span_start.strftime('%d.%m.%Y')} — {span_end.strftime('%d.%m.%Y')}"
+    period_label = _gantt_period_label_from_projects(projects) or span_label
 
     link_edges = _gantt_link_edges(gantt_bars, links)
     gantt_milestones = _gantt_milestones(task_list, span_start, span_end, scale, n_cols)
     _mark_stage_deadline_columns(columns, gantt_milestones, scale)
-    gantt_milestone_groups = _gantt_milestone_groups(gantt_milestones)
+    gantt_milestone_groups = _gantt_milestone_groups(gantt_milestones, n_cols=n_cols)
     milestone_stack_max = max((len(g["milestones"]) for g in gantt_milestone_groups), default=0)
     # Полоска вех: ромб + короткая подпись этапа
     milestone_lane_h = (28 if milestone_stack_max else 0)
@@ -2371,6 +2517,7 @@ def _gantt_layout(
             if e.get("kind") == "blocks"
         ],
         "gantt_span_label": span_label,
+        "gantt_period_label": period_label,
         "gantt_span_start": span_start.isoformat(),
         "gantt_span_end": span_end.isoformat(),
         "gantt_today": today,

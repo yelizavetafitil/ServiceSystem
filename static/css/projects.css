@@ -285,10 +285,16 @@
   box-shadow: var(--shadow);
 }
 .projects-gantt-hscroll {
-  /* Внутренний скролл: полоса X всегда у видимых строк, шапка липнет сверху */
-  overflow: auto;
+  /* Горизонталь: весь срок проекта; вертикаль: список задач */
+  overflow-x: auto;
+  overflow-y: auto;
   max-height: calc(100dvh - 220px);
   scrollbar-gutter: stable;
+}
+/* Ширина шкалы = число колонок × фиксированная ширина колонки (прокрутка по сроку проекта) */
+.projects-gantt-scroll-sizer {
+  width: calc(var(--gantt-side-w, 320px) + var(--gantt-timeline-min, 360px));
+  min-width: calc(var(--gantt-side-w, 320px) + var(--gantt-timeline-min, 360px));
 }
 .projects-gantt-hscroll::-webkit-scrollbar { height: 12px; width: 12px; }
 .projects-gantt-hscroll::-webkit-scrollbar-thumb {
@@ -307,7 +313,8 @@
   display: flex;
   flex-wrap: nowrap;
   align-items: stretch;
-  min-width: max(100%, calc(var(--gantt-side-w, 320px) + var(--gantt-timeline-min, 360px)));
+  width: 100%;
+  min-width: 0;
 }
 .projects-gantt-head {
   border-bottom: 2px solid var(--border);
@@ -315,6 +322,7 @@
   position: sticky;
   top: 0;
   z-index: 4;
+  overflow: visible;
 }
 .projects-gantt-side-head,
 .projects-gantt-side {
@@ -337,13 +345,15 @@
   z-index: 9;
 }
 .projects-gantt-timeline {
-  flex: 1 0 auto;
+  flex: 0 0 var(--gantt-timeline-min, 360px);
+  width: var(--gantt-timeline-min, 360px);
   min-width: var(--gantt-timeline-min, 360px);
 }
 .projects-gantt-cols-head,
-.projects-gantt-cols-track {
+.projects-gantt-cols-track,
+.projects-gantt-milestone-grid {
   display: grid;
-  width: 100%;
+  width: var(--gantt-timeline-min, 360px);
   min-width: var(--gantt-timeline-min, 360px);
   position: relative;
 }
@@ -372,32 +382,35 @@
   box-shadow: inset 1px 0 0 #fecaca;
 }
 .projects-gantt-stage-guides {
-  /* Та же сетка колонок, что у шкалы — пунктир ровно в день дедлайна этапа */
+  /* left в px — синхрон с ромбом этапа в шапке (projects-gantt.js) */
   position: absolute;
   top: 0;
   bottom: 0;
-  left: var(--gantt-side-w, 320px);
+  left: 0;
   right: 0;
-  display: grid;
   pointer-events: none;
   z-index: 2;
-}
-.projects-gantt-stage-guide-slot {
-  position: relative;
-  min-width: 0;
 }
 .projects-gantt-stage-guide {
   position: absolute;
   top: 0;
   bottom: 0;
-  left: 50%;
   width: 0;
   border-left: 2px dashed #d97706;
   transform: translateX(-50%);
   opacity: 0.95;
   pointer-events: none;
 }
-.projects-gantt-group-title { background: #eef2ff !important; box-shadow: none; font-size: 12px; gap: 6px; padding: 8px 14px; }
+.projects-gantt-group-title {
+  background: #eef2ff !important;
+  box-shadow: none;
+  font-size: 12px;
+  gap: 4px 10px;
+  padding: 8px 14px;
+  flex-wrap: wrap;
+  align-items: baseline;
+}
+.projects-gantt-group-dates { font-size: 11px; font-weight: 500; }
 .projects-gantt-group-band { min-height: 32px; background: #eef2ff; border-bottom: 1px solid #c7d2fe; }
 .projects-gantt-body { position: relative; background: #fff; overflow: visible; }
 .projects-gantt-hscroll { position: relative; }
@@ -433,7 +446,8 @@
 }
 .projects-gantt-milestone-lane {
   position: relative;
-  min-height: 28px;
+  min-height: 36px;
+  padding-top: 4px;
   border-bottom: 1px solid #e2e8f0;
   background: #fff;
   overflow: visible;
@@ -449,10 +463,13 @@
 }
 .projects-gantt-milestone-tick {
   position: absolute;
-  top: 2px;
+  top: 4px;
+  left: 0;
   transform: translateX(-50%);
-  width: max-content;
-  max-width: 110px;
+  box-sizing: border-box;
+  width: auto;
+  max-width: 280px;
+  overflow: visible; /* иначе срезается повёрнутый ромб */
   display: flex;
   flex-direction: column;
   align-items: center;
@@ -469,17 +486,19 @@
   transform: rotate(45deg);
   box-shadow: 0 0 0 1px #fff;
   flex-shrink: 0;
+  overflow: visible;
 }
 .projects-gantt-milestone-cap {
-  font-size: 9px;
-  line-height: 1.15;
+  display: block;
+  box-sizing: border-box;
+  font-size: 10px;
+  line-height: 1.2;
   font-weight: 600;
   color: #92400e;
   text-align: center;
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
-  max-width: 110px;
   padding: 0 2px;
 }
 .projects-gantt-milestone-line {
@@ -950,7 +969,7 @@
   .projects-gantt-side-head,
   .projects-gantt-side { flex: 0 0 200px; width: 200px; }
   .projects-gantt-head,
-  .projects-gantt-row { min-width: max(100%, calc(200px + var(--gantt-timeline-min, 360px))); }
+  .projects-gantt-row { width: 100%; min-width: 0; }
 }
 .projects-task-main-card > form > .btn-primary { margin-top: 4px; }
 .projects-task-actions {
@@ -989,11 +1008,50 @@
 .projects-calendar-grid--day { grid-template-columns: 1fr; }
 .projects-calendar-grid--week { grid-template-columns: repeat(5, minmax(0, 1fr)); }
 /* Создание задачи: дерево слева + форма справа */
-.projects-task-create-layout {
+.projects-task-create-layout,
+.projects-task-detail-layout {
   display: grid;
   grid-template-columns: minmax(240px, 320px) minmax(0, 1fr);
   gap: 20px;
   align-items: start;
+}
+.projects-task-detail-main { display: flex; flex-direction: column; gap: 16px; min-width: 0; }
+.projects-task-jump {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px 14px;
+  margin: 0 0 14px;
+  padding: 0;
+  font-size: 13px;
+}
+.projects-task-jump a { font-weight: 600; }
+.projects-task-section { scroll-margin-top: 72px; }
+.projects-task-extra {
+  scroll-margin-top: 72px;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  background: #fff;
+  padding: 0 16px 12px;
+}
+.projects-task-extra > summary {
+  cursor: pointer;
+  font-weight: 700;
+  padding: 14px 0 10px;
+  color: var(--primary-dark);
+  list-style: none;
+}
+.projects-task-extra > summary::-webkit-details-marker { display: none; }
+.projects-task-tree-link.is-current,
+.projects-task-tree-item--task.is-current > .projects-task-tree-row {
+  background: rgba(30, 90, 150, 0.12);
+  border-radius: 6px;
+}
+.projects-task-tree-item--stage .projects-task-tree-stage-title {
+  display: block;
+  font-size: 13px;
+  font-weight: 600;
+  color: #1e3a5f;
+  padding: 4px 6px 0;
 }
 .projects-task-tree-panel {
   position: sticky;
@@ -1009,6 +1067,47 @@
   font-size: 15px;
   font-weight: 700;
   color: var(--primary-dark);
+}
+.projects-task-date-row {
+  display: flex;
+  flex-wrap: nowrap;
+  align-items: flex-end;
+  gap: 10px 12px;
+}
+.projects-task-date-row > .form-group {
+  flex: 1 1 0;
+  min-width: 0;
+  margin-bottom: 0;
+}
+.projects-task-date-row .form-group--duration {
+  flex: 0 0 4.75rem;
+  max-width: 5.5rem;
+  min-width: 4.25rem;
+}
+.projects-task-date-row .form-group--duration input[type="number"] {
+  text-align: center;
+  padding-left: 6px;
+  padding-right: 6px;
+}
+.projects-task-date-row-hints {
+  margin: 4px 0 12px;
+  font-size: 12px;
+  line-height: 1.45;
+}
+.projects-task-date-row-hints .projects-cms-hint {
+  margin: 0;
+  display: inline;
+  font-size: 12px;
+}
+.projects-task-date-row-hints .projects-cms-hint + .projects-cms-hint::before {
+  content: " · ";
+  color: var(--muted);
+}
+.projects-task-date-row-hints .projects-task-duration-hint { margin: 0; }
+@media (max-width: 520px) {
+  .projects-task-date-row { flex-wrap: wrap; }
+  .projects-task-date-row > .form-group { flex: 1 1 100%; }
+  .projects-task-date-row .form-group--duration { flex: 0 0 4.75rem; max-width: none; }
 }
 .projects-task-tree-panel .projects-cms-hint { margin-bottom: 14px; }
 .projects-task-tree-list {
@@ -1030,8 +1129,16 @@
   margin-bottom: 8px;
   line-height: 1.35;
 }
-.projects-task-tree-stage {
+.projects-task-tree-label--project .projects-task-tree-dates {
   display: block;
+  margin-top: 2px;
+  font-weight: 500;
+}
+.projects-task-tree-stage {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 1px;
   width: 100%;
   text-align: left;
   border: none;
@@ -1045,6 +1152,12 @@
   color: #1e3a5f;
   cursor: pointer;
   line-height: 1.35;
+}
+.projects-task-tree-stage-title { display: block; }
+.projects-task-tree-stage .projects-task-tree-dates {
+  font-size: 11px;
+  font-weight: 500;
+  color: var(--muted);
 }
 .projects-task-tree-stage:hover { background: rgba(30, 90, 150, 0.08); }
 .projects-task-tree-item--stage.is-active > .projects-task-tree-stage {
@@ -1183,8 +1296,13 @@
 }
 .projects-task-single-fields { padding-top: 4px; }
 @media (max-width: 860px) {
-  .projects-task-create-layout {
+  .projects-task-create-layout,
+  .projects-task-detail-layout {
     grid-template-columns: 1fr;
+  }
+  .projects-task-tree-panel {
+    position: static;
+    max-height: none;
   }
   .projects-task-tree-panel {
     position: static;

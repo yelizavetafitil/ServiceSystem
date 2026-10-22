@@ -4,9 +4,9 @@
 
 {% block head %}
 
-<link rel="stylesheet" href="{{ url_for('static', filename='css/projects.css') }}?v=71">
+<link rel="stylesheet" href="{{ url_for('static', filename='css/projects.css') }}?v=89">
 
-<script defer src="{{ url_for('static', filename='js/projects-gantt.js') }}?v=50"></script>
+<script defer src="{{ url_for('static', filename='js/projects-gantt.js') }}?v=65"></script>
 
 {% endblock %}
 
@@ -14,7 +14,7 @@
 
 {% set gantt_n = gantt_columns|length %}
 {% set gantt_px = gantt_col_px|default(56) %}
-{% set gantt_grid = 'repeat(' ~ gantt_n ~ ', minmax(' ~ gantt_px ~ 'px, 1fr))' %}
+{% set gantt_grid = 'repeat(' ~ gantt_n ~ ', ' ~ gantt_px ~ 'px)' %}
 
 <div class="container container-wide cms-page projects-page projects-gantt-page">
 
@@ -68,7 +68,7 @@
     <span class="projects-gantt-legend-item"><i class="swatch is-sla"></i>SLA</span>
     <span class="projects-gantt-legend-item"><i class="swatch is-fs"></i>FS</span>
     <span class="projects-gantt-legend-item"><i class="swatch is-milestone"></i>дедлайн этапа</span>
-    <span class="projects-gantt-legend-period muted"><strong>{{ gantt_scale_label }}</strong> · {{ gantt_span_label }}</span>
+    <span class="projects-gantt-legend-period muted"><strong>{{ gantt_scale_label }}</strong> · {{ gantt_period_label|default(gantt_span_label) }}</span>
   </div>
 
 
@@ -89,11 +89,13 @@
        data-col-px="{{ gantt_col_px|default(56) }}"
        style="--gantt-cols: {{ gantt_n }}; --gantt-col-px: {{ gantt_col_px|default(56) }}px; --gantt-timeline-min: {{ gantt_timeline_min_px|default(gantt_n * 56) }}px; --gantt-side-w: 320px;">
 
-    <script type="application/json" id="gantt-fs-links">{{ gantt_fs_links|tojson }}</script>
+    <script type="application/json" id="gantt-fs-links">{{ gantt_fs_links|default([])|tojson }}</script>
 
 
 
     <div class="projects-gantt-hscroll">
+
+      <div class="projects-gantt-scroll-sizer">
 
       <div class="projects-gantt-head">
 
@@ -120,9 +122,13 @@
             {% set tip = g.milestones|map(attribute='title')|join(' · ') %}
             {% set tip_dates = g.milestones|map(attribute='date_label')|join(', ') %}
             {% set first = g.milestones[0] %}
-            <div class="projects-gantt-milestone-tick" style="left: {{ g.center_pct }}%;" title="Дедлайн этапа: {{ tip }} · {{ tip_dates }}">
+            <div class="projects-gantt-milestone-tick" style="left: {{ g.center_pct }}%;"
+                 data-milestone-id="{{ first.id }}"
+                 data-milestone-ids="{{ g.milestones|map(attribute='id')|join(' ') }}"
+                 data-full-title="{{ tip }}{% if g.milestones|length > 1 %} +{{ g.milestones|length - 1 }}{% endif %}"
+                 title="Дедлайн этапа: {{ tip }} · {{ tip_dates }}">
               <span class="projects-gantt-milestone-dot" aria-hidden="true"></span>
-              <span class="projects-gantt-milestone-cap">{{ first.short_title }}{% if g.milestones|length > 1 %} +{{ g.milestones|length - 1 }}{% endif %}</span>
+              <span class="projects-gantt-milestone-cap">{{ tip }}{% if g.milestones|length > 1 %} +{{ g.milestones|length - 1 }}{% endif %}</span>
             </div>
             {% endfor %}
           </div>
@@ -139,20 +145,17 @@
         <svg class="projects-gantt-fs-svg" aria-hidden="true"></svg>
 
         {% if gantt_columns %}
-        <div class="projects-gantt-stage-guides" style="grid-template-columns: {{ gantt_grid }};" aria-hidden="true">
-          {% for col in gantt_columns %}
-          <div class="projects-gantt-stage-guide-slot">
-            {% if col.is_stage_deadline %}
-            <div class="projects-gantt-stage-guide" title="{% if col.stage_deadline_titles %}Дедлайн этапа: {{ col.stage_deadline_titles|join(' · ') }}{% else %}Дедлайн этапа{% endif %}"></div>
-            {% endif %}
-          </div>
+        <div class="projects-gantt-stage-guides" aria-hidden="true">
+          {% for m in gantt_milestones %}
+          <div class="projects-gantt-stage-guide" data-milestone-id="{{ m.id }}" data-guide-idx="{{ loop.index0 }}"
+               title="Дедлайн этапа: {{ m.short_title|default(m.title) }} · {{ m.date_label }}"></div>
           {% endfor %}
         </div>
         {% endif %}
 
         {% for group in gantt_groups %}
 
-        {% if gantt_groups|length > 1 %}
+        {% if group.period_label or group.deadline_label or gantt_groups|length > 1 %}
 
         <div class="projects-gantt-group-head">
 
@@ -160,7 +163,11 @@
 
             <strong>{{ group.title }}</strong>
 
-            {% if group.deadline_label %}<span class="muted">Дедлайн проекта: {{ group.deadline_label }}</span>{% endif %}
+            {% if group.period_label %}
+            <span class="muted projects-gantt-group-dates">{{ group.period_label }}</span>
+            {% elif group.deadline_label %}
+            <span class="muted projects-gantt-group-dates">до {{ group.deadline_label }}</span>
+            {% endif %}
 
           </div>
 
@@ -363,6 +370,8 @@
         </div>
         {% endfor %}
         {% endif %}
+
+      </div>
 
       </div>
 

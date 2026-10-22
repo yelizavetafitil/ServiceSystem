@@ -23,13 +23,20 @@
   var ganttScale = chart.getAttribute("data-scale") || "month";
 
   var ganttCols = Math.max(1, parseInt(chart.getAttribute("data-cols") || "1", 10) || 1);
-  var ganttScrollKey = "gantt-hscroll:" + location.pathname + location.search;
+  var ganttScrollKey = "gantt-scroll:" + location.pathname + location.search;
+  var ganttScrollKeyLegacy = "gantt-hscroll:" + location.pathname + location.search;
 
   function saveGanttScroll() {
     var h = chart.querySelector(".projects-gantt-hscroll");
     if (!h) return;
     try {
-      sessionStorage.setItem(ganttScrollKey, String(Math.round(h.scrollLeft)));
+      sessionStorage.setItem(
+        ganttScrollKey,
+        JSON.stringify({
+          left: Math.round(h.scrollLeft),
+          top: Math.round(h.scrollTop),
+        })
+      );
     } catch (e) {}
   }
 
@@ -1074,8 +1081,84 @@
     closePanel();
   });
 
+  function syncStageGuidePositions() {
+    var body = chart.querySelector(".projects-gantt-body");
+    if (!body) return;
+    var bodyRect = body.getBoundingClientRect();
+    var ticks = chart.querySelectorAll(".projects-gantt-milestone-tick");
+    chart.querySelectorAll(".projects-gantt-stage-guide").forEach(function (guide) {
+      var tick = null;
+      var mid = guide.getAttribute("data-milestone-id");
+      if (mid) {
+        tick = chart.querySelector('.projects-gantt-milestone-tick[data-milestone-id="' + mid + '"]');
+        if (!tick) {
+          tick = chart.querySelector('.projects-gantt-milestone-tick[data-milestone-ids~="' + mid + '"]');
+        }
+      }
+      if (!tick) {
+        var idx = parseInt(guide.getAttribute("data-guide-idx") || "", 10);
+        if (isFinite(idx) && ticks[idx]) tick = ticks[idx];
+      }
+      if (!tick) return;
+      var anchor = tick.querySelector(".projects-gantt-milestone-dot") || tick;
+      var ar = anchor.getBoundingClientRect();
+      var cx = ar.left + ar.width / 2 - bodyRect.left;
+      guide.style.left = Math.round(cx) + "px";
+    });
+  }
+
+  /** Подписи этапов в один уровень: ширина ≤ зазор до соседа, без вертикального сдвига. */
+  function fitMilestoneCaptions() {
+    var lane = chart.querySelector(".projects-gantt-milestone-lane");
+    if (!lane) return;
+    var ticks = Array.prototype.slice.call(
+      chart.querySelectorAll(".projects-gantt-milestone-tick")
+    );
+    if (!ticks.length) return;
+
+    ticks.sort(function (a, b) {
+      return (parseFloat(a.style.left) || 0) - (parseFloat(b.style.left) || 0);
+    });
+
+    var laneRect = lane.getBoundingClientRect();
+    var centers = ticks.map(function (tick) {
+      var leftPct = parseFloat(tick.style.left) || 0;
+      return laneRect.left + (laneRect.width * leftPct) / 100;
+    });
+
+    var maxCap = 280;
+    var minCap = 36;
+    var gapPad = 12;
+
+    ticks.forEach(function (tick, i) {
+      var cap = tick.querySelector(".projects-gantt-milestone-cap");
+      if (!cap) return;
+      var full = tick.getAttribute("data-full-title") || "";
+      if (full) cap.textContent = full;
+
+      var gapL = i > 0 ? centers[i] - centers[i - 1] : Math.max(80, centers[i] - laneRect.left);
+      var gapR =
+        i < centers.length - 1
+          ? centers[i + 1] - centers[i]
+          : Math.max(80, laneRect.right - centers[i]);
+      var room = Math.max(minCap, Math.min(maxCap, Math.min(gapL, gapR) - gapPad));
+
+      tick.classList.remove("is-cap-offset");
+      tick.style.width = room + "px";
+      tick.style.maxWidth = room + "px";
+      cap.style.width = room + "px";
+      cap.style.maxWidth = room + "px";
+    });
+
+    lane.style.minHeight = "";
+  }
+
   function scheduleDraw() {
-    requestAnimationFrame(drawFsLinks);
+    requestAnimationFrame(function () {
+      drawFsLinks();
+      syncStageGuidePositions();
+      fitMilestoneCaptions();
+    });
   }
 
   // Ручной порядок строк: перетаскивание слева
@@ -1304,8 +1387,6 @@
   });
 
   scheduleDraw();
-  window.addEventListener("resize", scheduleDraw);
-  window.addEventListener("load", scheduleDraw);
   var host = chart.querySelector(".projects-gantt-hscroll");
   if (host) {
     host.addEventListener("scroll", function () {
@@ -1325,6 +1406,11 @@
     return side ? side.offsetWidth : 320;
   }
 
+  function timelineW() {
+    var head = chart.querySelector(".projects-gantt-cols-head");
+    return head && head.offsetWidth ? head.offsetWidth : ganttCols * colPx;
+  }
+
   function todayScrollLeft() {
     if (!host || !spanStart || !todayIso) return 0;
     var a = parseIso(spanStart);
@@ -1333,18 +1419,19 @@
     var days = Math.max(0, Math.round((t - a) / 86400000));
     var frac;
     if (ganttScale === "quarter") {
-      frac = (t.getFullYear() - a.getFullYear()) * 12 + (t.getMonth() - a.getMonth()) + (t.getDate() - 1) / 31;
-      frac = frac / Math.max(1, ganttCols);
+      var slot = (t.getFullYear() - a.getFullYear()) * 12 + (t.getMonth() - a.getMonth());
+      var dim = daysInMonth(t.getFullYear(), t.getMonth());
+      frac = (slot + (t.getDate() - 1) / dim) / Math.max(1, ganttCols);
     } else {
       frac = days / Math.max(1, daySpan());
     }
-    var timelineLeft = frac * (ganttCols * colPx);
+    var timelineLeft = frac * timelineW();
     return Math.max(0, sideW() + timelineLeft - host.clientWidth * 0.35);
   }
 
   function scrollGanttTo(left, smooth) {
     if (!host) return;
-    host.scrollTo({ left: left, behavior: smooth ? "smooth" : "auto" });
+    host.scrollTo({ left: left, top: host.scrollTop, behavior: smooth ? "smooth" : "auto" });
   }
 
   /** Центрирует полоску задачи в видимой области шкалы (с учётом текущего зума). */
@@ -1404,35 +1491,60 @@
     if (!host) return false;
     try {
       var raw = sessionStorage.getItem(ganttScrollKey);
+      if (raw == null || raw === "") {
+        raw = sessionStorage.getItem(ganttScrollKeyLegacy);
+      }
       if (raw == null || raw === "") return false;
-      var left = parseInt(raw, 10);
+      var left = 0;
+      var top = 0;
+      if (raw.charAt(0) === "{") {
+        var st = JSON.parse(raw);
+        left = parseInt(st.left, 10);
+        top = parseInt(st.top, 10);
+      } else {
+        left = parseInt(raw, 10);
+      }
       if (!isFinite(left)) return false;
-      scrollGanttTo(left, false);
+      if (!isFinite(top)) top = 0;
+      host.scrollLeft = left;
+      host.scrollTop = top;
       return true;
     } catch (e) {
       return false;
     }
   }
 
-  function panByCols(n) {
+  function scrollToProjectEdge(which) {
     if (!host) return;
-    scrollGanttTo(host.scrollLeft + n * colPx * (ganttScale === "quarter" ? 1 : 3), true);
+    var maxLeft = Math.max(0, host.scrollWidth - host.clientWidth);
+    scrollGanttTo(which === "end" ? maxLeft : 0, true);
+    saveGanttScroll();
   }
 
   var panLeft = document.getElementById("gantt-pan-left");
   var panRight = document.getElementById("gantt-pan-right");
   var panToday = document.getElementById("gantt-pan-today");
-  if (panLeft) panLeft.addEventListener("click", function () { panByCols(-1); });
-  if (panRight) panRight.addEventListener("click", function () { panByCols(1); });
+  if (panLeft) panLeft.addEventListener("click", function () { scrollToProjectEdge("start"); });
+  if (panRight) panRight.addEventListener("click", function () { scrollToProjectEdge("end"); });
   if (panToday) panToday.addEventListener("click", function () {
     scrollGanttTo(todayScrollLeft(), true);
     saveGanttScroll();
   });
 
-  // После reload — прежний скролл; иначе «сегодня»
-  requestAnimationFrame(function () {
+  function initGanttScroll() {
     if (!restoreGanttScroll()) scrollGanttTo(todayScrollLeft(), false);
     scheduleDraw();
+  }
+
+  window.addEventListener("resize", scheduleDraw);
+
+  // После reload — прежний скролл (X и Y); иначе «сегодня»
+  requestAnimationFrame(function () {
+    requestAnimationFrame(initGanttScroll);
   });
+  window.addEventListener("load", function () {
+    restoreGanttScroll();
+    scheduleDraw();
+  }, { once: true });
 })();
 
