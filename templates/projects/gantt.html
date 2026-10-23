@@ -4,9 +4,9 @@
 
 {% block head %}
 
-<link rel="stylesheet" href="{{ url_for('static', filename='css/projects.css') }}?v=89">
+<link rel="stylesheet" href="{{ url_for('static', filename='css/projects.css') }}?v=99">
 
-<script defer src="{{ url_for('static', filename='js/projects-gantt.js') }}?v=65"></script>
+<script defer src="{{ url_for('static', filename='js/projects-gantt.js') }}?v=67"></script>
 
 {% endblock %}
 
@@ -29,8 +29,8 @@
 
     {% if gantt_can_edit %}
     <span class="projects-gantt-toolbar-sep"></span>
-    <button type="button" class="btn btn-outline btn-sm" id="gantt-link-mode-btn" data-gantt-link-toggle>Связать стрелкой</button>
-    <span class="muted projects-gantt-link-hint" id="gantt-link-hint" hidden>Клик: предшественник, затем последователь (или ПКМ по задаче)</span>
+    <button type="button" class="btn btn-outline btn-sm" id="gantt-link-mode-btn" data-gantt-link-toggle>Выполнить после…</button>
+    <span class="muted projects-gantt-link-hint" id="gantt-link-hint" hidden>Клик: задача, затем укажите предшествующую (или ПКМ)</span>
     {% endif %}
   </div>
 
@@ -40,9 +40,9 @@
     <button type="button" class="projects-gantt-ctx-item" data-gantt-ctx="promote" role="menuitem" hidden>Сделать отдельной задачей</button>
     <button type="button" class="projects-gantt-ctx-item" data-gantt-ctx="nest-start" role="menuitem">Сделать подзадачей…</button>
     <button type="button" class="projects-gantt-ctx-item" data-gantt-ctx="nest-finish" role="menuitem" hidden>Вложить сюда как подзадачу</button>
-    <button type="button" class="projects-gantt-ctx-item" data-gantt-ctx="start-link" role="menuitem">Сделать предшественником (стрелка)</button>
-    <button type="button" class="projects-gantt-ctx-item" data-gantt-ctx="clear-predecessors" role="menuitem" hidden>Очистить предшественника</button>
-    <button type="button" class="projects-gantt-ctx-item" data-gantt-ctx="finish-link" role="menuitem" hidden>Связать сюда как последователя</button>
+    <button type="button" class="projects-gantt-ctx-item" data-gantt-ctx="start-link" role="menuitem">Выполнить после…</button>
+    <button type="button" class="projects-gantt-ctx-item" data-gantt-ctx="clear-predecessors" role="menuitem" hidden>Убрать «выполнить после»</button>
+    <button type="button" class="projects-gantt-ctx-item" data-gantt-ctx="finish-link" role="menuitem" hidden>Указать предшествующую задачу</button>
     <button type="button" class="projects-gantt-ctx-item" data-gantt-ctx="cancel-link" role="menuitem" hidden>Отменить</button>
   </div>
   {% endif %}
@@ -160,15 +160,21 @@
         <div class="projects-gantt-group-head">
 
           <div class="projects-gantt-side projects-gantt-group-title">
-
-            <strong>{{ group.title }}</strong>
-
-            {% if group.period_label %}
-            <span class="muted projects-gantt-group-dates">{{ group.period_label }}</span>
-            {% elif group.deadline_label %}
-            <span class="muted projects-gantt-group-dates">до {{ group.deadline_label }}</span>
-            {% endif %}
-
+            <div class="projects-gantt-group-title-row">
+              <div class="projects-gantt-group-title-text">
+                <strong>{{ group.title }}</strong>
+                {% if group.period_label %}
+                <span class="muted projects-gantt-group-dates">{{ group.period_label }}</span>
+                {% elif group.deadline_label %}
+                <span class="muted projects-gantt-group-dates">до {{ group.deadline_label }}</span>
+                {% endif %}
+              </div>
+              {% if gantt_can_edit and group.project_id %}
+              <a class="projects-gantt-icon-btn projects-gantt-group-add"
+                 href="{{ url_for('projects.task_new', project=group.project_id, arm_view='gantt') }}"
+                 title="Создать задачу" aria-label="Создать задачу">＋</a>
+              {% endif %}
+            </div>
           </div>
 
           <div class="projects-gantt-timeline projects-gantt-group-band"></div>

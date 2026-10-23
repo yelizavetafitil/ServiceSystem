@@ -55,10 +55,14 @@ from servicesystem.project_management.services import (
     is_project_member,
     user_can_create_task,
     user_can_edit_task,
+    user_can_edit_task_plan,
+    user_can_manage_collaborators,
     user_can_manage_project,
     user_can_reschedule_gantt,
     user_can_view_custom_field,
     user_can_view_gantt,
+    user_can_view_others_time_logs,
+    user_can_view_week_calendar,
 )
 
 bp = Blueprint("projects", __name__)
@@ -72,28 +76,35 @@ _ARM_FILTER_ASSIGNEE_KEY = "projects_arm_filter_assignee"
 _ARM_BACK_VIEW_KEY = "projects_arm_back_view"
 _ARM_VIEWS = ("kanban", "week", "calendar", "gantt")
 
+
+def _default_arm_view() -> str:
+    """Админ/аудитор (ГИП) — Гант; исполнители — канбан."""
+    return "gantt" if user_can_view_gantt(current_user) else "kanban"
+
 KANBAN_LABELS = {
     "todo": "К исполнению",
     "in_progress": "В работе",
     "review": "На верификации",
     "done": "Выполнено",
+    "rejected": "Отклонено",
+    "archived": "Архив",
 }
 
-# UI: blocks и blocked_by — одна зависимость «предшественник» (FS); в БД blocked_by остаётся для старых записей
+# UI: blocks и blocked_by — «выполнить после» (FS); в БД blocked_by остаётся для старых записей
 PROJECT_LINK_LABELS = {
-    "blocks": "Предшественник",
-    "blocked_by": "Предшественник",
+    "blocks": "Выполнить после",
+    "blocked_by": "Выполнить после",
     "related": "Связанная",
 }
 
-# Выбор при добавлении связи на карточке: предшественник = другая задача → текущая (blocks)
+# Выбор при добавлении связи на карточке: другая задача → текущая (blocks)
 PROJECT_LINK_UI_CHOICES = (
-    ("predecessor", "Предшественник"),
+    ("predecessor", "Выполнить после"),
     ("related", "Связанная"),
 )
 
 GANTT_LINK_TYPE_LABELS = {
-    "blocks": "Предшественник (конец → начало)",
+    "blocks": "Выполнить после (конец → начало)",
     "related": "Связанная",
 }
 
@@ -240,7 +251,7 @@ def _parse_stage_cost(raw) -> object:
 @login_required
 def index():
     _staff_or_curator()
-    view = request.args.get("view", "kanban")
+    view = request.args.get("view") or _default_arm_view()
     return redirect(url_for("projects.arm", view=view))
 
 
@@ -248,12 +259,15 @@ def index():
 @login_required
 def arm():
     _staff_or_curator()
-    view = (request.args.get("view") or "kanban").lower()
+    view = (request.args.get("view") or _default_arm_view()).lower()
     if view not in _ARM_VIEWS:
-        view = "kanban"
-    # Гант / неделя / календарь — планирование ГИП; исполнители — канбан (список/доски)
-    if view in ("gantt", "week", "calendar") and not user_can_view_gantt(current_user):
-        flash("Диаграмма Ганта и планирование доступны только ГИП.", "warning")
+        view = _default_arm_view()
+    # Гант — только ГИП; неделя/календарь — всем сотрудникам (в т.ч. исполнителям)
+    if view == "gantt" and not user_can_view_gantt(current_user):
+        flash("Диаграмма Ганта доступна только ГИП.", "warning")
+        return redirect(url_for("projects.arm", view="kanban", project=request.args.get("project")))
+    if view in ("week", "calendar") and not user_can_view_week_calendar(current_user):
+        flash("Календарь и неделя доступны сотрудникам.", "warning")
         return redirect(url_for("projects.arm", view="kanban", project=request.args.get("project")))
     if current_user.is_staff:
         try:
@@ -413,10 +427,12 @@ def _remember_arm_back(view: str | None = None, project_id: int | None = None) -
 
 def _arm_back_url(*, project_id: int | None = None) -> str:
     """Ссылка «К модулю проектов» — тот же view (Гант/канбан/…), откуда пришли."""
-    view = session.get(_ARM_BACK_VIEW_KEY) or "kanban"
+    view = session.get(_ARM_BACK_VIEW_KEY) or _default_arm_view()
     if view not in _ARM_VIEWS:
+        view = _default_arm_view()
+    if view == "gantt" and not user_can_view_gantt(current_user):
         view = "kanban"
-    if view in ("gantt", "week", "calendar") and not user_can_view_gantt(current_user):
+    elif view in ("week", "calendar") and not user_can_view_week_calendar(current_user):
         view = "kanban"
     pid = project_id if project_id is not None else session.get(_ARM_FILTER_PROJECT_KEY)
     kwargs: dict = {"view": view}
@@ -784,6 +800,12 @@ def manage_edit(pid):
             snapped = reschedule_project_tasks_to_workdays(proj)
             db.session.commit()
             flash("Сохранено.", "success")
+            if proj.customer_curator_id:
+                flash(
+                    "Куратору-заказчику выдана роль и доступ «Подключён»; "
+                    "срок договора при необходимости продлён до окна проекта.",
+                    "info",
+                )
             if snapped:
                 flash(
                     f"Сроки {snapped} задач сдвинуты с нерабочих дней "
@@ -1226,12 +1248,15 @@ def task_detail(tid):
         blocked = True
     subtasks = ProjectTask.query.filter_by(parent_id=task.id).all()
     collaborator_ids = {c.user_id for c in task.collaborators}
-    from servicesystem.project_management.models import ProjectTimeLog
+    from servicesystem.project_management.models import ProjectTimeLog, ProjectTaskChecklistItem
 
-    time_logs = (
-        ProjectTimeLog.query.filter_by(task_id=task.id)
-        .order_by(ProjectTimeLog.created_at.desc())
-        .limit(20)
+    time_q = ProjectTimeLog.query.filter_by(task_id=task.id)
+    if not user_can_view_others_time_logs(current_user):
+        time_q = time_q.filter_by(user_id=current_user.id)
+    time_logs = time_q.order_by(ProjectTimeLog.created_at.desc()).limit(20).all()
+    checklist_items = (
+        ProjectTaskChecklistItem.query.filter_by(task_id=task.id)
+        .order_by(ProjectTaskChecklistItem.sort_order, ProjectTaskChecklistItem.id)
         .all()
     )
     from servicesystem.project_management.models import ProjectTaskAttachment
@@ -1308,6 +1333,11 @@ def task_detail(tid):
         arm_back_view=session.get(_ARM_BACK_VIEW_KEY),
         collaborator_ids=collaborator_ids,
         time_logs=time_logs,
+        checklist_items=checklist_items,
+        can_edit_task=user_can_edit_task(current_user, task),
+        can_plan_task=user_can_edit_task_plan(current_user, task),
+        can_manage_collaborators=user_can_manage_collaborators(current_user, task),
+        can_view_others_time=user_can_view_others_time_logs(current_user),
         link_type_choices=list(PROJECT_LINK_UI_CHOICES),
         **projects_ui_context(),
     )

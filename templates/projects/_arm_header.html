@@ -3,12 +3,12 @@
     <h1>Управление проектами</h1>
     <div class="projects-view-tabs" role="tablist">
       {% if current_user.is_admin or current_user.is_auditor %}
-      <a class="projects-view-tab{% if view == 'gantt' %} is-active{% endif %}" href="{{ url_for('projects.arm', view='gantt', project=filter_project) }}">Ганта</a>
-      <a class="projects-view-tab{% if view == 'week' %} is-active{% endif %}" href="{{ url_for('projects.arm', view='week', project=filter_project) }}">Неделя</a>
+      <a class="projects-view-tab{% if view == 'gantt' %} is-active{% endif %}" href="{{ url_for('projects.arm', view='gantt', project=filter_project) }}" title="Диаграмма Ганта">Гант</a>
       {% endif %}
       <a class="projects-view-tab{% if view == 'kanban' %} is-active{% endif %}" href="{{ url_for('projects.arm', view='kanban', project=filter_project) }}">Канбан</a>
-      {% if current_user.is_admin or current_user.is_auditor %}
+      {% if current_user.is_admin or current_user.is_auditor or current_user.is_executor %}
       <a class="projects-view-tab{% if view == 'calendar' %} is-active{% endif %}" href="{{ url_for('projects.arm', view='calendar', project=filter_project) }}">Календарь</a>
+      <a class="projects-view-tab{% if view == 'week' %} is-active{% endif %}" href="{{ url_for('projects.arm', view='week', project=filter_project) }}">Неделя</a>
       {% endif %}
     </div>
   </div>
@@ -117,12 +117,8 @@
       </form>
     </div>
 
-    {% if current_user.is_staff %}
-    <a href="{{ url_for('projects.calendar_settings') }}" class="btn btn-outline btn-sm">Синхронизация</a>
-    {% endif %}
-
     {% if current_user.is_auditor or current_user.is_admin %}
-    <a href="{{ url_for('projects.manage_list') }}" class="btn btn-outline btn-sm">Управление</a>
+    <a href="{{ url_for('projects.manage_list') }}" class="btn btn-outline btn-sm">Управление проектами</a>
     {% if filter_project %}
     <a href="{{ url_for('projects.task_new', project=filter_project) }}"
        class="btn btn-primary btn-sm"
@@ -132,6 +128,19 @@
        class="btn btn-primary btn-sm"
        title="Задача верхнего уровня — выберите проект в форме">Новая задача</a>
     {% endif %}
+    {% endif %}
+
+    {% if current_user.is_staff %}
+    <a href="{{ url_for('projects.calendar_settings') }}"
+       class="btn btn-outline btn-sm projects-arm-icon-btn"
+       title="Синхронизация календарей"
+       aria-label="Синхронизация календарей">
+      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+        <rect x="3" y="4" width="18" height="18" rx="2"/>
+        <path d="M16 2v4M8 2v4M3 10h18"/>
+        <path d="M8 15l-2 2 2 2M16 15l2 2-2 2"/>
+      </svg>
+    </a>
     {% endif %}
   </div>
 </div>

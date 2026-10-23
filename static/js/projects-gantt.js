@@ -520,7 +520,8 @@
 
 
   var linkMode = false;
-  var linkFromId = null;
+  var linkFromId = null; // предшествующая (уже выбрана)
+  var linkToId = null; // задача «выполнить после…» (ждёт указания предшествующей)
   var nestMode = false;
   var nestChildId = null;
   var linkBtn = document.getElementById("gantt-link-mode-btn");
@@ -550,23 +551,30 @@
     }
     if (linkMode) {
       linkHint.hidden = false;
-      linkHint.textContent = linkFromId
-        ? "Теперь выберите последователя (клик или ПКМ)"
-        : "Выберите предшественника, затем последователя";
+      if (linkToId) {
+        linkHint.textContent = "Укажите предшествующую задачу (клик или ПКМ)";
+      } else if (linkFromId) {
+        linkHint.textContent = "Теперь выберите задачу, которая выполнится после неё";
+      } else {
+        linkHint.textContent = "Клик: задача → укажите предшествующую (или ПКМ «Выполнить после…»)";
+      }
       return;
     }
     linkHint.hidden = true;
   }
 
-  function setLinkMode(on, fromId) {
+  function setLinkMode(on, opts) {
     if (on) setNestMode(false);
+    opts = opts || {};
     linkMode = !!on;
-    linkFromId = fromId || null;
+    linkFromId = on ? (opts.fromId || null) : null;
+    linkToId = on ? (opts.toId || null) : null;
     if (linkBtn) linkBtn.classList.toggle("is-active", linkMode);
     chart.classList.toggle("is-link-mode", linkMode);
     clearLinkSourceMarks();
-    if (linkFromId) {
-      var src = chart.querySelector('.projects-gantt-bar[data-task-id="' + linkFromId + '"]');
+    var markId = linkToId || linkFromId;
+    if (markId) {
+      var src = chart.querySelector('.projects-gantt-bar[data-task-id="' + markId + '"]');
       if (src) src.classList.add("is-link-source");
     }
     updateModeHint();
@@ -602,7 +610,13 @@
     var clearPredBtn = ctxMenu.querySelector('[data-gantt-ctx="clear-predecessors"]');
     var finishBtn = ctxMenu.querySelector('[data-gantt-ctx="finish-link"]');
     var cancelBtn = ctxMenu.querySelector('[data-gantt-ctx="cancel-link"]');
-    var canFinish = !!(linkMode && linkFromId && String(linkFromId) !== String(ctxTaskId));
+    var canPickPredecessor = !!(
+      linkMode && linkToId && String(linkToId) !== String(ctxTaskId)
+    );
+    var canPickSuccessor = !!(
+      linkMode && linkFromId && !linkToId && String(linkFromId) !== String(ctxTaskId)
+    );
+    var canFinish = canPickPredecessor || canPickSuccessor;
     var canNestFinish = !!(nestMode && nestChildId && String(nestChildId) !== String(ctxTaskId));
     var waits = parseBarLinks(bar, "data-waits");
     var hasPredecessors = waits.some(function (w) { return w && w.link_id; });
@@ -614,10 +628,15 @@
     if (promoteBtn) promoteBtn.hidden = !hasParent || nestMode || linkMode;
     if (nestStartBtn) nestStartBtn.hidden = !!nestMode || !!linkMode;
     if (nestFinishBtn) nestFinishBtn.hidden = !canNestFinish;
-    // Уже есть предшественник — предложить очистить; иначе — создать стрелку
-    if (startBtn) startBtn.hidden = hasPredecessors || nestMode;
+    // «Выполнить после…» всегда доступно; если связь уже есть — ещё и «убрать»
+    if (startBtn) startBtn.hidden = !!nestMode || !!linkMode;
     if (clearPredBtn) clearPredBtn.hidden = !hasPredecessors || nestMode || linkMode;
-    if (finishBtn) finishBtn.hidden = !canFinish;
+    if (finishBtn) {
+      finishBtn.hidden = !canFinish;
+      finishBtn.textContent = canPickPredecessor
+        ? "Указать предшествующую задачу"
+        : "Выполнить после этой задачи";
+    }
     if (cancelBtn) cancelBtn.hidden = !(linkMode || nestMode);
     ctxMenu.hidden = false;
     var pad = 8;
@@ -632,7 +651,7 @@
   if (linkBtn) {
     linkBtn.addEventListener("click", function () {
       if (linkMode) setLinkMode(false);
-      else setLinkMode(true);
+      else setLinkMode(true, {});
     });
   }
 
@@ -733,7 +752,8 @@
         return;
       }
       if (action === "start-link") {
-        setLinkMode(true, taskId);
+        // Эта задача выполнится после выбранной следующей (предшествующей)
+        setLinkMode(true, { toId: taskId });
         hideCtxMenu();
         return;
       }
@@ -745,10 +765,17 @@
         clearPredecessorLinks(ids);
         return;
       }
-      if (action === "finish-link" && linkFromId) {
-        createGanttLink(linkFromId, taskId);
-        hideCtxMenu();
-        return;
+      if (action === "finish-link") {
+        if (linkToId && String(linkToId) !== String(taskId)) {
+          createGanttLink(taskId, linkToId);
+          hideCtxMenu();
+          return;
+        }
+        if (linkFromId && String(linkFromId) !== String(taskId)) {
+          createGanttLink(linkFromId, taskId);
+          hideCtxMenu();
+          return;
+        }
       }
       if (action === "cancel-link") {
         setLinkMode(false);
@@ -764,11 +791,11 @@
     if (typeof window.ssConfirm === "function") {
       ok = await window.ssConfirm(
         linkIds.length > 1
-          ? "Убрать всех предшественников у этой задачи?"
-          : "Убрать предшественника у этой задачи?",
+          ? "Убрать все связи «выполнить после» у этой задачи?"
+          : "Убрать связь «выполнить после» у этой задачи?",
         {
-          title: "Очистить предшественника",
-          confirmLabel: "Очистить",
+          title: "Убрать «выполнить после»",
+          confirmLabel: "Убрать",
           danger: true,
         }
       );
@@ -1052,8 +1079,13 @@
         return;
       }
       if (linkMode) {
+        if (linkToId) {
+          if (String(linkToId) === String(id)) return;
+          createGanttLink(id, linkToId);
+          return;
+        }
         if (!linkFromId) {
-          setLinkMode(true, id);
+          setLinkMode(true, { toId: id });
           return;
         }
         if (String(linkFromId) === String(id)) return;

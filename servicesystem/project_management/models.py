@@ -10,8 +10,8 @@ def _utcnow():
     return datetime.now(timezone.utc)
 
 
-# Kanban / lifecycle (ТЗ 2.3)
-TASK_KANBAN_COLUMNS = ("todo", "in_progress", "review", "done")
+# Kanban / lifecycle (ТЗ 2.3); rejected/archived — закрытие без удаления из БД
+TASK_KANBAN_COLUMNS = ("todo", "in_progress", "review", "done", "rejected", "archived")
 # blocks = предшественник→последователь (FS); blocked_by — устаревший синоним (обратное направление)
 TASK_LINK_TYPES = ("blocks", "blocked_by", "related")
 
@@ -158,6 +158,13 @@ class ProjectTask(db.Model):
         lazy="dynamic",
         cascade="all, delete-orphan",
     )
+    checklist_items = db.relationship(
+        "ProjectTaskChecklistItem",
+        back_populates="task",
+        lazy="dynamic",
+        cascade="all, delete-orphan",
+        order_by="ProjectTaskChecklistItem.sort_order, ProjectTaskChecklistItem.id",
+    )
 
 
 class ProjectTaskCollaborator(db.Model):
@@ -271,6 +278,23 @@ class ProjectTimeLog(db.Model):
 
     task = db.relationship("ProjectTask", back_populates="time_logs")
     user = db.relationship("User")
+
+
+class ProjectTaskChecklistItem(db.Model):
+    """Чек-лист внутри карточки задачи (исполнитель ведёт сам)."""
+
+    __tablename__ = "project_task_checklist_items"
+
+    id = db.Column(db.Integer, primary_key=True)
+    task_id = db.Column(db.Integer, db.ForeignKey("project_tasks.id"), nullable=False, index=True)
+    title = db.Column(db.String(512), nullable=False)
+    is_done = db.Column(db.Boolean, default=False, nullable=False)
+    sort_order = db.Column(db.Integer, default=0)
+    created_by_id = db.Column(db.Integer, db.ForeignKey("users.id"))
+    created_at = db.Column(db.DateTime(timezone=True), default=_utcnow)
+
+    task = db.relationship("ProjectTask", back_populates="checklist_items")
+    created_by = db.relationship("User", foreign_keys=[created_by_id])
 
 
 class ProjectStageAttachment(db.Model):

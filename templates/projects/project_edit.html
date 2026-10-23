@@ -76,8 +76,9 @@
               {% endfor %}
             </select>
           </div>
+          <p class="projects-cms-hint muted">При назначении заказчику выдаётся роль «Куратор-заказчик», доступ «Подключён», срок договора продлевается до окна проекта.</p>
           {% if project.customer_curator_active_until %}
-          <p class="projects-cms-hint muted">Роль куратора-заказчика активна до {{ project.customer_curator_active_until.strftime('%d.%m.%Y') }}</p>
+          <p class="projects-cms-hint muted">Доступ куратора по проекту активен до {{ project.customer_curator_active_until.strftime('%d.%m.%Y') }}</p>
           {% endif %}
           <fieldset class="projects-workdays-opts">
             <legend class="projects-workdays-legend">Рабочие дни</legend>

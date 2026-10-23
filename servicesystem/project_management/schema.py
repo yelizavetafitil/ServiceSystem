@@ -51,8 +51,24 @@ PROJECT_SCHEMA_PATCHES: tuple[str, ...] = (
 )
 
 
+PROJECT_SCHEMA_DDL: tuple[str, ...] = (
+    """
+    CREATE TABLE IF NOT EXISTS project_task_checklist_items (
+      id SERIAL PRIMARY KEY,
+      task_id INTEGER NOT NULL REFERENCES project_tasks(id) ON DELETE CASCADE,
+      title VARCHAR(512) NOT NULL,
+      is_done BOOLEAN NOT NULL DEFAULT FALSE,
+      sort_order INTEGER DEFAULT 0,
+      created_by_id INTEGER REFERENCES users(id),
+      created_at TIMESTAMPTZ DEFAULT NOW()
+    )
+    """,
+    "CREATE INDEX IF NOT EXISTS ix_project_task_checklist_items_task_id ON project_task_checklist_items (task_id)",
+)
+
+
 def apply_project_schema_patches() -> None:
-    for sql in PROJECT_SCHEMA_PATCHES:
+    for sql in PROJECT_SCHEMA_PATCHES + PROJECT_SCHEMA_DDL:
         try:
             db.session.execute(text(sql))
             db.session.commit()

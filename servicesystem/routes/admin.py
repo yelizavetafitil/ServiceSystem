@@ -146,7 +146,11 @@ def contract_edit(cid):
         contract.status = request.form["status"]
         contract.notes = request.form.get("notes", "")
         contract.document_url = request.form.get("document_url", "").strip() or contract.document_url
-        users_count = User.query.filter_by(contract_id=cid, role="customer", is_active=True).count()
+        users_count = User.query.filter(
+            User.contract_id == cid,
+            User.role.in_(("customer", "customer_curator")),
+            User.is_active.is_(True),
+        ).count()
         details = f"status={contract.status}"
         if contract.service_end_date != old_end:
             details += f"; service_end_date={old_end}->{contract.service_end_date}; users={users_count}"
@@ -266,6 +270,9 @@ def user_edit(uid):
         user.position = request.form.get("position", "")
         user.role = request.form["role"]
         if user.role == "admin":
+            user.is_active = True
+        elif user.role == "customer_curator":
+            # Куратор-заказчик: в админке всегда «Подключён»
             user.is_active = True
         else:
             user.is_active = request.form.get("is_active") == "1"

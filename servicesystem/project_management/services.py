@@ -130,18 +130,62 @@ def user_can_view_gantt(user: User) -> bool:
     return bool(user and (user.is_admin or user.is_auditor))
 
 
+def user_can_view_week_calendar(user: User) -> bool:
+    """Просмотр недели и календаря — admin, auditor и executor (без прав на Гант)."""
+    return bool(user and (user.is_admin or user.is_auditor or user.is_executor))
+
+
 def user_can_reschedule_gantt(user: User, task: ProjectTask | None = None) -> bool:
     """Сроки на Ганте двигают только admin/auditor."""
     return user_can_view_gantt(user)
 
 
 def update_customer_curator_window(project: Project) -> None:
-    """ТЗ 1.3: активность куратора-заказчика = срок проекта + гарантия по договору."""
+    """ТЗ 1.3: окно активности куратора + доступ по договору.
+
+    Назначение заказчика куратором проекта означает:
+    - роль customer_curator (доступ в ЛК проектов);
+    - статус «Подключён» (is_active);
+    - договор активен и срок обслуживания не короче окна куратора.
+    """
     end = project.deadline
     if project.contract and project.contract.service_end_date:
         if not end or project.contract.service_end_date > end:
             end = project.contract.service_end_date
+    if not end and project.planned_start:
+        end = project.planned_start
     project.customer_curator_active_until = end
+
+    curator = None
+    if project.customer_curator_id:
+        curator = db.session.get(User, project.customer_curator_id)
+    if not curator and getattr(project, "customer_curator", None):
+        curator = project.customer_curator
+    if not curator:
+        return
+
+    # Роль куратора-заказчика и доступ «Подключён»
+    if curator.role in ("customer", "customer_curator"):
+        curator.role = "customer_curator"
+    curator.is_active = True
+
+    contract = curator.contract or project.contract
+    if not contract:
+        return
+
+    # Договор открыт для работы: активный статус + продление срока при необходимости
+    if contract.status in ("suspended", "terminated") or (
+        contract.is_expired and contract.status in ("active_warranty", "active_post_warranty")
+    ):
+        # Сохраняем постгарантию, если уже была; иначе гарантия
+        if contract.status != "active_post_warranty":
+            contract.status = "active_warranty"
+    if end and (not contract.service_end_date or contract.service_end_date < end):
+        contract.service_end_date = end
+        if contract.master_key_expires_at and contract.master_key_expires_at < end:
+            contract.master_key_expires_at = end
+        elif not contract.master_key_expires_at:
+            contract.master_key_expires_at = end
 
 
 def sync_calendar_events_for_task(task: ProjectTask) -> None:
@@ -1455,6 +1499,33 @@ def user_can_edit_task(user: User, task: ProjectTask) -> bool:
     if task.created_by_id == user.id:
         return True
     return task.collaborators.filter_by(user_id=user.id).first() is not None
+
+
+def user_can_edit_task_plan(user: User, task: ProjectTask | None = None) -> bool:
+    """Планирование задачи (сроки, этап, исполнитель, иерархия) — только ГИП/админ.
+
+    Исполнитель правит контент: статус, чек-лист, файлы, комментарии, время, соисполнители.
+    """
+    return bool(user and (user.is_admin or user.is_auditor))
+
+
+def user_can_delete_task(user: User, task: ProjectTask | None = None) -> bool:
+    """Удаление из БД — только ГИП/админ. Исполнитель — статус Отклонено/Архив."""
+    return bool(user and (user.is_admin or user.is_auditor))
+
+
+def user_can_manage_collaborators(user: User, task: ProjectTask) -> bool:
+    """Соисполнители: ГИП/админ или исполнитель своей карточки."""
+    if not user or not task:
+        return False
+    if user.is_admin or user.is_auditor:
+        return True
+    return user_can_edit_task(user, task)
+
+
+def user_can_view_others_time_logs(user: User) -> bool:
+    """Чужие тайм-логи видят только ГИП/админ; исполнитель — только свои."""
+    return bool(user and (user.is_admin or user.is_auditor))
 
 
 def user_can_view_task(user: User, task: ProjectTask) -> bool:

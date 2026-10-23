@@ -37,7 +37,7 @@
         <a href="{{ url_for('cabinet.plugins') }}">Плагины</a>
       {% elif current_user.is_staff %}
         <a href="{{ url_for('tickets.staff_queue') }}">Очередь</a>
-        <a href="{{ url_for('projects.arm', view='kanban') }}">Проекты</a>
+        <a href="{{ url_for('projects.arm', view=('gantt' if current_user.is_admin or current_user.is_auditor else 'kanban')) }}">Проекты</a>
         <a href="{{ url_for('cabinet.news_list') }}">Новости</a>
         <a href="{{ url_for('admin.directory') }}">Контакты</a>
         <a href="{{ url_for('cabinet.tutorials') }}">База</a>

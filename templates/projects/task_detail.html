@@ -5,9 +5,9 @@
 {% block title %}{{ task.title }}{% endblock %}
 
 {% block head %}
-<link rel="stylesheet" href="{{ url_for('static', filename='css/projects.css') }}?v=77">
+<link rel="stylesheet" href="{{ url_for('static', filename='css/projects.css') }}?v=101">
 <script src="{{ url_for('static', filename='js/task-date-duration.js') }}?v=1"></script>
-<script src="{{ url_for('static', filename='js/task-project-tree-nav.js') }}?v=1"></script>
+<script src="{{ url_for('static', filename='js/task-project-tree-nav.js') }}?v=4"></script>
 {% endblock %}
 
 {% block content %}
@@ -39,11 +39,14 @@
     {% if task.project_id %}
     <aside class="card projects-cms-card projects-task-tree-panel" aria-label="Структура проекта">
       <h2 class="projects-task-tree-heading">Структура проекта</h2>
-      <p class="muted projects-cms-hint">Этапы и задачи · текущая выделена.</p>
       <script type="application/json" id="task-tree-stages-json">{{ task_tree_stages|default([])|tojson }}</script>
       <script type="application/json" id="task-tree-tasks-json">{{ task_tree_tasks|default([])|tojson }}</script>
       <script type="application/json" id="task-tree-project-json">{{ task_tree_project|default({'name': 'Проект', 'dates_label': ''})|tojson }}</script>
-      <div id="task-project-tree-nav" class="projects-task-tree" data-current-task-id="{{ task.id }}"></div>
+      <div id="task-project-tree-nav" class="projects-task-tree"
+           data-current-task-id="{{ task.id }}"
+           data-project-id="{{ task.project_id }}"
+           data-arm-view="{{ arm_back_view or '' }}"
+           data-can-create="{{ '1' if current_user.is_admin or current_user.is_auditor else '0' }}"></div>
     </aside>
     {% endif %}
 
@@ -68,62 +71,57 @@
 
       <div class="form-group"><label>Описание</label><textarea name="description" class="form-control" rows="3">{{ task.description or '' }}</textarea></div>
 
+      {% set can_plan = can_plan_task if can_plan_task is defined else (current_user.is_admin or current_user.is_auditor) %}
+
       <div class="form-row">
 
         <div class="form-group"><label>Критичность</label>
-
+          {% if can_plan %}
           <select name="priority" class="form-control">
-
             {% for p, lbl in project_priority_labels.items() %}
-
             <option value="{{ p }}" {% if task.priority == p %}selected{% endif %}>{{ lbl }}</option>
-
             {% endfor %}
-
           </select>
-
+          {% else %}
+          <input type="text" class="form-control" value="{{ project_priority_labels.get(task.priority, task.priority) }}" readonly disabled>
+          {% endif %}
         </div>
 
         <div class="form-group"><label>Статус</label>
-
           <select name="kanban_status" class="form-control">
-
             {% for k, lbl in kanban_labels.items() %}
-
             <option value="{{ k }}" {% if task.kanban_status == k %}selected{% endif %}>{{ lbl }}</option>
-
             {% endfor %}
-
           </select>
-
         </div>
 
       </div>
 
       <div class="form-row projects-task-date-row">
-
         <div class="form-group"><label for="task-edit-start-date">Начало</label>
           <input type="date" name="start_date" id="task-edit-start-date" class="form-control" value="{{ task.start_date or '' }}"
                  {% if parent_window_start %}min="{{ parent_window_start.isoformat() }}"{% endif %}
-                 {% if parent_window_due %}max="{{ parent_window_due.isoformat() }}"{% endif %}>
+                 {% if parent_window_due %}max="{{ parent_window_due.isoformat() }}"{% endif %}
+                 {% if not can_plan %}readonly disabled{% endif %}>
         </div>
-
         <div class="form-group form-group--duration">
           <label for="task-edit-duration-days">Дней</label>
           <input type="number" id="task-edit-duration-days" class="form-control" min="1" max="9999" step="1"
                  value="1" inputmode="numeric" autocomplete="off"
-                 title="Длительность{% if task.project and (task.project.skip_weekends or task.project.skip_public_holidays) %} в рабочих днях{% endif %}">
+                 title="Длительность{% if task.project and (task.project.skip_weekends or task.project.skip_public_holidays) %} в рабочих днях{% endif %}"
+                 {% if not can_plan %}readonly disabled{% endif %}>
         </div>
-
         <div class="form-group"><label for="task-edit-due-date">Дедлайн</label>
           <input type="date" name="due_date" id="task-edit-due-date" class="form-control" value="{{ task.due_date or '' }}"
                  {% if parent_window_start %}min="{{ parent_window_start.isoformat() }}"{% endif %}
-                 {% if parent_window_due %}max="{{ parent_window_due.isoformat() }}"{% endif %}>
+                 {% if parent_window_due %}max="{{ parent_window_due.isoformat() }}"{% endif %}
+                 {% if not can_plan %}readonly disabled{% endif %}>
         </div>
-
       </div>
       <div class="muted projects-task-date-row-hints">
-        {% if task.project and (task.project.skip_weekends or task.project.skip_public_holidays) %}
+        {% if not can_plan %}
+        <p class="projects-cms-hint">Сроки и этап задаёт ГИП — только просмотр.</p>
+        {% elif task.project and (task.project.skip_weekends or task.project.skip_public_holidays) %}
         <p class="projects-cms-hint projects-task-duration-hint">Длительность в рабочих днях (выходные и праздники проекта).</p>
         {% else %}
         <p class="projects-cms-hint projects-task-duration-hint">Длительность в календарных днях (включая начало).</p>
@@ -145,15 +143,19 @@
       </div>
 
       <div class="form-group"><label>Этап</label>
+        {% if can_plan %}
         <select name="stage_id" class="form-control">
           <option value="">— без этапа —</option>
           {% for s in project_stages %}
           <option value="{{ s.id }}" {% if task.stage_id == s.id %}selected{% endif %}>{{ s.title }}</option>
           {% endfor %}
         </select>
+        {% else %}
+        <input type="text" class="form-control" value="{% if task.stage %}{{ task.stage.title }}{% else %}— без этапа —{% endif %}" readonly disabled>
+        {% endif %}
       </div>
 
-      {% if current_user.is_admin or current_user.is_auditor or current_user.is_staff %}
+      {% if can_plan %}
       <div class="projects-task-hierarchy" data-task-hierarchy
            data-task-id="{{ task.id }}"
            data-url="{{ url_for('projects.task_hierarchy', tid=task.id) }}"
@@ -164,9 +166,7 @@
         <p class="muted projects-cms-hint">Сейчас подзадача «{{ task.parent.title }}»
           <a href="{{ url_for('projects.task_detail', tid=task.parent.id) }}">открыть родителя</a>
         </p>
-        {% if current_user.is_admin or current_user.is_auditor %}
         <button type="button" class="btn btn-outline btn-sm" data-hierarchy-promote>Сделать отдельной задачей</button>
-        {% endif %}
         {% else %}
         <p class="muted projects-cms-hint">Задача верхнего уровня (не подзадача).</p>
         {% endif %}
@@ -185,31 +185,36 @@
         </div>
         {% endif %}
       </div>
+      {% elif task.parent_id and task.parent %}
+      <p class="muted projects-cms-hint">Подзадача «{{ task.parent.title }}»
+        <a href="{{ url_for('projects.task_detail', tid=task.parent.id) }}">открыть родителя</a>
+      </p>
       {% endif %}
 
       <div class="form-group"><label>Исполнитель</label>
-
+        {% if can_plan %}
         <select name="assignee_id" class="form-control"><option value="">—</option>
-
           {% for u in executors %}<option value="{{ u.id }}" {% if task.assignee_id == u.id %}selected{% endif %}>{{ u.full_name }}</option>{% endfor %}
-
         </select>
-
+        {% else %}
+        <input type="text" class="form-control" value="{% if task.assignee %}{{ task.assignee.full_name }}{% else %}—{% endif %}" readonly disabled>
+        {% endif %}
       </div>
 
-      {% if current_user.is_auditor or current_user.is_admin %}
+      {% if can_manage_collaborators %}
 
       <div class="form-group"><label>Соисполнители</label>
 
         <select name="collaborator_ids" class="form-control" multiple size="4">
 
           {% for u in executors %}
-
+          {% if u.id != task.assignee_id %}
           <option value="{{ u.id }}" {% if u.id in collaborator_ids %}selected{% endif %}>{{ u.full_name }}</option>
-
+          {% endif %}
           {% endfor %}
 
         </select>
+        <p class="muted projects-cms-hint">Можно привлечь коллег-помощников по карточке.</p>
 
       </div>
 
@@ -224,40 +229,27 @@
       {% if current_user.is_staff %}
 
       <form method="post" action="{{ url_for('projects.task_update', tid=task.id) }}" class="inline-form">
-
         {{ csrf_field() }}<input type="hidden" name="action" value="complete">
-
         <button type="submit" class="btn btn-outline btn-sm" {% if blocked %}disabled{% endif %}>Выполнить</button>
-
       </form>
 
+      {% if can_plan %}
       {% if task.parent_id %}
       <a href="{{ url_for('projects.task_new', parent=task.parent_id, project=task.project_id) }}" class="btn btn-outline btn-sm" title="Параллельная подзадача (тот же родитель)">Ещё к родителю</a>
       {% endif %}
       <a href="{{ url_for('projects.task_new', parent=task.id) }}" class="btn btn-outline btn-sm">Подзадача ↓</a>
-
       <form method="post" action="{{ url_for('projects.task_duplicate', tid=task.id) }}" class="inline-form">
-
         {{ csrf_field() }}<input type="hidden" name="copy_subtasks" value="1">
-
         <button type="submit" class="btn btn-outline btn-sm">Дублировать</button>
-
       </form>
-
-      {% if current_user.is_auditor or current_user.is_admin %}
-
       <form method="post" action="{{ url_for('projects.task_update', tid=task.id) }}" class="inline-form"
             data-confirm="Удалить задачу безвозвратно?"
             data-confirm-title="Удаление задачи"
             data-confirm-ok="Удалить"
             data-confirm-danger>
-
         {{ csrf_field() }}<input type="hidden" name="action" value="delete">
-
         <button type="submit" class="btn btn-danger btn-sm">Удалить</button>
-
       </form>
-
       {% endif %}
 
       {% endif %}
@@ -384,6 +376,58 @@
     </div>
   </section>
 
+  <section id="task-checklist" class="card projects-task-section"
+           data-checklist
+           data-url="{{ url_for('projects.task_update', tid=task.id) }}"
+           data-csrf="{{ csrf_token() }}"
+           data-editable="{{ '1' if (can_edit_task if can_edit_task is defined else current_user.is_staff) else '0' }}">
+    <h2>Чек-лист</h2>
+    {% set checklist_ok = can_edit_task if can_edit_task is defined else current_user.is_staff %}
+    <ul class="projects-task-checklist" data-checklist-list>
+      {% for item in checklist_items|default([]) %}
+      <li class="projects-task-checklist-item{% if item.is_done %} is-done{% endif %}" data-item-id="{{ item.id }}">
+        {% if checklist_ok %}
+        <form method="post" action="{{ url_for('projects.task_update', tid=task.id) }}" class="projects-task-checklist-toggle" data-checklist-action="toggle">
+          {{ csrf_field() }}
+          <input type="hidden" name="action" value="checklist_toggle">
+          <input type="hidden" name="item_id" value="{{ item.id }}">
+          <button type="submit" class="projects-task-checklist-check" title="{% if item.is_done %}Снять отметку{% else %}Выполнено{% endif %}" aria-label="{% if item.is_done %}Снять отметку{% else %}Выполнено{% endif %}">{% if item.is_done %}✓{% else %}○{% endif %}</button>
+        </form>
+        {% else %}
+        <span class="projects-task-checklist-check" aria-hidden="true">{% if item.is_done %}✓{% else %}○{% endif %}</span>
+        {% endif %}
+        <span class="projects-task-checklist-title">{{ item.title }}</span>
+        {% if checklist_ok %}
+        <form method="post" action="{{ url_for('projects.task_update', tid=task.id) }}" class="inline-form" data-checklist-action="delete">
+          {{ csrf_field() }}
+          <input type="hidden" name="action" value="checklist_delete">
+          <input type="hidden" name="item_id" value="{{ item.id }}">
+          <button type="submit" class="btn btn-outline btn-icon-xs" title="Удалить пункт" aria-label="Удалить пункт">×</button>
+        </form>
+        {% endif %}
+      </li>
+      {% else %}
+      <li class="muted" data-checklist-empty>Пока нет пунктов — добавьте первый ниже.</li>
+      {% endfor %}
+    </ul>
+    {% if checklist_ok %}
+    <form method="post" action="{{ url_for('projects.task_update', tid=task.id) }}" class="projects-checklist-add form-row form-row--align-end" data-checklist-action="add">
+      {{ csrf_field() }}
+      <input type="hidden" name="action" value="checklist_add">
+      <div class="form-group" style="flex:1;margin-bottom:0;">
+        <label for="checklist-title-input">Новый пункт</label>
+        <input id="checklist-title-input" name="checklist_title" class="form-control" placeholder="Например: согласовать схему…" required maxlength="512" autocomplete="off">
+      </div>
+      <div class="form-group form-group--shrink" style="margin-bottom:0;">
+        <label class="projects-cms-action-label" aria-hidden="true">&nbsp;</label>
+        <button type="submit" class="btn btn-primary btn-sm">＋ Добавить</button>
+      </div>
+    </form>
+    {% else %}
+    <p class="muted projects-cms-hint">Чек-лист доступен исполнителю и соисполнителям этой задачи.</p>
+    {% endif %}
+  </section>
+
   <section id="task-comments" class="card projects-task-section">
 
     <h2>Комментарии</h2>
@@ -427,7 +471,7 @@
       </li>
     {% else %}<li class="muted">Нет</li>{% endfor %}</ul>
 
-    <h3 class="projects-cms-subheading">Предшественники этой задачи</h3>
+    <h3 class="projects-cms-subheading">Выполнить после (предшествующие задачи)</h3>
     <ul class="projects-link-list">{% for l in link_rows_in %}
       <li>
         <span>
@@ -549,7 +593,10 @@
 
     {% endif %}
 
-    <ul class="projects-time-log">{% for log in time_logs %}<li>{{ log.seconds // 60 }} мин — {{ log.user.full_name }} {{ log.created_at.strftime('%d.%m.%Y') }}</li>{% else %}<li class="muted">Записей пока нет</li>{% endfor %}</ul>
+    {% if not can_view_others_time %}
+    <p class="muted projects-cms-hint">Показаны только ваши записи времени.</p>
+    {% endif %}
+    <ul class="projects-time-log">{% for log in time_logs %}<li>{{ log.seconds // 60 }} мин — {{ log.user.full_name }} {{ log.created_at.strftime('%d.%m.%Y') }}{% if log.note %} · {{ log.note }}{% endif %}</li>{% else %}<li class="muted">Записей пока нет</li>{% endfor %}</ul>
 
     </div>
 
@@ -587,6 +634,132 @@
       dateMax: {{ (parent_window_due.isoformat() if parent_window_due else '')|tojson }},
     });
   }
+})();
+</script>
+<script>
+(function () {
+  var root = document.querySelector("[data-checklist]");
+  if (!root || root.getAttribute("data-editable") !== "1") return;
+  var list = root.querySelector("[data-checklist-list]");
+  var url = root.getAttribute("data-url");
+  var csrf = root.getAttribute("data-csrf") || (document.querySelector('meta[name="csrf-token"]') || {}).content || "";
+  var busy = false;
+
+  function escapeHtml(s) {
+    return String(s == null ? "" : s)
+      .replace(/&/g, "&amp;")
+      .replace(/</g, "&lt;")
+      .replace(/>/g, "&gt;")
+      .replace(/"/g, "&quot;");
+  }
+
+  function setEmptyVisible(show) {
+    var empty = list.querySelector("[data-checklist-empty]");
+    if (show) {
+      if (!empty) {
+        empty = document.createElement("li");
+        empty.className = "muted";
+        empty.setAttribute("data-checklist-empty", "");
+        empty.textContent = "Пока нет пунктов — добавьте первый ниже.";
+        list.appendChild(empty);
+      }
+    } else if (empty) {
+      empty.remove();
+    }
+  }
+
+  function applyToggleState(li, isDone) {
+    li.classList.toggle("is-done", !!isDone);
+    var btn = li.querySelector(".projects-task-checklist-check");
+    if (!btn) return;
+    btn.textContent = isDone ? "✓" : "○";
+    var label = isDone ? "Снять отметку" : "Выполнено";
+    btn.setAttribute("title", label);
+    btn.setAttribute("aria-label", label);
+  }
+
+  function buildItem(item) {
+    var li = document.createElement("li");
+    li.className = "projects-task-checklist-item" + (item.is_done ? " is-done" : "");
+    li.setAttribute("data-item-id", String(item.id));
+    li.innerHTML =
+      '<form method="post" action="' + escapeHtml(url) + '" class="projects-task-checklist-toggle" data-checklist-action="toggle">' +
+        '<input type="hidden" name="csrf_token" value="' + escapeHtml(csrf) + '">' +
+        '<input type="hidden" name="action" value="checklist_toggle">' +
+        '<input type="hidden" name="item_id" value="' + item.id + '">' +
+        '<button type="submit" class="projects-task-checklist-check" title="Выполнено" aria-label="Выполнено">○</button>' +
+      "</form>" +
+      '<span class="projects-task-checklist-title"></span>' +
+      '<form method="post" action="' + escapeHtml(url) + '" class="inline-form" data-checklist-action="delete">' +
+        '<input type="hidden" name="csrf_token" value="' + escapeHtml(csrf) + '">' +
+        '<input type="hidden" name="action" value="checklist_delete">' +
+        '<input type="hidden" name="item_id" value="' + item.id + '">' +
+        '<button type="submit" class="btn btn-outline btn-icon-xs" title="Удалить пункт" aria-label="Удалить пункт">×</button>' +
+      "</form>";
+    li.querySelector(".projects-task-checklist-title").textContent = item.title || "";
+    applyToggleState(li, !!item.is_done);
+    return li;
+  }
+
+  async function postForm(form) {
+    var fd = new FormData(form);
+    var res = await fetch(url, {
+      method: "POST",
+      headers: {
+        Accept: "application/json",
+        "X-CSRFToken": csrf || fd.get("csrf_token") || "",
+      },
+      body: fd,
+      credentials: "same-origin",
+    });
+    var data = null;
+    try { data = await res.json(); } catch (e) { data = null; }
+    if (!res.ok || !data || !data.ok) {
+      var msg = (data && data.message) || "Не удалось обновить чек-лист.";
+      if (typeof window.ssAlert === "function") window.ssAlert(msg);
+      else window.alert(msg);
+      throw new Error(msg);
+    }
+    return data;
+  }
+
+  root.addEventListener("submit", function (ev) {
+    var form = ev.target;
+    if (!(form instanceof HTMLFormElement)) return;
+    var action = form.getAttribute("data-checklist-action");
+    if (!action) return;
+    ev.preventDefault();
+    if (busy) return;
+    busy = true;
+
+    var btn = form.querySelector('button[type="submit"]');
+    if (btn) btn.disabled = true;
+
+    postForm(form)
+      .then(function (data) {
+        if (action === "add" && data.item) {
+          setEmptyVisible(false);
+          list.appendChild(buildItem(data.item));
+          var input = form.querySelector('[name="checklist_title"]');
+          if (input) {
+            input.value = "";
+            input.focus();
+          }
+        } else if (action === "toggle" && data.item) {
+          var liT = form.closest("[data-item-id]");
+          if (liT) applyToggleState(liT, data.item.is_done);
+        } else if (action === "delete" && data.item) {
+          var liD = form.closest("[data-item-id]");
+          if (liD) liD.remove();
+          if (!list.querySelector("[data-item-id]")) setEmptyVisible(true);
+        }
+      })
+      .catch(function () {})
+      .finally(function () {
+        busy = false;
+        if (btn) btn.disabled = false;
+      });
+  });
 })();
 </script>
 <script>

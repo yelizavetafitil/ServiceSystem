@@ -207,10 +207,10 @@ def main() -> int:
                     continue
                 elif (
                     role == "executor@belnipi.by"
-                    and ("view=gantt" in path or "view=week" in path or "view=calendar" in path)
+                    and "view=gantt" in path
                     and r.status_code in (302, 200)
                 ):
-                    # исполнитель уходит на канбан — ок
+                    # исполнитель с Ганта уходит на канбан — ок
                     continue
                 elif r.status_code >= 400 and not (r.status_code == 403 and "manage" in path):
                     if r.status_code == 404 and "/tasks/" in path:

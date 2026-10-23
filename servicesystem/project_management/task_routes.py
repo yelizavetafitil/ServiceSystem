@@ -30,11 +30,14 @@ from servicesystem.project_management.services import (
     save_task_attachment,
     task_attachment_path,
     user_can_create_task,
+    user_can_delete_task,
     user_can_delete_task_attachment,
+    user_can_manage_collaborators,
     task_is_completion_blocked,
     timer_start,
     timer_stop,
     user_can_edit_task,
+    user_can_edit_task_plan,
     user_can_view_task,
     user_can_view_custom_field,
     sync_calendar_events_for_task,
@@ -50,8 +53,9 @@ def task_update(tid):
         abort(403)
     action = request.form.get("action", "save")
     if action == "delete":
-        if not (current_user.is_admin or current_user.is_auditor):
-            abort(403)
+        if not user_can_delete_task(current_user, task):
+            flash("Удаление задачи запрещено. Переведите в «Отклонено» или «Архив».", "warning")
+            return redirect(url_for("projects.task_detail", tid=tid))
         if task.ticket_id:
             flash("Задача-зеркало заявки не удаляется здесь — закройте или удалите заявку.", "warning")
             return redirect(url_for("tickets.detail", tid=task.ticket_id))
@@ -199,71 +203,156 @@ def task_update(tid):
         flash("Доп. поля сохранены.", "success")
         return redirect(url_for("projects.task_detail", tid=tid) + "#task-custom")
 
-    task.title = request.form["title"].strip()
-    task.description = (request.form.get("description") or "").strip() or None
-    task.priority = int(request.form.get("priority") or 2)
-    task.kanban_status = request.form.get("kanban_status") or task.kanban_status
-    assignee_id = request.form.get("assignee_id", type=int) or None
+    if action == "checklist_add":
+        from sqlalchemy import func
+
+        from servicesystem.project_management.models import ProjectTaskChecklistItem
+
+        wants_json = _hierarchy_wants_json()
+        title = (request.form.get("checklist_title") or "").strip()
+        if not title:
+            if wants_json:
+                return jsonify({"ok": False, "error": "empty", "message": "Введите текст пункта."}), 400
+            return redirect(url_for("projects.task_detail", tid=tid) + "#task-checklist")
+        max_ord = (
+            db.session.query(func.coalesce(func.max(ProjectTaskChecklistItem.sort_order), 0))
+            .filter(ProjectTaskChecklistItem.task_id == task.id)
+            .scalar()
+        )
+        item = ProjectTaskChecklistItem(
+            task_id=task.id,
+            title=title[:512],
+            sort_order=int(max_ord or 0) + 1,
+            created_by_id=current_user.id,
+        )
+        db.session.add(item)
+        db.session.commit()
+        if wants_json:
+            return jsonify(
+                {
+                    "ok": True,
+                    "action": "add",
+                    "item": {"id": item.id, "title": item.title, "is_done": bool(item.is_done)},
+                }
+            )
+        return redirect(url_for("projects.task_detail", tid=tid) + "#task-checklist")
+
+    if action == "checklist_toggle":
+        from servicesystem.project_management.models import ProjectTaskChecklistItem
+
+        wants_json = _hierarchy_wants_json()
+        item_id = request.form.get("item_id", type=int)
+        item = db.session.get(ProjectTaskChecklistItem, item_id) if item_id else None
+        if not item or item.task_id != task.id:
+            if wants_json:
+                return jsonify({"ok": False, "error": "not_found", "message": "Пункт не найден."}), 404
+            return redirect(url_for("projects.task_detail", tid=tid) + "#task-checklist")
+        item.is_done = not bool(item.is_done)
+        db.session.commit()
+        if wants_json:
+            return jsonify(
+                {
+                    "ok": True,
+                    "action": "toggle",
+                    "item": {"id": item.id, "title": item.title, "is_done": bool(item.is_done)},
+                }
+            )
+        return redirect(url_for("projects.task_detail", tid=tid) + "#task-checklist")
+
+    if action == "checklist_delete":
+        from servicesystem.project_management.models import ProjectTaskChecklistItem
+
+        wants_json = _hierarchy_wants_json()
+        item_id = request.form.get("item_id", type=int)
+        item = db.session.get(ProjectTaskChecklistItem, item_id) if item_id else None
+        if not item or item.task_id != task.id:
+            if wants_json:
+                return jsonify({"ok": False, "error": "not_found", "message": "Пункт не найден."}), 404
+            return redirect(url_for("projects.task_detail", tid=tid) + "#task-checklist")
+        deleted_id = item.id
+        db.session.delete(item)
+        db.session.commit()
+        if wants_json:
+            return jsonify({"ok": True, "action": "delete", "item": {"id": deleted_id}})
+        return redirect(url_for("projects.task_detail", tid=tid) + "#task-checklist")
+
+    from servicesystem.project_management.models import TASK_KANBAN_COLUMNS
     from servicesystem.project_management.services import is_project_member
 
-    if assignee_id and not is_project_member(task.project_id, assignee_id):
-        flash("Исполнитель должен быть участником проекта.", "warning")
-        return redirect(url_for("projects.task_detail", tid=tid))
-    task.assignee_id = assignee_id
-    old_start = task.start_date or task.due_date
-    task.due_date = parse_optional_date(request.form.get("due_date"))
-    task.start_date = parse_optional_date(request.form.get("start_date"))
-    if task.start_date and task.due_date and task.due_date < task.start_date:
-        task.start_date, task.due_date = task.due_date, task.start_date
-    from servicesystem.project_management.services import (
-        clamp_task_dates,
-        dates_within_parent,
-        parent_date_window,
-        project_dates_violation_message,
-        shift_task_subtree,
-    )
+    # Контент карточки — исполнитель и ГИП
+    task.title = request.form["title"].strip()
+    task.description = (request.form.get("description") or "").strip() or None
+    new_status = request.form.get("kanban_status") or task.kanban_status
+    if new_status in TASK_KANBAN_COLUMNS:
+        task.kanban_status = new_status
 
-    if task.parent_id:
-        parent = task.parent or db.session.get(ProjectTask, task.parent_id)
-        if not dates_within_parent(task.start_date, task.due_date, parent):
-            p_start, p_due = parent_date_window(parent)
-            if p_start and p_due:
-                flash(
-                    f"Сроки подзадачи должны быть внутри родителя "
-                    f"({p_start.strftime('%d.%m.%Y')} — {p_due.strftime('%d.%m.%Y')}).",
-                    "warning",
-                )
-                return redirect(url_for("projects.task_detail", tid=tid))
-    proj_msg = project_dates_violation_message(task.start_date, task.due_date, task.project)
-    if proj_msg:
-        flash(proj_msg, "warning")
-        return redirect(url_for("projects.task_detail", tid=tid))
-    clamp_task_dates(task)
-    new_start = task.start_date or task.due_date
-    if old_start and new_start:
-        delta = (new_start - old_start).days
-        if delta:
-            shift_task_subtree(task, delta)
-    stage_id = request.form.get("stage_id", type=int)
-    if stage_id:
-        st = db.session.get(ProjectStage, stage_id)
-        if st and st.project_id == task.project_id:
-            task.stage_id = stage_id
-        else:
-            flash("Этап не принадлежит проекту задачи.", "warning")
-    elif "stage_id" in request.form:
-        task.stage_id = None
-    if current_user.is_auditor or current_user.is_admin:
+    can_plan = user_can_edit_task_plan(current_user, task)
+    if can_plan:
+        task.priority = int(request.form.get("priority") or 2)
+        assignee_id = request.form.get("assignee_id", type=int) or None
+        if assignee_id and not is_project_member(task.project_id, assignee_id):
+            flash("Исполнитель должен быть участником проекта.", "warning")
+            return redirect(url_for("projects.task_detail", tid=tid))
+        task.assignee_id = assignee_id
+        old_start = task.start_date or task.due_date
+        task.due_date = parse_optional_date(request.form.get("due_date"))
+        task.start_date = parse_optional_date(request.form.get("start_date"))
+        if task.start_date and task.due_date and task.due_date < task.start_date:
+            task.start_date, task.due_date = task.due_date, task.start_date
+        from servicesystem.project_management.services import (
+            clamp_task_dates,
+            dates_within_parent,
+            parent_date_window,
+            project_dates_violation_message,
+            shift_task_subtree,
+        )
+
+        if task.parent_id:
+            parent = task.parent or db.session.get(ProjectTask, task.parent_id)
+            if not dates_within_parent(task.start_date, task.due_date, parent):
+                p_start, p_due = parent_date_window(parent)
+                if p_start and p_due:
+                    flash(
+                        f"Сроки подзадачи должны быть внутри родителя "
+                        f"({p_start.strftime('%d.%m.%Y')} — {p_due.strftime('%d.%m.%Y')}).",
+                        "warning",
+                    )
+                    return redirect(url_for("projects.task_detail", tid=tid))
+        proj_msg = project_dates_violation_message(task.start_date, task.due_date, task.project)
+        if proj_msg:
+            flash(proj_msg, "warning")
+            return redirect(url_for("projects.task_detail", tid=tid))
+        clamp_task_dates(task)
+        new_start = task.start_date or task.due_date
+        if old_start and new_start:
+            delta = (new_start - old_start).days
+            if delta:
+                shift_task_subtree(task, delta)
+        stage_id = request.form.get("stage_id", type=int)
+        if stage_id:
+            st = db.session.get(ProjectStage, stage_id)
+            if st and st.project_id == task.project_id:
+                task.stage_id = stage_id
+            else:
+                flash("Этап не принадлежит проекту задачи.", "warning")
+        elif "stage_id" in request.form:
+            task.stage_id = None
+
+    if user_can_manage_collaborators(current_user, task):
         from servicesystem.project_management.models import ProjectTaskCollaborator
 
         ProjectTaskCollaborator.query.filter_by(task_id=task.id).delete()
         for uid in request.form.getlist("collaborator_ids"):
-            if is_project_member(task.project_id, int(uid)):
-                db.session.add(ProjectTaskCollaborator(task_id=task.id, user_id=int(uid)))
+            uid_i = int(uid)
+            if uid_i == task.assignee_id:
+                continue
+            if is_project_member(task.project_id, uid_i):
+                db.session.add(ProjectTaskCollaborator(task_id=task.id, user_id=uid_i))
     sync_calendar_events_for_task(task)
-    from servicesystem.project_management.services import cascade_fs_from_task
+    if can_plan:
+        from servicesystem.project_management.services import cascade_fs_from_task
 
-    cascade_fs_from_task(task)
+        cascade_fs_from_task(task)
     db.session.commit()
     from servicesystem.project_management.caldav_sync import try_push_task_to_caldav
 
@@ -411,8 +500,8 @@ def task_hierarchy(tid):
         if wants_json:
             return jsonify({"error": "not_found", "message": "Задача не найдена."}), 404
         abort(404)
-    if not user_can_edit_task(current_user, task):
-        msg = "Недостаточно прав, чтобы менять вложенность этой задачи."
+    if not user_can_edit_task_plan(current_user, task):
+        msg = "Менять вложенность может только ГИП."
         if wants_json:
             return jsonify({"error": "forbidden", "message": msg}), 403
         flash(msg, "danger")
