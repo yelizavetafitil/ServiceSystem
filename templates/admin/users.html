@@ -12,10 +12,35 @@
       <tbody data-live-search-list>{% for u in users %}
       <tr class="live-search-item" data-search-text="{{ u.full_name }} {{ u.email }} {{ ROLES.get(u.role, u.role) }} {{ u.position or '' }}">
         <td>{{ u.full_name }}</td><td>{{ u.email }}</td><td>{{ ROLES.get(u.role, u.role) }}</td><td>{{ u.position }}</td>
-        <td>{% if u.is_active %}<span class="badge status-resolved">Подключён</span>{% else %}<span class="badge status-rejected">Отключён</span>{% endif %}</td>
+        <td class="users-access-cell">
+          {% if u.portal_access_on %}
+          <span class="badge status-resolved">Подключён</span>
+          {% else %}
+          <span class="badge status-rejected">Отключён</span>
+          {% if u.portal_disabled_at %}
+          <span class="access-disabled-date" title="{% if u.contract and u.contract.is_master_key_expired %}Истёк мастер-ключ{% else %}Закрыт срок обслуживания{% endif %}">с {{ u.portal_disabled_at.strftime('%d.%m.%Y') }}</span>
+          {% endif %}
+          {% endif %}
+          {% if u.is_customer %}
+          <span class="users-access-icons" aria-label="Сведения о договоре">
+            <span class="users-access-icon users-access-icon--key{% if u.contract and u.contract.is_access_disabled %} is-off{% endif %}"
+                  title="{{ u.contract_access_hint() }}"
+                  tabindex="0" role="img" aria-label="Мастер-ключ / договор">
+              <svg viewBox="0 0 24 24" width="14" height="14" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.85" stroke-linecap="round" stroke-linejoin="round"><circle cx="8" cy="14" r="3.25"/><path d="M10.4 12.4 20 3.2"/><path d="M16.2 5.6 18.6 8"/><path d="M18.1 3.9 20.4 6.2"/></svg>
+            </span>
+            {% if u.role == 'customer_curator' %}
+            <span class="users-access-icon users-access-icon--project{% if not u.portal_access_on %} is-off{% endif %}"
+                  title="{{ curator_project_tips.get(u.id, 'Проект не назначен') if curator_project_tips is defined else 'Проект не назначен' }}"
+                  tabindex="0" role="img" aria-label="Проект куратора">
+              <svg viewBox="0 0 24 24" width="14" height="14" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.85" stroke-linecap="round" stroke-linejoin="round"><path d="M3.5 7.5h6.2l1.6 1.7H20.5v9.3a1.5 1.5 0 0 1-1.5 1.5H5a1.5 1.5 0 0 1-1.5-1.5V7.5z"/><path d="M3.5 7.5V6.2A1.7 1.7 0 0 1 5.2 4.5h4.1l1.4 1.5"/></svg>
+            </span>
+            {% endif %}
+          </span>
+          {% endif %}
+        </td>
         <td>
           <a href="{{ url_for('admin.user_edit', uid=u.id) }}">Изменить</a>
-          {% if u.role == 'customer' %}
+          {% if u.role in ('customer', 'customer_curator') %}
           · <a href="{{ url_for('admin.user_audit', uid=u.id) }}">Журнал</a>
           {% endif %}
         </td>

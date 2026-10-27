@@ -705,6 +705,100 @@ td { word-break: break-word; }
 .status-suspended { background: #fff8e6; color: #92400e; }
 .status-terminated { background: #fee2e2; color: #991b1b; }
 
+.users-access-cell {
+  white-space: nowrap;
+}
+.users-access-icons {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  margin-left: 8px;
+  vertical-align: middle;
+}
+.users-access-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 26px;
+  height: 26px;
+  border-radius: 7px;
+  line-height: 0;
+  cursor: help;
+  color: var(--primary);
+  background: var(--primary-muted);
+  border: 1px solid #bfdbfe;
+  user-select: none;
+  transition: background .12s ease, border-color .12s ease, box-shadow .12s ease, color .12s ease;
+}
+.users-access-icon svg { display: block; flex-shrink: 0; }
+.users-access-icon:hover,
+.users-access-icon:focus {
+  background: #cfe0fb;
+  border-color: #93c5fd;
+  color: var(--primary-dark);
+  outline: none;
+  box-shadow: 0 0 0 2px rgba(28, 79, 156, 0.16);
+}
+.users-access-icon--project {
+  color: #166534;
+  background: #dcfce7;
+  border-color: #bbf7d0;
+}
+.users-access-icon--project:hover,
+.users-access-icon--project:focus {
+  background: #bbf7d0;
+  border-color: #86efac;
+  color: #14532d;
+  box-shadow: 0 0 0 2px rgba(22, 101, 52, 0.14);
+}
+.users-access-icon.is-off {
+  color: #991b1b;
+  background: #fee2e2;
+  border-color: #fecaca;
+}
+.users-access-icon.is-off:hover,
+.users-access-icon.is-off:focus {
+  background: #fecaca;
+  border-color: #fca5a5;
+  color: #7f1d1d;
+  box-shadow: 0 0 0 2px rgba(153, 27, 27, 0.14);
+}
+.users-access-icon.is-muted {
+  color: #64748b;
+  background: #f8fafc;
+  border-color: var(--border);
+  opacity: 0.85;
+}
+
+.access-disabled-date {
+  display: inline-block;
+  margin-left: 6px;
+  padding: 2px 8px;
+  border-radius: 6px;
+  font-size: 12px;
+  font-weight: 700;
+  color: #991b1b;
+  background: #fee2e2;
+  border: 1px solid #fecaca;
+  white-space: nowrap;
+}
+td.access-disabled-date,
+.form-control.is-invalid + .access-disabled-date,
+.hint.access-disabled-date {
+  margin-left: 0;
+}
+td.access-disabled-date {
+  display: table-cell;
+  background: #fef2f2;
+  color: #991b1b;
+  font-weight: 700;
+}
+tr.is-access-disabled td { background: #fffbfb; }
+.form-control.is-invalid {
+  border-color: #dc2626;
+  box-shadow: 0 0 0 2px rgba(220, 38, 38, 0.12);
+}
+
 .priority { display: inline-block; padding: 4px 10px; border-radius: 8px; font-size: 12px; font-weight: 700; background: color-mix(in srgb, var(--pc) 12%, white); color: var(--pc); border: 1px solid color-mix(in srgb, var(--pc) 28%, white); }
 .priority-radios { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 140px), 1fr)); gap: 8px; }
 .priority-option { display: flex; align-items: center; gap: 8px; padding: 10px; border: 2px solid color-mix(in srgb, var(--pc) 22%, white); border-radius: 10px; cursor: pointer; font-weight: 600; font-size: 13px; color: var(--pc); }

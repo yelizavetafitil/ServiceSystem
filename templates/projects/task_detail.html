@@ -5,18 +5,24 @@
 {% block title %}{{ task.title }}{% endblock %}
 
 {% block head %}
-<link rel="stylesheet" href="{{ url_for('static', filename='css/projects.css') }}?v=101">
+<link rel="stylesheet" href="{{ url_for('static', filename='css/projects.css') }}?v=103">
 <script src="{{ url_for('static', filename='js/task-date-duration.js') }}?v=1"></script>
+{% if can_plan_task is defined and can_plan_task %}
 <script src="{{ url_for('static', filename='js/task-project-tree-nav.js') }}?v=4"></script>
+{% elif can_plan_task is not defined and (current_user.is_admin or current_user.is_auditor) %}
+<script src="{{ url_for('static', filename='js/task-project-tree-nav.js') }}?v=4"></script>
+{% endif %}
 {% endblock %}
 
 {% block content %}
 
 <div class="container container-wide cms-page">
 
+  {% set can_plan = can_plan_task if can_plan_task is defined else (current_user.is_admin or current_user.is_auditor) %}
+
   <div class="projects-task-topbar">
     <a href="{{ arm_back_url or url_for('projects.arm') }}" class="back-link">← К модулю проектов</a>
-    {% if task.project_id and (current_user.is_admin or current_user.is_auditor or current_user.is_staff) %}
+    {% if task.project_id and can_plan %}
     <div class="projects-task-topbar-actions">
       {% if task.parent_id %}
       <a href="{% if arm_back_view %}{{ url_for('projects.task_new', parent=task.parent_id, project=task.project_id, arm_view=arm_back_view) }}{% else %}{{ url_for('projects.task_new', parent=task.parent_id, project=task.project_id) }}{% endif %}"
@@ -26,17 +32,15 @@
       <a href="{% if arm_back_view %}{{ url_for('projects.task_new', parent=task.id, project=task.project_id, arm_view=arm_back_view) }}{% else %}{{ url_for('projects.task_new', parent=task.id, project=task.project_id) }}{% endif %}"
          class="btn btn-outline btn-sm"
          title="Подзадача уровнем ниже">Подзадача</a>
-      {% if current_user.is_admin or current_user.is_auditor %}
       <a href="{% if arm_back_view %}{{ url_for('projects.task_new', project=task.project_id, arm_view=arm_back_view) }}{% else %}{{ url_for('projects.task_new', project=task.project_id) }}{% endif %}"
          class="btn btn-primary btn-sm projects-task-topbar-new"
          title="Задача верхнего уровня в проекте">Новая задача</a>
-      {% endif %}
     </div>
     {% endif %}
   </div>
 
-  <div class="projects-task-detail-layout">
-    {% if task.project_id %}
+  <div class="projects-task-detail-layout{% if not can_plan or not task.project_id %} projects-task-detail-layout--solo{% endif %}">
+    {% if task.project_id and can_plan %}
     <aside class="card projects-cms-card projects-task-tree-panel" aria-label="Структура проекта">
       <h2 class="projects-task-tree-heading">Структура проекта</h2>
       <script type="application/json" id="task-tree-stages-json">{{ task_tree_stages|default([])|tojson }}</script>
@@ -46,7 +50,7 @@
            data-current-task-id="{{ task.id }}"
            data-project-id="{{ task.project_id }}"
            data-arm-view="{{ arm_back_view or '' }}"
-           data-can-create="{{ '1' if current_user.is_admin or current_user.is_auditor else '0' }}"></div>
+           data-can-create="1"></div>
     </aside>
     {% endif %}
 
@@ -56,122 +60,117 @@
 
     {% if current_user.is_staff %}
     <nav class="projects-task-jump" aria-label="Разделы карточки">
+      <a href="#task-checklist">Чек-лист</a>
       <a href="#task-files">Файлы{% if task_files %} ({{ task_files|length }}){% endif %}</a>
       <a href="#task-comments">Комментарии</a>
       <a href="#task-links">Связи</a>
     </nav>
 
-    <form method="post" action="{{ url_for('projects.task_update', tid=task.id) }}">
-
+    <form method="post" action="{{ url_for('projects.task_update', tid=task.id) }}" class="projects-task-brief">
       {{ csrf_field() }}
 
-      <input type="hidden" name="action" value="save">
+      <input name="title" class="projects-task-title-input" required value="{{ task.title }}" placeholder="Название задачи" aria-label="Название">
 
-      <div class="form-group"><label>Название</label><input name="title" class="form-control" required value="{{ task.title }}"></div>
-
-      <div class="form-group"><label>Описание</label><textarea name="description" class="form-control" rows="3">{{ task.description or '' }}</textarea></div>
-
-      {% set can_plan = can_plan_task if can_plan_task is defined else (current_user.is_admin or current_user.is_auditor) %}
-
-      <div class="form-row">
-
-        <div class="form-group"><label>Критичность</label>
-          {% if can_plan %}
-          <select name="priority" class="form-control">
-            {% for p, lbl in project_priority_labels.items() %}
-            <option value="{{ p }}" {% if task.priority == p %}selected{% endif %}>{{ lbl }}</option>
-            {% endfor %}
-          </select>
-          {% else %}
-          <input type="text" class="form-control" value="{{ project_priority_labels.get(task.priority, task.priority) }}" readonly disabled>
-          {% endif %}
-        </div>
-
-        <div class="form-group"><label>Статус</label>
-          <select name="kanban_status" class="form-control">
+      <div class="projects-task-meta">
+        <div class="projects-task-meta-item">
+          <label for="task-edit-status">Статус</label>
+          <select name="kanban_status" id="task-edit-status" class="form-control form-control--compact">
             {% for k, lbl in kanban_labels.items() %}
             <option value="{{ k }}" {% if task.kanban_status == k %}selected{% endif %}>{{ lbl }}</option>
             {% endfor %}
           </select>
         </div>
-
-      </div>
-
-      <div class="form-row projects-task-date-row">
-        <div class="form-group"><label for="task-edit-start-date">Начало</label>
-          <input type="date" name="start_date" id="task-edit-start-date" class="form-control" value="{{ task.start_date or '' }}"
-                 {% if parent_window_start %}min="{{ parent_window_start.isoformat() }}"{% endif %}
-                 {% if parent_window_due %}max="{{ parent_window_due.isoformat() }}"{% endif %}
-                 {% if not can_plan %}readonly disabled{% endif %}>
-        </div>
-        <div class="form-group form-group--duration">
-          <label for="task-edit-duration-days">Дней</label>
-          <input type="number" id="task-edit-duration-days" class="form-control" min="1" max="9999" step="1"
-                 value="1" inputmode="numeric" autocomplete="off"
-                 title="Длительность{% if task.project and (task.project.skip_weekends or task.project.skip_public_holidays) %} в рабочих днях{% endif %}"
-                 {% if not can_plan %}readonly disabled{% endif %}>
-        </div>
-        <div class="form-group"><label for="task-edit-due-date">Дедлайн</label>
-          <input type="date" name="due_date" id="task-edit-due-date" class="form-control" value="{{ task.due_date or '' }}"
-                 {% if parent_window_start %}min="{{ parent_window_start.isoformat() }}"{% endif %}
-                 {% if parent_window_due %}max="{{ parent_window_due.isoformat() }}"{% endif %}
-                 {% if not can_plan %}readonly disabled{% endif %}>
-        </div>
-      </div>
-      <div class="muted projects-task-date-row-hints">
-        {% if not can_plan %}
-        <p class="projects-cms-hint">Сроки и этап задаёт ГИП — только просмотр.</p>
-        {% elif task.project and (task.project.skip_weekends or task.project.skip_public_holidays) %}
-        <p class="projects-cms-hint projects-task-duration-hint">Длительность в рабочих днях (выходные и праздники проекта).</p>
-        {% else %}
-        <p class="projects-cms-hint projects-task-duration-hint">Длительность в календарных днях (включая начало).</p>
-        {% endif %}
-        {% if project_start or project_deadline %}
-        <p class="projects-cms-hint">
-          {% if project_start and project_deadline %}
-          Сроки проекта: {{ project_start.strftime('%d.%m.%Y') }} — {{ project_deadline.strftime('%d.%m.%Y') }}
-          {% elif project_start %}
-          Старт проекта: {{ project_start.strftime('%d.%m.%Y') }}
-          {% elif project_deadline %}
-          Дедлайн проекта: {{ project_deadline.strftime('%d.%m.%Y') }}
+        <div class="projects-task-meta-item">
+          <label for="task-edit-priority">Критичность</label>
+          {% if can_plan %}
+          <select name="priority" id="task-edit-priority" class="form-control form-control--compact">
+            {% for p, lbl in project_priority_labels.items() %}
+            <option value="{{ p }}" {% if task.priority == p %}selected{% endif %}>{{ lbl }}</option>
+            {% endfor %}
+          </select>
+          {% else %}
+          <span class="projects-task-meta-value">{{ project_priority_labels.get(task.priority, task.priority) }}</span>
           {% endif %}
-          {% if task.parent_id and parent_window_start and parent_window_due and (parent_window_start != project_start or parent_window_due != project_deadline) %}
-          · родитель: {{ parent_window_start.strftime('%d.%m.%Y') }} — {{ parent_window_due.strftime('%d.%m.%Y') }}
+        </div>
+        <div class="projects-task-meta-item projects-task-meta-item--grow">
+          <label for="task-edit-assignee">Исполнитель</label>
+          {% if can_plan %}
+          <select name="assignee_id" id="task-edit-assignee" class="form-control form-control--compact">
+            <option value="">—</option>
+            {% for u in executors %}<option value="{{ u.id }}" {% if task.assignee_id == u.id %}selected{% endif %}>{{ u.full_name }}</option>{% endfor %}
+          </select>
+          {% else %}
+          <span class="projects-task-meta-value">{% if task.assignee %}{{ task.assignee.full_name }}{% else %}—{% endif %}</span>
           {% endif %}
-        </p>
-        {% endif %}
+        </div>
+        <div class="projects-task-meta-item projects-task-meta-dates">
+          <label>Сроки</label>
+          <div class="projects-task-date-row projects-task-date-row--compact">
+            <input type="date" name="start_date" id="task-edit-start-date" class="form-control form-control--compact" value="{{ task.start_date or '' }}"
+                   title="Начало"
+                   {% if parent_window_start %}min="{{ parent_window_start.isoformat() }}"{% endif %}
+                   {% if parent_window_due %}max="{{ parent_window_due.isoformat() }}"{% endif %}
+                   {% if not can_plan %}readonly disabled{% endif %}>
+            <input type="number" id="task-edit-duration-days" class="form-control form-control--compact form-control--days" min="1" max="9999" step="1"
+                   value="1" inputmode="numeric" autocomplete="off" title="Дней"
+                   {% if not can_plan %}readonly disabled{% endif %}>
+            <input type="date" name="due_date" id="task-edit-due-date" class="form-control form-control--compact" value="{{ task.due_date or '' }}"
+                   title="Дедлайн"
+                   {% if parent_window_start %}min="{{ parent_window_start.isoformat() }}"{% endif %}
+                   {% if parent_window_due %}max="{{ parent_window_due.isoformat() }}"{% endif %}
+                   {% if not can_plan %}readonly disabled{% endif %}>
+          </div>
+        </div>
+        <div class="projects-task-meta-item">
+          <label for="task-edit-stage">Этап</label>
+          {% if can_plan %}
+          <select name="stage_id" id="task-edit-stage" class="form-control form-control--compact">
+            <option value="">— без этапа —</option>
+            {% for s in project_stages %}
+            <option value="{{ s.id }}" {% if task.stage_id == s.id %}selected{% endif %}>{{ s.title }}</option>
+            {% endfor %}
+          </select>
+          {% else %}
+          <span class="projects-task-meta-value">{% if task.stage %}{{ task.stage.title }}{% else %}—{% endif %}</span>
+          {% endif %}
+        </div>
       </div>
 
-      <div class="form-group"><label>Этап</label>
-        {% if can_plan %}
-        <select name="stage_id" class="form-control">
-          <option value="">— без этапа —</option>
-          {% for s in project_stages %}
-          <option value="{{ s.id }}" {% if task.stage_id == s.id %}selected{% endif %}>{{ s.title }}</option>
+      <div class="projects-task-desc">
+        <label for="task-edit-description" class="projects-task-desc-label">Описание</label>
+        <textarea name="description" id="task-edit-description" class="form-control projects-task-desc-input" rows="3" placeholder="Постановка задачи…">{{ task.description or '' }}</textarea>
+      </div>
+
+      {% if can_manage_collaborators %}
+      <details class="projects-task-more">
+        <summary>Соисполнители{% if collaborator_ids %} ({{ collaborator_ids|length }}){% endif %}</summary>
+        <select name="collaborator_ids" class="form-control" multiple size="3">
+          {% for u in executors %}
+          {% if u.id != task.assignee_id %}
+          <option value="{{ u.id }}" {% if u.id in collaborator_ids %}selected{% endif %}>{{ u.full_name }}</option>
+          {% endif %}
           {% endfor %}
         </select>
-        {% else %}
-        <input type="text" class="form-control" value="{% if task.stage %}{{ task.stage.title }}{% else %}— без этапа —{% endif %}" readonly disabled>
-        {% endif %}
-      </div>
+      </details>
+      {% endif %}
 
       {% if can_plan %}
-      <div class="projects-task-hierarchy" data-task-hierarchy
-           data-task-id="{{ task.id }}"
-           data-url="{{ url_for('projects.task_hierarchy', tid=task.id) }}"
-           data-link-count="{{ task_link_count|default(0) }}"
-           data-csrf="{{ csrf_token() }}">
-        <label>Вложенность</label>
+      <details class="projects-task-more" data-task-hierarchy
+               data-task-id="{{ task.id }}"
+               data-url="{{ url_for('projects.task_hierarchy', tid=task.id) }}"
+               data-link-count="{{ task_link_count|default(0) }}"
+               data-csrf="{{ csrf_token() }}">
+        <summary>Вложенность{% if task.parent_id and task.parent %} · подзадача{% endif %}</summary>
         {% if task.parent_id and task.parent %}
         <p class="muted projects-cms-hint">Сейчас подзадача «{{ task.parent.title }}»
           <a href="{{ url_for('projects.task_detail', tid=task.parent.id) }}">открыть родителя</a>
         </p>
         <button type="button" class="btn btn-outline btn-sm" data-hierarchy-promote>Сделать отдельной задачей</button>
         {% else %}
-        <p class="muted projects-cms-hint">Задача верхнего уровня (не подзадача).</p>
+        <p class="muted projects-cms-hint">Задача верхнего уровня.</p>
         {% endif %}
         {% if hierarchy_parents %}
-        <div class="projects-task-hierarchy-attach form-row" style="margin-top:10px;align-items:flex-end;">
+        <div class="projects-task-hierarchy-attach form-row" style="margin-top:8px;align-items:flex-end;">
           <div class="form-group" style="flex:1;margin-bottom:0;">
             <label for="hierarchy-parent-select">{% if task.parent_id %}Сменить родителя{% else %}Сделать подзадачей{% endif %}</label>
             <select id="hierarchy-parent-select" class="form-control" data-hierarchy-parent>
@@ -184,60 +183,26 @@
           <button type="button" class="btn btn-outline btn-sm" data-hierarchy-attach>Применить</button>
         </div>
         {% endif %}
-      </div>
+      </details>
       {% elif task.parent_id and task.parent %}
-      <p class="muted projects-cms-hint">Подзадача «{{ task.parent.title }}»
+      <p class="muted projects-cms-hint projects-task-parent-hint">Подзадача «{{ task.parent.title }}»
         <a href="{{ url_for('projects.task_detail', tid=task.parent.id) }}">открыть родителя</a>
       </p>
       {% endif %}
 
-      <div class="form-group"><label>Исполнитель</label>
+      <div class="projects-task-brief-actions">
+        <button type="submit" class="btn btn-primary btn-sm" name="action" value="save">Сохранить</button>
+        <button type="submit" class="btn btn-outline btn-sm" name="action" value="complete" formnovalidate {% if blocked %}disabled{% endif %}>Выполнить</button>
         {% if can_plan %}
-        <select name="assignee_id" class="form-control"><option value="">—</option>
-          {% for u in executors %}<option value="{{ u.id }}" {% if task.assignee_id == u.id %}selected{% endif %}>{{ u.full_name }}</option>{% endfor %}
-        </select>
-        {% else %}
-        <input type="text" class="form-control" value="{% if task.assignee %}{{ task.assignee.full_name }}{% else %}—{% endif %}" readonly disabled>
+        {% if task.parent_id %}
+        <a href="{{ url_for('projects.task_new', parent=task.parent_id, project=task.project_id) }}" class="btn btn-outline btn-sm">Ещё к родителю</a>
+        {% endif %}
+        <a href="{{ url_for('projects.task_new', parent=task.id) }}" class="btn btn-outline btn-sm">Подзадача ↓</a>
         {% endif %}
       </div>
-
-      {% if can_manage_collaborators %}
-
-      <div class="form-group"><label>Соисполнители</label>
-
-        <select name="collaborator_ids" class="form-control" multiple size="4">
-
-          {% for u in executors %}
-          {% if u.id != task.assignee_id %}
-          <option value="{{ u.id }}" {% if u.id in collaborator_ids %}selected{% endif %}>{{ u.full_name }}</option>
-          {% endif %}
-          {% endfor %}
-
-        </select>
-        <p class="muted projects-cms-hint">Можно привлечь коллег-помощников по карточке.</p>
-
-      </div>
-
-      {% endif %}
-
-      <button type="submit" class="btn btn-primary">Сохранить</button>
-
     </form>
-
-    <div class="form-actions projects-task-actions">
-
-      {% if current_user.is_staff %}
-
-      <form method="post" action="{{ url_for('projects.task_update', tid=task.id) }}" class="inline-form">
-        {{ csrf_field() }}<input type="hidden" name="action" value="complete">
-        <button type="submit" class="btn btn-outline btn-sm" {% if blocked %}disabled{% endif %}>Выполнить</button>
-      </form>
-
-      {% if can_plan %}
-      {% if task.parent_id %}
-      <a href="{{ url_for('projects.task_new', parent=task.parent_id, project=task.project_id) }}" class="btn btn-outline btn-sm" title="Параллельная подзадача (тот же родитель)">Ещё к родителю</a>
-      {% endif %}
-      <a href="{{ url_for('projects.task_new', parent=task.id) }}" class="btn btn-outline btn-sm">Подзадача ↓</a>
+    {% if can_plan %}
+    <div class="projects-task-brief-actions projects-task-brief-actions--secondary">
       <form method="post" action="{{ url_for('projects.task_duplicate', tid=task.id) }}" class="inline-form">
         {{ csrf_field() }}<input type="hidden" name="copy_subtasks" value="1">
         <button type="submit" class="btn btn-outline btn-sm">Дублировать</button>
@@ -250,22 +215,16 @@
         {{ csrf_field() }}<input type="hidden" name="action" value="delete">
         <button type="submit" class="btn btn-danger btn-sm">Удалить</button>
       </form>
-      {% endif %}
-
-      {% endif %}
-
     </div>
+    {% endif %}
 
     {% else %}
 
-    <h1>{{ task.title }}</h1>
-
+    <h1 class="projects-task-title-input">{{ task.title }}</h1>
     <p class="muted">{{ kanban_labels.get(task.kanban_status) }}</p>
-
-    {% if task.description %}<div class="hint">{{ task.description|markdown|safe }}</div>{% endif %}
+    {% if task.description %}<div class="hint projects-task-desc-input">{{ task.description|markdown|safe }}</div>{% endif %}
 
     {% endif %}
-
     {% if subtasks %}
 
     <section class="projects-task-subtasks">

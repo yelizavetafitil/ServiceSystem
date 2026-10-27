@@ -141,51 +141,80 @@ def user_can_reschedule_gantt(user: User, task: ProjectTask | None = None) -> bo
 
 
 def update_customer_curator_window(project: Project) -> None:
-    """ТЗ 1.3: окно активности куратора + доступ по договору.
+    """ТЗ 1.3: куратор-заказчик — роль и «Подключён»; доступ на срок договора.
 
-    Назначение заказчика куратором проекта означает:
-    - роль customer_curator (доступ в ЛК проектов);
-    - статус «Подключён» (is_active);
-    - договор активен и срок обслуживания не короче окна куратора.
+    Срок доступа = service_end_date договора организации (не дедлайн проекта).
+    Дедлайн проекта договор не продлевает — срок задаётся в карточке договора.
     """
-    end = project.deadline
-    if project.contract and project.contract.service_end_date:
-        if not end or project.contract.service_end_date > end:
-            end = project.contract.service_end_date
-    if not end and project.planned_start:
-        end = project.planned_start
-    project.customer_curator_active_until = end
-
     curator = None
     if project.customer_curator_id:
         curator = db.session.get(User, project.customer_curator_id)
     if not curator and getattr(project, "customer_curator", None):
         curator = project.customer_curator
+
+    contract = None
+    if curator and curator.contract:
+        contract = curator.contract
+    elif project.contract:
+        contract = project.contract
+
+    # Окно доступа куратора — срок обслуживания по договору
+    end = contract.service_end_date if contract and contract.service_end_date else None
+    project.customer_curator_active_until = end
+
     if not curator:
         return
 
-    # Роль куратора-заказчика и доступ «Подключён»
     if curator.role in ("customer", "customer_curator"):
         curator.role = "customer_curator"
-    curator.is_active = True
 
-    contract = curator.contract or project.contract
+    if contract and not curator.contract_id:
+        curator.contract_id = contract.id
+        if not curator.organization_id:
+            curator.organization_id = contract.organization_id
+
+    # «Подключён» только пока договор и мастер-ключ действительны
+    if contract and contract.is_access_disabled:
+        curator.is_active = False
+    else:
+        curator.is_active = True
+
+    # Приостановленный (но не истёкший) договор снова активируем
+    if contract and contract.status == "suspended" and not contract.is_expired:
+        contract.status = "active_warranty"
+
+
+def ensure_customer_curator_contract_access(user: User) -> bool:
+    """Роль/привязка куратора; вход разрешён, пока договор не закрыт по сроку."""
+    if not user or user.role != "customer_curator":
+        return bool(user and user.contract and not user.contract.is_blocked)
+
+    from servicesystem.project_management.models import Project
+
+    projects = (
+        Project.query.filter_by(customer_curator_id=user.id, is_active=True, is_template=False)
+        .order_by(Project.id)
+        .all()
+    )
+    for proj in projects:
+        update_customer_curator_window(proj)
+
+    contract = user.contract
+    if not contract and projects:
+        contract = projects[0].contract
+        if contract:
+            user.contract_id = contract.id
+            if not user.organization_id:
+                user.organization_id = contract.organization_id
+
     if not contract:
-        return
-
-    # Договор открыт для работы: активный статус + продление срока при необходимости
-    if contract.status in ("suspended", "terminated") or (
-        contract.is_expired and contract.status in ("active_warranty", "active_post_warranty")
-    ):
-        # Сохраняем постгарантию, если уже была; иначе гарантия
-        if contract.status != "active_post_warranty":
-            contract.status = "active_warranty"
-    if end and (not contract.service_end_date or contract.service_end_date < end):
-        contract.service_end_date = end
-        if contract.master_key_expires_at and contract.master_key_expires_at < end:
-            contract.master_key_expires_at = end
-        elif not contract.master_key_expires_at:
-            contract.master_key_expires_at = end
+        user.is_active = False
+        return False
+    if contract.is_access_disabled:
+        user.is_active = False
+        return False
+    user.is_active = True
+    return True
 
 
 def sync_calendar_events_for_task(task: ProjectTask) -> None:
@@ -1037,9 +1066,18 @@ def save_task_attachment(task: ProjectTask, file_obj, uploaded_by_id: int) -> Pr
     )
 
 
-def save_stage_attachment(stage: ProjectStage, file_obj, uploaded_by_id: int):
+def save_stage_attachment(
+    stage: ProjectStage,
+    file_obj,
+    uploaded_by_id: int,
+    *,
+    kind: str = "report",
+):
     from servicesystem.project_management.models import ProjectStageAttachment
 
+    kind = (kind or "report").strip().lower()
+    if kind not in ("report", "act"):
+        kind = "report"
     storage = get_storage()
     storage.ensure_dir("project_stages", str(stage.id))
     orig = file_obj.filename or "file"
@@ -1054,8 +1092,79 @@ def save_stage_attachment(stage: ProjectStage, file_obj, uploaded_by_id: int):
         stored_name=stored,
         mime_type=getattr(file_obj, "mimetype", None),
         size_bytes=size,
+        kind=kind,
         uploaded_by_id=uploaded_by_id,
     )
+
+
+def stage_working_days_left(stage: ProjectStage, today: date | None = None) -> int | None:
+    """Таймер этапа: рабочие дни до дедлайна (с учётом календаря проекта)."""
+    if not stage.deadline:
+        return None
+    today = today or date.today()
+    if stage.deadline < today:
+        # просрочка — отрицательное число календарных/рабочих дней
+        start, end = stage.deadline, today
+        sign = -1
+    else:
+        start, end = today, stage.deadline
+        sign = 1
+    from servicesystem.project_management.work_calendar import is_non_working_day
+
+    proj = stage.project
+    days = 0
+    d = start
+    while d < end:
+        d += timedelta(days=1)
+        if not is_non_working_day(d, proj):
+            days += 1
+        if (d - start).days > 800:
+            break
+    return sign * days
+
+
+def set_stage_acceptance(
+    stage: ProjectStage,
+    status: str,
+    user: User,
+) -> None:
+    """Приёмка этапа куратором: статусы 1/2/3 из ТЗ ЛК."""
+    from servicesystem.project_management.models import STAGE_ACCEPTANCE_STATUSES
+
+    if status not in STAGE_ACCEPTANCE_STATUSES:
+        raise ValueError("bad_status")
+    stage.acceptance_status = status
+    stage.acceptance_at = datetime.now(timezone.utc)
+    stage.acceptance_by_id = user.id
+    if status == "accepted":
+        stage.remarks_note = "Замечания отсутствуют"
+    elif status == "accepted_remarks":
+        if not stage.remarks_note or stage.remarks_note == "Замечания отсутствуют":
+            stage.remarks_note = None
+    elif status == "rework":
+        if stage.remarks_note == "Замечания отсутствуют":
+            stage.remarks_note = None
+
+
+def notify_auditor_stage_acceptance(stage: ProjectStage, status_label: str, curator_name: str = "") -> None:
+    proj = stage.project
+    auditor = proj.curator_auditor if proj else None
+    if not auditor or not auditor.email:
+        return
+    who = curator_name or (
+        stage.acceptance_by.full_name if getattr(stage, "acceptance_by", None) else "—"
+    )
+    try:
+        from servicesystem.services.notify import send_email
+
+        send_email(
+            auditor.email,
+            f"Приёмка этапа: {stage.title}",
+            f"Проект «{proj.name}», этап «{stage.title}»: статус «{status_label}».\n"
+            f"Куратор: {who}.",
+        )
+    except Exception:
+        current_app.logger.exception("stage acceptance notify failed stage=%s", stage.id)
 
 
 def task_attachment_path(att: ProjectTaskAttachment) -> str:

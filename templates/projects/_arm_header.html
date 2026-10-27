@@ -84,15 +84,19 @@
         {% endif %}
 
         {% if view == 'calendar' %}
+        {% set can_team = can_view_team_load if can_view_team_load is defined else (current_user.is_admin or current_user.is_auditor) %}
         <div class="projects-filters-field">
           <label for="arm-filter-cal-mode">Вид календаря</label>
           <select id="arm-filter-cal-mode" name="cal_mode" class="form-control">
             <option value="month" {% if cal_mode == 'month' %}selected{% endif %}>Месяц</option>
             <option value="workweek" {% if cal_mode == 'workweek' %}selected{% endif %}>Рабочая неделя</option>
             <option value="day" {% if cal_mode == 'day' %}selected{% endif %}>День</option>
+            {% if can_team %}
             <option value="team" {% if cal_mode == 'team' %}selected{% endif %}>Расписание команды</option>
+            {% endif %}
           </select>
         </div>
+        {% if can_team %}
         <div class="projects-filters-field">
           <label for="arm-filter-assignee">Исполнитель</label>
           <select id="arm-filter-assignee" name="assignee" class="form-control">
@@ -103,7 +107,7 @@
           </select>
         </div>
         {% endif %}
-
+        {% endif %}
         <div class="projects-filters-actions">
           <button type="submit" class="btn btn-primary btn-sm">Применить</button>
           {% if view == 'gantt' %}

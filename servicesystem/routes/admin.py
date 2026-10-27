@@ -44,6 +44,40 @@ CMS_IMAGE_MAX_BYTES = 8 * 1024 * 1024
 bp = Blueprint("admin", __name__)
 
 
+def sync_contract_personal_access(contract: Contract) -> int:
+    """Истёк мастер-ключ или договор закрыт → персональные УЗ «Отключён».
+
+    При продлении мастер-ключа / срока обслуживания снова «Подключён».
+    Возвращает число затронутых учёток.
+    """
+    q = User.query.filter(
+        User.contract_id == contract.id,
+        User.role.in_(("customer", "customer_curator")),
+    )
+    users = q.all()
+    if not users:
+        return 0
+    want_active = not contract.is_access_disabled
+    changed = 0
+    for u in users:
+        if u.is_active != want_active:
+            u.is_active = want_active
+            changed += 1
+    return changed
+
+
+def sync_expired_master_key_access() -> int:
+    """Ленивая синхронизация: все договоры с истёкшим мастер-ключом / блоком."""
+    total = 0
+    for c in Contract.query.all():
+        if c.is_access_disabled:
+            total += sync_contract_personal_access(c)
+        else:
+            # Продлили ключ — вернуть доступ, если УЗ были отключены только из‑за срока
+            total += sync_contract_personal_access(c)
+    return total
+
+
 @bp.after_request
 def admin_html_no_cache(response):
     ct = (response.content_type or "").lower()
@@ -99,6 +133,8 @@ def _organization_delete_blockers(org: Organization) -> list[str]:
 @login_required
 @admin_required
 def contracts():
+    if sync_expired_master_key_access():
+        db.session.commit()
     items = Contract.query.join(Organization).order_by(Contract.number).all()
     orgs = Organization.query.order_by(Organization.name).all()
     org_blockers = {o.id: _organization_delete_blockers(o) for o in orgs}
@@ -146,17 +182,32 @@ def contract_edit(cid):
         contract.status = request.form["status"]
         contract.notes = request.form.get("notes", "")
         contract.document_url = request.form.get("document_url", "").strip() or contract.document_url
+        synced = sync_contract_personal_access(contract)
         users_count = User.query.filter(
             User.contract_id == cid,
             User.role.in_(("customer", "customer_curator")),
-            User.is_active.is_(True),
         ).count()
         details = f"status={contract.status}"
         if contract.service_end_date != old_end:
             details += f"; service_end_date={old_end}->{contract.service_end_date}; users={users_count}"
+        if contract.is_master_key_expired:
+            details += "; master_key_expired=1"
         log_audit(current_user.id, "contract_update", "contract", cid, details)
         db.session.commit()
-        if contract.service_end_date != old_end and users_count:
+        if contract.is_access_disabled:
+            when = contract.access_disabled_at
+            when_txt = when.strftime("%d.%m.%Y") if when else "—"
+            reason = (
+                "истёк мастер-ключ"
+                if contract.is_master_key_expired
+                else "закрыт срок обслуживания / договор"
+            )
+            flash(
+                f"Договор обновлён. Персональные УЗ отключены ({reason}, дата {when_txt}). "
+                f"Затронуто: {synced or users_count}.",
+                "warning",
+            )
+        elif contract.service_end_date != old_end and users_count:
             flash(
                 f"Договор обновлён. Доступ автоматически продлён для {users_count} "
                 f"персональных учётных записей до {contract.service_end_date.strftime('%d.%m.%Y')}.",
@@ -175,7 +226,14 @@ def contract_edit(cid):
     tutorials = Tutorial.query.filter_by(is_published=True).all()
     videos = VideoTutorial.query.filter_by(is_published=True).all()
     access = {(a.content_type, a.content_id) for a in contract.content_access.all()}
-    contract_users = User.query.filter_by(contract_id=cid, role="customer").order_by(User.full_name).all()
+    contract_users = (
+        User.query.filter(
+            User.contract_id == cid,
+            User.role.in_(("customer", "customer_curator")),
+        )
+        .order_by(User.full_name)
+        .all()
+    )
     org_contracts = Contract.query.filter_by(organization_id=contract.organization_id).order_by(Contract.number).all()
     return render_template(
         "admin/contract_edit.html",
@@ -239,8 +297,58 @@ def contract_access_copy_org(cid):
 @login_required
 @admin_required
 def users():
+    if sync_expired_master_key_access():
+        db.session.commit()
     items = User.query.order_by(User.full_name).all()
-    return render_template("admin/users.html", users=items)
+    curator_project_tips: dict[int, str] = {}
+    curator_ids = [u.id for u in items if u.role == "customer_curator"]
+    if curator_ids:
+        from servicesystem.project_management.models import Project
+
+        by_curator: dict[int, list] = {}
+        for p in (
+            Project.query.filter(
+                Project.customer_curator_id.in_(curator_ids),
+                Project.is_template.is_(False),
+            )
+            .order_by(Project.name)
+            .all()
+        ):
+            by_curator.setdefault(p.customer_curator_id, []).append(p)
+        for uid, projs in by_curator.items():
+            u = next((x for x in items if x.id == uid), None)
+            bits = []
+            if u and u.contract:
+                c = u.contract
+                bit = f"Договор №{c.number}"
+                if c.service_end_date:
+                    bit += f" · до {c.service_end_date.strftime('%d.%m.%Y')}"
+                bits.append(bit)
+            for p in projs[:5]:
+                line = p.name
+                if p.deadline:
+                    line += f" · до {p.deadline.strftime('%d.%m.%Y')}"
+                bits.append(line)
+            if len(projs) > 5:
+                bits.append(f"ещё {len(projs) - 5}")
+            curator_project_tips[uid] = " | ".join(bits) if bits else "Проект не назначен"
+        for uid in curator_ids:
+            if uid not in curator_project_tips:
+                u = next((x for x in items if x.id == uid), None)
+                if u and u.contract:
+                    c = u.contract
+                    tip = f"Договор №{c.number}"
+                    if c.service_end_date:
+                        tip += f" · до {c.service_end_date.strftime('%d.%m.%Y')}"
+                    tip += " · проект не назначен"
+                    curator_project_tips[uid] = tip
+                else:
+                    curator_project_tips[uid] = "Проект не назначен"
+    return render_template(
+        "admin/users.html",
+        users=items,
+        curator_project_tips=curator_project_tips,
+    )
 
 
 @bp.route("/users/create", methods=["POST"])
@@ -272,8 +380,19 @@ def user_edit(uid):
         if user.role == "admin":
             user.is_active = True
         elif user.role == "customer_curator":
-            # Куратор-заказчик: в админке всегда «Подключён»
+            # Куратор-заказчик: в админке всегда «Подключён» + синхрон договора с проектами
             user.is_active = True
+            from servicesystem.project_management.services import (
+                ensure_customer_curator_contract_access,
+            )
+
+            ok = ensure_customer_curator_contract_access(user)
+            if not ok:
+                flash(
+                    "Роль куратора сохранена, но вход закрыт: продлите «Срок обслуживания» "
+                    "в договоре организации или снимите статус «расторгнут».",
+                    "warning",
+                )
         else:
             user.is_active = request.form.get("is_active") == "1"
         if request.form.get("password"):

@@ -269,19 +269,13 @@ def stream_video(filename):
     return response
 
 
-@bp.route("/projects")
-@login_required
-@contract_access_required
-def customer_projects():
-    """ЛК куратора-заказчика: текущие проекты (ТЗ 1.3)."""
-    if not current_user.is_customer_curator:
-        abort(403)
-    from servicesystem.project_management.models import Project, ProjectStage
-
+def _curator_projects():
     from datetime import date
 
+    from servicesystem.project_management.models import Project
+
     today = date.today()
-    projects = (
+    return (
         Project.query.filter_by(customer_curator_id=current_user.id, is_active=True)
         .filter(
             db.or_(
@@ -292,11 +286,248 @@ def customer_projects():
         .order_by(Project.deadline.nulls_last(), Project.name)
         .all()
     )
+
+
+def _curator_stage_or_403(stage_id: int):
+    from servicesystem.project_management.models import ProjectStage
+
+    stage = db.session.get(ProjectStage, stage_id) or abort(404)
+    proj = stage.project
+    if not proj or proj.customer_curator_id != current_user.id:
+        abort(403)
+    return stage
+
+
+def _create_stage_remark_ticket(stage, subject: str, description: str, priority: int = 1):
+    """Тикет-замечание по этапу (низкая критичность по умолчанию)."""
+    from servicesystem.models import IncidentCategory, ObjectCategory, Ticket
+    from servicesystem.routes.tickets import _next_ticket_number
+    from servicesystem.services.notify import notify_ticket_created
+    from servicesystem.services.routing import resolve_auditor, resolve_default_executor
+    from servicesystem.services.sla import compute_deadlines
+    from servicesystem.services.ticket_workflow import on_ticket_created
+    from servicesystem.project_management.services import on_ticket_created_hook
+    from servicesystem.services.audit import log_ticket_history
+
+    contract = current_user.contract or (stage.project.contract if stage.project else None)
+    if not contract:
+        raise ValueError("no_contract")
+    obj = ObjectCategory.query.filter_by(is_active=True).order_by(ObjectCategory.sort_order).first()
+    if not obj:
+        raise ValueError("no_category")
+    inc = (
+        IncidentCategory.query.filter_by(object_category_id=obj.id, is_active=True)
+        .order_by(IncidentCategory.sort_order)
+        .first()
+    )
+    if not inc:
+        raise ValueError("no_incident")
+    # ГИП проекта предпочтительнее маршрутизации по категории
+    auditor = stage.project.curator_auditor if stage.project else None
+    if not auditor:
+        auditor = resolve_auditor(obj.id)
+    default_exec = resolve_default_executor(obj.id)
+    reaction, resolution = compute_deadlines(priority)
+    ticket = Ticket(
+        number=_next_ticket_number(),
+        contract_id=contract.id,
+        author_id=current_user.id,
+        auditor_id=auditor.id if auditor else None,
+        executor_id=default_exec.id if default_exec else None,
+        object_category_id=obj.id,
+        incident_category_id=inc.id,
+        priority=priority,
+        subject=subject[:120],
+        description_md=description,
+        status="new",
+        reaction_deadline=reaction,
+        resolution_deadline=resolution,
+    )
+    db.session.add(ticket)
+    db.session.flush()
+    on_ticket_created(ticket)
+    on_ticket_created_hook(ticket)
+    log_ticket_history(
+        ticket.id,
+        current_user.id,
+        "created",
+        details=f"stage_remark stage_id={stage.id}; priority={priority}",
+    )
+    log_audit(current_user.id, "ticket_create", "ticket", ticket.id, f"stage={stage.id}")
+    notify_ticket_created(ticket, current_user, auditor)
+    return ticket
+
+
+@bp.route("/projects")
+@login_required
+@contract_access_required
+def customer_projects():
+    """ЛК куратора-заказчика: проекты и приёмка этапов."""
+    if not current_user.is_customer_curator:
+        abort(403)
+    from servicesystem.project_management.models import ProjectStage
+    from servicesystem.project_management.services import stage_working_days_left
+
+    projects = _curator_projects()
     stages_by_project = {}
+    timers = {}
+    stage_files = {}
     for p in projects:
-        stages_by_project[p.id] = p.stages.order_by(ProjectStage.sort_order).all()
+        stages = p.stages.order_by(ProjectStage.sort_order, ProjectStage.id).all()
+        stages_by_project[p.id] = stages
+        for s in stages:
+            timers[s.id] = stage_working_days_left(s)
+            atts = list(s.attachments)
+            reports = [a for a in atts if (getattr(a, "kind", None) or "report") != "act"]
+            acts = [a for a in atts if getattr(a, "kind", None) == "act"]
+            stage_files[s.id] = {"reports": reports, "acts": acts}
     return render_template(
         "cabinet/customer_projects.html",
         projects=projects,
         stages_by_project=stages_by_project,
+        stage_timers=timers,
+        stage_files=stage_files,
+    )
+
+
+@bp.route("/projects/stages/<int:sid>/accept", methods=["POST"])
+@login_required
+@contract_access_required
+@write_access_required
+def curator_stage_accept(sid):
+    if not current_user.is_customer_curator:
+        abort(403)
+    from servicesystem.project_management.services import (
+        notify_auditor_stage_acceptance,
+        set_stage_acceptance,
+    )
+
+    stage = _curator_stage_or_403(sid)
+    if not stage.released_at:
+        flash("Этап ещё не выпущен ГИП — приёмка недоступна.", "warning")
+        return redirect(url_for("cabinet.customer_projects") + f"#project-{stage.project_id}")
+    status = (request.form.get("status") or "").strip()
+    try:
+        set_stage_acceptance(stage, status, current_user)
+    except ValueError:
+        flash("Некорректный статус приёмки.", "danger")
+        return redirect(url_for("cabinet.customer_projects") + f"#project-{stage.project_id}")
+    db.session.commit()
+    notify_auditor_stage_acceptance(stage, stage.acceptance_label, current_user.full_name)
+    flash(f"Этап «{stage.title}»: {stage.acceptance_label}.", "success")
+    return redirect(url_for("cabinet.customer_projects") + f"#project-{stage.project_id}")
+
+
+@bp.route("/projects/stages/<int:sid>/act", methods=["POST"])
+@login_required
+@contract_access_required
+@write_access_required
+def curator_stage_act_upload(sid):
+    if not current_user.is_customer_curator:
+        abort(403)
+    from servicesystem.project_management.services import save_stage_attachment
+
+    stage = _curator_stage_or_403(sid)
+    if stage.acceptance_status not in ("accepted", "accepted_remarks"):
+        flash("Скан акта доступен после статусов «Принято» / «Принято с замечаниями».", "warning")
+        return redirect(url_for("cabinet.customer_projects") + f"#project-{stage.project_id}")
+    f = request.files.get("act_file")
+    if not f or not f.filename:
+        flash("Выберите файл акта (PDF, JPG, PNG).", "warning")
+        return redirect(url_for("cabinet.customer_projects") + f"#project-{stage.project_id}")
+    ext = (f.filename.rsplit(".", 1)[-1] or "").lower()
+    if ext not in ("pdf", "jpg", "jpeg", "png"):
+        flash("Допустимы только PDF, JPG, PNG.", "danger")
+        return redirect(url_for("cabinet.customer_projects") + f"#project-{stage.project_id}")
+    try:
+        att = save_stage_attachment(stage, f, current_user.id, kind="act")
+        db.session.add(att)
+        db.session.commit()
+    except ValueError:
+        flash("Файл слишком большой.", "danger")
+        return redirect(url_for("cabinet.customer_projects") + f"#project-{stage.project_id}")
+    flash("Акт выполненных работ загружен.", "success")
+    return redirect(url_for("cabinet.customer_projects") + f"#project-{stage.project_id}")
+
+
+@bp.route("/projects/stages/<int:sid>/remark", methods=["POST"])
+@login_required
+@contract_access_required
+@write_access_required
+def curator_stage_remark(sid):
+    """Замечание → тикет (низкая критичность для «принято с замечаниями»)."""
+    if not current_user.is_customer_curator:
+        abort(403)
+    stage = _curator_stage_or_403(sid)
+    if stage.acceptance_status not in ("accepted_remarks", "rework"):
+        flash("Сначала выберите статус «Принято с замечаниями» или «На доработку».", "warning")
+        return redirect(url_for("cabinet.customer_projects") + f"#project-{stage.project_id}")
+    body = (request.form.get("remark") or "").strip()
+    if not body:
+        flash("Введите текст замечания.", "warning")
+        return redirect(url_for("cabinet.customer_projects") + f"#project-{stage.project_id}")
+    # 1 = низший для «с замечаниями»; для доработки — обычный (2)
+    priority = 1 if stage.acceptance_status == "accepted_remarks" else 2
+    subject = f"Замечание по этапу «{stage.title}»"
+    desc = (
+        f"**Проект:** {stage.project.name}\n"
+        f"**Этап:** {stage.title}\n"
+        f"**Статус приёмки:** {stage.acceptance_label}\n\n"
+        f"{body}"
+    )
+    try:
+        ticket = _create_stage_remark_ticket(stage, subject, desc, priority=priority)
+        # Вложения к замечанию (ТЗ: «добавляет вложения»)
+        import uuid as _uuid
+
+        from servicesystem.models import TicketAttachment
+
+        storage = get_storage()
+        for f in request.files.getlist("remark_files"):
+            if not f or not f.filename:
+                continue
+            stored = f"{_uuid.uuid4().hex}_{f.filename}"
+            rel = f"tickets/{ticket.id}/{stored}"
+            size = storage.save_file(rel, f)
+            db.session.add(
+                TicketAttachment(
+                    ticket_id=ticket.id,
+                    original_name=(f.filename or "file")[:512],
+                    stored_name=f"{ticket.id}/{stored}",
+                    mime_type=getattr(f, "mimetype", None),
+                    size_bytes=size,
+                )
+            )
+        db.session.commit()
+    except ValueError as e:
+        db.session.rollback()
+        flash(f"Не удалось создать тикет ({e}).", "danger")
+        return redirect(url_for("cabinet.customer_projects") + f"#project-{stage.project_id}")
+    flash(f"Замечание оформлено заявкой №{ticket.number}.", "success")
+    return redirect(url_for("tickets.detail", tid=ticket.id))
+
+
+@bp.route("/projects/stages/<int:sid>/files/<int:aid>")
+@login_required
+@contract_access_required
+def curator_stage_file(sid, aid):
+    """Скачивание отчётных материалов / акта этапа куратором."""
+    from servicesystem.project_management.models import ProjectStageAttachment
+
+    att = db.session.get(ProjectStageAttachment, aid) or abort(404)
+    if att.stage_id != sid:
+        abort(404)
+    if current_user.is_customer_curator:
+        _curator_stage_or_403(sid)
+    elif not current_user.is_staff:
+        abort(403)
+    rel = f"project_stages/{att.stage_id}/{att.stored_name}"
+    storage = get_storage()
+    if not storage.exists(rel):
+        abort(404)
+    return send_file(
+        storage.read_path(rel),
+        as_attachment=True,
+        download_name=att.original_name,
+        mimetype=att.mime_type or "application/octet-stream",
     )

@@ -64,12 +64,39 @@ def _master_login():
 def _personal_login():
     email = request.form.get("email", "").strip().lower()
     password = request.form.get("password", "")
-    user = User.query.filter_by(email=email, is_active=True).first()
+    user = User.query.filter_by(email=email).first()
     if not user or not user.check_password(password):
         flash("Неверный email или пароль.", "danger")
         return redirect(url_for("auth.login"))
-    if user.is_customer and user.contract and user.contract.is_blocked:
-        flash("Доступ организации заблокирован или срок обслуживания истёк.", "danger")
+    if user.is_customer and user.contract:
+        if user.is_customer_curator and user.contract.is_access_disabled:
+            from servicesystem.project_management.services import (
+                ensure_customer_curator_contract_access,
+            )
+
+            ensure_customer_curator_contract_access(user)
+            db.session.commit()
+        if user.contract.is_access_disabled:
+            if user.is_active:
+                user.is_active = False
+                db.session.commit()
+            when = user.contract.access_disabled_at
+            when_txt = when.strftime("%d.%m.%Y") if when else "—"
+            if user.contract.is_master_key_expired:
+                flash(
+                    f"Мастер-ключ организации истёк ({when_txt}). Доступ отключён. "
+                    "Обратитесь к администратору.",
+                    "danger",
+                )
+            else:
+                flash(
+                    f"Доступ организации заблокирован или срок обслуживания истёк "
+                    f"(до {when_txt}). Обратитесь к администратору.",
+                    "danger",
+                )
+            return redirect(url_for("auth.login"))
+    if not user.is_active:
+        flash("Учётная запись отключена. Обратитесь к администратору.", "danger")
         return redirect(url_for("auth.login"))
     login_user(user, remember=False)
     session.permanent = True

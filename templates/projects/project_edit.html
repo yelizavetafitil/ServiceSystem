@@ -76,9 +76,11 @@
               {% endfor %}
             </select>
           </div>
-          <p class="projects-cms-hint muted">При назначении заказчику выдаётся роль «Куратор-заказчик», доступ «Подключён», срок договора продлевается до окна проекта.</p>
+          <p class="projects-cms-hint muted">При назначении выдаётся роль «Куратор-заказчик» и доступ «Подключён». Срок доступа — по договору организации (поле «Срок обслуживания»), а не по крайнему сроку проекта.</p>
           {% if project.customer_curator_active_until %}
-          <p class="projects-cms-hint muted">Доступ куратора по проекту активен до {{ project.customer_curator_active_until.strftime('%d.%m.%Y') }}</p>
+          <p class="projects-cms-hint muted">Доступ куратора по договору активен до {{ project.customer_curator_active_until.strftime('%d.%m.%Y') }}</p>
+          {% elif project.contract and not project.contract.service_end_date %}
+          <p class="projects-cms-hint muted">В договоре не указан срок обслуживания — задайте его в карточке договора, иначе вход куратора будет закрыт после истечения.</p>
           {% endif %}
           <fieldset class="projects-workdays-opts">
             <legend class="projects-workdays-legend">Рабочие дни</legend>

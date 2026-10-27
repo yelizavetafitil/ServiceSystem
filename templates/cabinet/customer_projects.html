@@ -1,26 +1,136 @@
 {% extends "base.html" %}
+{% from "macros/forms.html" import csrf_field %}
 {% block title %}Текущие проекты{% endblock %}
-{% block head %}<link rel="stylesheet" href="{{ url_for('static', filename='css/projects.css') }}?v=1">{% endblock %}
+{% block head %}<link rel="stylesheet" href="{{ url_for('static', filename='css/projects.css') }}?v=104">{% endblock %}
 {% block content %}
-<div class="container cms-page">
+<div class="container container-wide cms-page">
   <h1>Текущие проекты</h1>
-  <p class="hint">Ход работ по отчётным этапам (куратор-заказчик).</p>
+  <p class="hint">Приёмка отчётных этапов (куратор-заказчик).</p>
+
   {% for p in projects %}
-  <div class="card mb-md">
-    <h2>{{ p.name }}</h2>
-    <p class="muted">Срок: {% if p.planned_start %}{{ p.planned_start.strftime('%d.%m.%Y') }}{% endif %} — {{ p.deadline.strftime('%d.%m.%Y') if p.deadline else '—' }}</p>
-    <ol class="projects-timeline">
-      {% for s in stages_by_project[p.id] %}
-      <li class="{% if s.released_at %}is-done{% endif %}">
-        <strong>{{ s.title }}</strong>
-        {% if s.deadline %}<span class="muted">до {{ s.deadline.strftime('%d.%m.%Y') }}</span>{% endif %}
-        {% if s.released_at %}<span class="projects-timeline-badge">Выпущен</span>{% endif %}
-      </li>
+  <section class="card mb-md projects-curator-project" id="project-{{ p.id }}">
+    <h2 class="projects-curator-title">{{ p.name }}</h2>
+    <p class="projects-curator-meta muted">
+      {% if p.contract %}
+      Работы выполняются по договору №{{ p.contract.number }}
+      {% if p.contract.signed_at %} от {{ p.contract.signed_at.strftime('%d.%m.%Y') }}{% endif %}.
+      {% if p.contract.service_end_date %}
+      Срок выполнения договора — {{ p.contract.service_end_date.strftime('%d.%m.%Y') }}.
+      {% endif %}
       {% else %}
-      <li class="muted">Этапы не заданы</li>
-      {% endfor %}
-    </ol>
-  </div>
+      Договор не привязан.
+      {% endif %}
+      {% if p.planned_start or p.deadline %}
+      · Окно проекта:
+      {% if p.planned_start %}{{ p.planned_start.strftime('%d.%m.%Y') }}{% else %}—{% endif %}
+      —
+      {% if p.deadline %}{{ p.deadline.strftime('%d.%m.%Y') }}{% else %}—{% endif %}
+      {% endif %}
+    </p>
+
+    <div class="table-wrap projects-curator-stages-wrap">
+      <table class="projects-curator-stages">
+        <thead>
+          <tr>
+            <th>№</th>
+            <th>Наименование этапа</th>
+            <th>Дата окончания</th>
+            <th>Таймер<br><span class="muted" style="font-weight:500">(раб. дни)</span></th>
+            <th>Отчётные материалы,<br>вложения, накладные</th>
+            <th>Статус</th>
+            <th>Замечания</th>
+            <th>Акт выполненных работ</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for s in stages_by_project[p.id] %}
+          {% set timer = stage_timers.get(s.id) if stage_timers is defined else none %}
+          {% set files = stage_files.get(s.id, {'reports': [], 'acts': []}) if stage_files is defined else {'reports': [], 'acts': []} %}
+          {% set reports = files.reports %}
+          {% set acts = files.acts %}
+          <tr class="{% if s.acceptance_status == 'accepted' %}is-accepted{% elif s.acceptance_status == 'rework' %}is-rework{% elif s.acceptance_status == 'accepted_remarks' %}is-remarks{% endif %}">
+            <td>{{ loop.index }}</td>
+            <td>
+              <strong>{{ s.title }}</strong>
+              {% if s.released_at %}<span class="badge status-resolved" title="Выпущен ГИП">Выпущен</span>
+              {% else %}<span class="badge" title="Ожидает выпуска ГИП">Черновик</span>{% endif %}
+            </td>
+            <td>{{ s.deadline.strftime('%d.%m.%Y') if s.deadline else '—' }}</td>
+            <td class="{% if timer is not none and timer < 0 %}access-disabled-date{% endif %}" title="Дедлайн минус сегодня (раб. дни)">
+              {% if timer is none %}—{% else %}{{ timer }}{% endif %}
+            </td>
+            <td>
+              {% if s.release_notes %}<p class="projects-cms-hint" style="margin:0 0 6px">{{ s.release_notes }}</p>{% endif %}
+              {% if reports %}
+              <ul class="projects-curator-files">
+                {% for a in reports %}
+                <li><a href="{{ url_for('cabinet.curator_stage_file', sid=s.id, aid=a.id) }}">{{ a.original_name }}</a></li>
+                {% endfor %}
+              </ul>
+              {% elif not s.release_notes %}
+              <span class="muted">—</span>
+              {% endif %}
+            </td>
+            <td>
+              {% if s.acceptance_status %}
+              <div class="projects-curator-status-label">{{ s.acceptance_label }}</div>
+              {% endif %}
+              {% if s.released_at %}
+              <form method="post" action="{{ url_for('cabinet.curator_stage_accept', sid=s.id) }}" class="projects-curator-status-form">
+                {{ csrf_field() }}
+                <select name="status" class="form-control form-control--compact" required>
+                  <option value="">— выбрать —</option>
+                  <option value="accepted" {% if s.acceptance_status == 'accepted' %}selected{% endif %}>1 — Принято</option>
+                  <option value="accepted_remarks" {% if s.acceptance_status == 'accepted_remarks' %}selected{% endif %}>2 — Принято с замечаниями</option>
+                  <option value="rework" {% if s.acceptance_status == 'rework' %}selected{% endif %}>3 — На доработку. Имеются замечания</option>
+                </select>
+                <button type="submit" class="btn btn-outline btn-xs">Применить</button>
+              </form>
+              {% else %}
+              <span class="muted">После выпуска ГИП</span>
+              {% endif %}
+            </td>
+            <td>
+              {% if s.acceptance_status == 'accepted' %}
+              <span class="muted">Замечания отсутствуют</span>
+              {% elif s.acceptance_status in ('accepted_remarks', 'rework') %}
+              <form method="post" action="{{ url_for('cabinet.curator_stage_remark', sid=s.id) }}" class="projects-curator-remark-form" enctype="multipart/form-data">
+                {{ csrf_field() }}
+                <textarea name="remark" class="form-control" rows="2" required placeholder="Текст замечания…"></textarea>
+                <input type="file" name="remark_files" class="form-control form-control--compact" multiple>
+                <button type="submit" class="btn btn-primary btn-xs">＋ Замечание (тикет)</button>
+              </form>
+              <p class="muted projects-cms-hint" style="margin:4px 0 0;font-size:11px">{% if s.acceptance_status == 'accepted_remarks' %}Критичность: низкая{% else %}После ответа ГИП смените статус на «Принято»{% endif %}</p>
+              {% else %}
+              <span class="muted">—</span>
+              {% endif %}
+            </td>
+            <td>
+              {% if acts %}
+              <ul class="projects-curator-files">
+                {% for a in acts %}
+                <li><a href="{{ url_for('cabinet.curator_stage_file', sid=s.id, aid=a.id) }}">{{ a.original_name }}</a></li>
+                {% endfor %}
+              </ul>
+              {% endif %}
+              {% if s.acceptance_status in ('accepted', 'accepted_remarks') %}
+              <form method="post" action="{{ url_for('cabinet.curator_stage_act_upload', sid=s.id) }}" enctype="multipart/form-data" class="projects-curator-act-form">
+                {{ csrf_field() }}
+                <input type="file" name="act_file" accept=".pdf,.jpg,.jpeg,.png,application/pdf,image/*" required class="form-control form-control--compact">
+                <button type="submit" class="btn btn-outline btn-xs">Загрузить акт (PDF/JPG/PNG)</button>
+              </form>
+              {% elif not acts %}
+              <span class="muted">—</span>
+              {% endif %}
+            </td>
+          </tr>
+          {% else %}
+          <tr><td colspan="8" class="muted">Этапы не заданы</td></tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </section>
   {% else %}
   <p class="muted">Нет назначенных проектов.</p>
   {% endfor %}

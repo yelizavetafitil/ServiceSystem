@@ -68,6 +68,20 @@ class Contract(db.Model):
         return False
 
     @property
+    def is_access_disabled(self) -> bool:
+        """Вход сотрудников закрыт: договор истёк/расторгнут или истёк мастер-ключ."""
+        return self.is_blocked or self.is_master_key_expired
+
+    @property
+    def access_disabled_at(self):
+        """Дата отключения (мастер-ключ приоритетнее, иначе срок обслуживания)."""
+        if self.is_master_key_expired and self.master_key_expires_at:
+            return self.master_key_expires_at
+        if self.is_blocked and self.service_end_date:
+            return self.service_end_date
+        return None
+
+    @property
     def is_readonly(self) -> bool:
         return self.status == "suspended"
 
@@ -109,6 +123,42 @@ class User(UserMixin, db.Model):
 
     def check_password(self, password: str) -> bool:
         return check_password_hash(self.password_hash, password)
+
+    @property
+    def portal_access_on(self) -> bool:
+        """Доступ заказчика/куратора — по сроку договора (+ мастер-ключ не истёк)."""
+        if self.is_customer:
+            if not self.contract:
+                return False
+            if self.contract.is_access_disabled:
+                return False
+            # Флаг is_active должен совпадать с договором; при расхождении ориентир — договор
+            return True
+        return bool(self.is_active)
+
+    @property
+    def portal_disabled_at(self):
+        if self.is_customer and self.contract and self.contract.is_access_disabled:
+            return self.contract.access_disabled_at
+        return None
+
+    def contract_access_hint(self) -> str:
+        """Подсказка при наведении на символ мастер-ключа / договора."""
+        c = self.contract
+        if not c:
+            return "Нет привязанного договора"
+        parts = [f"Договор №{c.number}"]
+        if c.service_end_date:
+            parts.append(f"обслуживание до {c.service_end_date.strftime('%d.%m.%Y')}")
+        else:
+            parts.append("срок обслуживания не задан")
+        if c.master_key_expires_at:
+            parts.append(f"мастер-ключ до {c.master_key_expires_at.strftime('%d.%m.%Y')}")
+        if c.is_access_disabled:
+            when = c.access_disabled_at
+            if when:
+                parts.append(f"отключён с {when.strftime('%d.%m.%Y')}")
+        return " · ".join(parts)
 
     @property
     def is_staff(self) -> bool:

@@ -11,12 +11,18 @@
       <thead><tr><th>№</th><th>Организация</th><th>Статус</th><th>Окончание</th><th>Мастер-ключ до</th><th></th></tr></thead>
       <tbody data-live-search-list>
       {% for c in contracts %}
-      <tr class="live-search-item" data-search-text="{{ c.number }} {{ c.organization.name }} {{ CONTRACT_STATUSES.get(c.status, c.status) }}">
+      <tr class="live-search-item{% if c.is_master_key_expired or c.is_access_disabled %} is-access-disabled{% endif %}" data-search-text="{{ c.number }} {{ c.organization.name }} {{ CONTRACT_STATUSES.get(c.status, c.status) }}">
         <td>{{ c.number }}</td>
         <td>{{ c.organization.name }}</td>
-        <td><span class="badge status-{{ c.status }}">{{ CONTRACT_STATUSES.get(c.status, c.status) }}</span></td>
-        <td>{{ c.service_end_date.strftime('%d.%m.%Y') if c.service_end_date else '—' }}</td>
-        <td>{{ c.master_key_expires_at.strftime('%d.%m.%Y') if c.master_key_expires_at else '—' }}</td>
+        <td>
+          {% if c.is_master_key_expired %}
+          <span class="badge status-rejected">Отключён</span>
+          {% else %}
+          <span class="badge status-{{ c.status }}">{{ CONTRACT_STATUSES.get(c.status, c.status) }}</span>
+          {% endif %}
+        </td>
+        <td{% if c.is_blocked and c.service_end_date %} class="access-disabled-date"{% endif %}>{{ c.service_end_date.strftime('%d.%m.%Y') if c.service_end_date else '—' }}</td>
+        <td{% if c.is_master_key_expired %} class="access-disabled-date"{% endif %}>{{ c.master_key_expires_at.strftime('%d.%m.%Y') if c.master_key_expires_at else '—' }}</td>
         <td><a href="{{ url_for('admin.contract_edit', cid=c.id) }}">SLA</a></td>
       </tr>
       {% endfor %}

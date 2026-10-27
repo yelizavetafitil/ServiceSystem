@@ -22,7 +22,23 @@
       {% if user.role == 'admin' %}
       <p class="hint">Учётная запись администратора всегда активна и не отключается через этот переключатель.</p>
       {% elif user.role == 'customer_curator' %}
-      <p class="hint">Куратор-заказчик всегда в статусе «Подключён» (доступ к ЛК проектов и договору).</p>
+      <p class="hint">Куратор-заказчик «Подключён», пока действуют срок обслуживания и мастер-ключ договора.</p>
+      {% if user.contract %}
+      <p class="hint">Договор {{ user.contract.number }}:
+        {% if user.contract.is_access_disabled %}
+        <strong class="access-disabled-date">Отключён</strong>
+        {% if user.contract.access_disabled_at %} с {{ user.contract.access_disabled_at.strftime('%d.%m.%Y') }}{% endif %}
+        {% if user.contract.is_master_key_expired %}(истёк мастер-ключ){% else %}(срок обслуживания){% endif %}
+        — <a href="{{ url_for('admin.contract_edit', cid=user.contract.id) }}">продлить в договорах</a>
+        {% else %}
+        активен
+        {% if user.contract.service_end_date %} до {{ user.contract.service_end_date.strftime('%d.%m.%Y') }}{% endif %}
+        {% if user.contract.master_key_expires_at %} · мастер-ключ до {{ user.contract.master_key_expires_at.strftime('%d.%m.%Y') }}{% endif %}
+        {% endif %}.
+      </p>
+      {% else %}
+      <p class="hint access-disabled-date">У учётной записи нет договора — вход заказчика будет недоступен, пока не привяжете договор или проект с договором.</p>
+      {% endif %}
       {% else %}
       <div class="form-group">
         <span class="form-label">Доступ к системе</span>

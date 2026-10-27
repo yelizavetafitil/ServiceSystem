@@ -304,6 +304,12 @@ def arm():
         default="month",
     )
     filter_assignee = _arm_filter_assignee()
+    can_view_team_load = user_can_view_others_time_logs(current_user)
+    # Исполнитель видит только свою загрузку и свой календарь — без чужих чипов/фильтра.
+    if view == "calendar" and not can_view_team_load:
+        filter_assignee = current_user.id
+        if cal_mode == "team":
+            cal_mode = "month"
     include_done = view in ("kanban", "gantt")
     if current_user.is_admin or current_user.is_auditor:
         tasks_q = ProjectTask.query
@@ -327,12 +333,17 @@ def arm():
     calendar_executors = (
         _calendar_executors(project_id, projects) if view == "calendar" else []
     )
+    if view == "calendar" and not can_view_team_load:
+        calendar_executors = [u for u in calendar_executors if u.id == current_user.id]
+        if not calendar_executors:
+            calendar_executors = [current_user]
     ctx = dict(
         view=view,
         projects=projects,
         filter_project=project_id,
         filter_assignee=filter_assignee,
         calendar_executors=calendar_executors,
+        can_view_team_load=can_view_team_load,
         tasks=tasks,
         kanban_labels=KANBAN_LABELS,
         columns=TASK_KANBAN_COLUMNS,
@@ -362,9 +373,22 @@ def arm():
     if view == "calendar":
         month_grid = _month_grid(cal_mode)
         executor_workload = _executor_workload(tasks, list(month_grid))
-        ctx["calendar_executors"] = _calendar_executors(
-            project_id, projects, extra_ids=[w["id"] for w in executor_workload]
-        )
+        if can_view_team_load:
+            ctx["calendar_executors"] = _calendar_executors(
+                project_id, projects, extra_ids=[w["id"] for w in executor_workload]
+            )
+        else:
+            # Только своя полоска загрузки
+            executor_workload = [w for w in executor_workload if w["id"] == current_user.id]
+            if not executor_workload:
+                executor_workload = [
+                    {
+                        "id": current_user.id,
+                        "name": current_user.full_name or current_user.username,
+                        "load": 0,
+                    }
+                ]
+            ctx["calendar_executors"] = [current_user]
         grid_tasks = (
             [t for t in tasks if _task_involves_user(t, filter_assignee)]
             if filter_assignee
@@ -375,7 +399,7 @@ def arm():
             **ctx,
             month_grid=month_grid,
             tasks_by_day=_tasks_by_day(grid_tasks, list(month_grid)),
-            team_load=_team_load(grid_tasks) if cal_mode == "team" else None,
+            team_load=_team_load(grid_tasks) if cal_mode == "team" and can_view_team_load else None,
             executor_workload=executor_workload,
         )
     gantt_anchor = _parse_form_date(request.args.get("anchor"))
@@ -803,7 +827,7 @@ def manage_edit(pid):
             if proj.customer_curator_id:
                 flash(
                     "Куратору-заказчику выдана роль и доступ «Подключён»; "
-                    "срок договора при необходимости продлён до окна проекта.",
+                    "доступ по сроку обслуживания договора.",
                     "info",
                 )
             if snapped:

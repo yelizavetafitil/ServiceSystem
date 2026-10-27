@@ -5,8 +5,11 @@
 <div class="container cms-page projects-page">
   {% include "projects/_arm_header.html" %}
 
+  {% set can_team = can_view_team_load if can_view_team_load is defined else (current_user.is_admin or current_user.is_auditor) %}
   <div class="projects-gantt-toolbar projects-calendar-toolbar">
-    {% for m, lbl in [('month','Месяц'),('workweek','Рабочая неделя'),('day','День'),('team','Расписание команды')] %}
+    {% set cal_modes = [('month','Месяц'),('workweek','Рабочая неделя'),('day','День')] %}
+    {% if can_team %}{% set cal_modes = cal_modes + [('team','Расписание команды')] %}{% endif %}
+    {% for m, lbl in cal_modes %}
     {% if filter_assignee %}
     <a class="projects-view-tab{% if cal_mode == m %} is-active{% endif %}"
        href="{{ url_for('projects.arm', view='calendar', project=filter_project, cal_mode=m, assignee=filter_assignee) }}">{{ lbl }}</a>
@@ -17,6 +20,7 @@
     {% endfor %}
     <a class="projects-view-tab" href="{{ url_for('projects.calendar_settings') }}">Синхронизация</a>
 
+    {% if can_team %}
     <form method="get" class="projects-calendar-assignee-filter" aria-label="Фильтр по исполнителю">
       <input type="hidden" name="view" value="calendar">
       <input type="hidden" name="cal_mode" value="{{ cal_mode }}">
@@ -29,15 +33,17 @@
         {% endfor %}
       </select>
     </form>
+    {% endif %}
   </div>
 
   {% if executor_workload %}
   {% set max_load = executor_workload[0].load if executor_workload[0].load else 1 %}
-  <div class="projects-calendar-load-bar" aria-label="Загрузка исполнителей">
+  <div class="projects-calendar-load-bar" aria-label="Загрузка{% if can_team %} исполнителей{% else %}{% endif %}">
     <span class="projects-calendar-load-bar-title">Загрузка</span>
     {% for w in executor_workload %}
     {% set band = 'high' if w.load >= 20 else ('mid' if w.load >= 10 else 'low') %}
     {% set color_i = loop.index0 % 6 %}
+    {% if can_team %}
     {% if filter_assignee == w.id %}
     <a class="projects-calendar-load-chip projects-calendar-load-chip--{{ band }} projects-calendar-load-chip--c{{ color_i }} is-active"
        href="{{ url_for('projects.arm', view='calendar', project=filter_project, cal_mode=cal_mode, assignee='') }}"
@@ -51,9 +57,17 @@
       <span class="projects-calendar-load-chip-val">{{ w.load }}</span>
       <span class="projects-calendar-load-chip-bar" style="--load: {{ ([100, (w.load * 100 / max_load)|round|int]|min) }}%"></span>
     </a>
+    {% else %}
+    <span class="projects-calendar-load-chip projects-calendar-load-chip--{{ band }} projects-calendar-load-chip--c{{ color_i }} is-active"
+          title="{{ w.name }}: {{ w.load }} чел.-дн.">
+      <span class="projects-calendar-load-chip-name">{{ w.name }}</span>
+      <span class="projects-calendar-load-chip-val">{{ w.load }}</span>
+      <span class="projects-calendar-load-chip-bar" style="--load: {{ ([100, (w.load * 100 / max_load)|round|int]|min) }}%"></span>
+    </span>
+    {% endif %}
     {% endfor %}
   </div>
-  {% elif cal_mode == 'team' %}
+  {% elif cal_mode == 'team' and can_team %}
   <p class="muted projects-calendar-load-empty">Нет задач с исполнителями в этом периоде.</p>
   {% endif %}
 

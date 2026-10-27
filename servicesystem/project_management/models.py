@@ -64,6 +64,14 @@ class ProjectMember(db.Model):
     __table_args__ = (db.UniqueConstraint("project_id", "user_id", name="uq_project_member"),)
 
 
+# Приёмка этапа куратором-заказчиком (ЛК)
+STAGE_ACCEPTANCE_STATUSES = (
+    "accepted",  # 1 — Принято
+    "accepted_remarks",  # 2 — Принято с замечаниями
+    "rework",  # 3 — На доработку
+)
+
+
 class ProjectStage(db.Model):
     __tablename__ = "project_stages"
 
@@ -76,10 +84,16 @@ class ProjectStage(db.Model):
     sort_order = db.Column(db.Integer, default=0)
     released_at = db.Column(db.DateTime(timezone=True))
     release_notes = db.Column(db.Text)
+    # ЛК куратора: приёмка этапа
+    acceptance_status = db.Column(db.String(32))  # see STAGE_ACCEPTANCE_STATUSES
+    acceptance_at = db.Column(db.DateTime(timezone=True))
+    acceptance_by_id = db.Column(db.Integer, db.ForeignKey("users.id"))
+    remarks_note = db.Column(db.Text)  # «Замечания отсутствуют» или текст
     created_at = db.Column(db.DateTime(timezone=True), default=_utcnow)
 
     project = db.relationship("Project", back_populates="stages")
     responsible = db.relationship("User", foreign_keys=[responsible_id])
+    acceptance_by = db.relationship("User", foreign_keys=[acceptance_by_id])
     tasks = db.relationship("ProjectTask", back_populates="stage", lazy="dynamic")
     attachments = db.relationship(
         "ProjectStageAttachment",
@@ -87,6 +101,14 @@ class ProjectStage(db.Model):
         lazy="dynamic",
         cascade="all, delete-orphan",
     )
+
+    @property
+    def acceptance_label(self) -> str:
+        return {
+            "accepted": "Принято",
+            "accepted_remarks": "Принято с замечаниями",
+            "rework": "На доработку. Имеются замечания",
+        }.get(self.acceptance_status or "", "—")
 
 
 class ProjectTask(db.Model):
@@ -306,6 +328,8 @@ class ProjectStageAttachment(db.Model):
     stored_name = db.Column(db.String(512), nullable=False)
     mime_type = db.Column(db.String(128))
     size_bytes = db.Column(db.BigInteger, default=0)
+    # report = отчётные материалы; act = акт выполненных работ (скан)
+    kind = db.Column(db.String(16), nullable=False, default="report")
     uploaded_by_id = db.Column(db.Integer, db.ForeignKey("users.id"))
     uploaded_at = db.Column(db.DateTime(timezone=True), default=_utcnow)
 
