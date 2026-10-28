@@ -1,0 +1,89 @@
+{# Фрагмент структуры туториала (AJAX-подгрузка) #}
+{% from "macros/forms.html" import csrf_field %}
+{% if not sections %}
+<p class="hint tutorial-structure-empty">Разделов пока нет — в ЛК читается поле «Содержание» целиком.</p>
+{% else %}
+<form id="tutorial-structure-save" method="post" action="{{ url_for('admin.tutorial_structure_save', tid=tutorial.id) }}" class="tutorial-admin-save-bar" data-structure-ajax>
+  {{ csrf_field() }}
+  <button type="submit" class="btn btn-primary">Сохранить названия</button>
+  <span class="hint tutorial-structure-save-hint" id="tutorial-structure-save-hint" hidden aria-live="polite"></span>
+</form>
+
+<div class="tutorial-admin-structure">
+  {% for sec in sections %}
+  {% set sec_num = loop.index %}
+  <article class="tutorial-admin-section" data-section-id="{{ sec.id }}">
+    <header class="tutorial-admin-section__head">
+      <span class="tutorial-admin-section__num">{{ sec_num }}</span>
+      <label class="tutorial-admin-section__label" for="section_title_{{ sec.id }}">Раздел</label>
+      <input id="section_title_{{ sec.id }}" form="tutorial-structure-save" name="section_title_{{ sec.id }}"
+             class="form-control tutorial-admin-section__title" value="{{ sec.title }}" maxlength="512" required>
+      <div class="tutorial-admin-section__tools">
+        <form method="post" action="{{ url_for('admin.tutorial_section_move', sid=sec.id) }}" data-structure-ajax>
+          {{ csrf_field() }}
+          <input type="hidden" name="dir" value="up">
+          <button type="submit" class="btn btn-sm btn-outline" title="Выше">↑</button>
+        </form>
+        <form method="post" action="{{ url_for('admin.tutorial_section_move', sid=sec.id) }}" data-structure-ajax>
+          {{ csrf_field() }}
+          <input type="hidden" name="dir" value="down">
+          <button type="submit" class="btn btn-sm btn-outline" title="Ниже">↓</button>
+        </form>
+        <form method="post" action="{{ url_for('admin.tutorial_section_delete', sid=sec.id) }}" data-structure-ajax
+              data-confirm="Удалить этот раздел и все подразделы?"
+              data-confirm-title="Удаление раздела"
+              data-confirm-ok="Удалить"
+              data-confirm-danger>
+          {{ csrf_field() }}
+          <button type="submit" class="btn btn-sm btn-danger-text">Удалить</button>
+        </form>
+      </div>
+    </header>
+
+    <ul class="tutorial-admin-lessons">
+      {% for les in lessons_by_section.get(sec.id, []) %}
+      <li class="tutorial-admin-lesson" data-lesson-id="{{ les.id }}">
+        <span class="tutorial-admin-lesson__num">{{ sec_num }}.{{ loop.index }}</span>
+        <input form="tutorial-structure-save" name="lesson_title_{{ les.id }}" class="form-control tutorial-admin-lesson__title"
+               value="{{ les.title }}" maxlength="512" aria-label="Название подраздела">
+        <a href="{{ url_for('admin.tutorial_lesson_edit', lid=les.id) }}" class="btn btn-sm btn-outline">Редактировать</a>
+        <span class="hint tutorial-admin-lesson__slug">/{{ les.slug }}</span>
+        <div class="tutorial-admin-lesson__tools">
+          <form method="post" action="{{ url_for('admin.tutorial_lesson_move', lid=les.id) }}" data-structure-ajax>
+            {{ csrf_field() }}
+            <input type="hidden" name="dir" value="up">
+            <button type="submit" class="btn btn-sm btn-outline" title="Выше">↑</button>
+          </form>
+          <form method="post" action="{{ url_for('admin.tutorial_lesson_move', lid=les.id) }}" data-structure-ajax>
+            {{ csrf_field() }}
+            <input type="hidden" name="dir" value="down">
+            <button type="submit" class="btn btn-sm btn-outline" title="Ниже">↓</button>
+          </form>
+          <form method="post" action="{{ url_for('admin.tutorial_lesson_delete', lid=les.id) }}" data-structure-ajax
+                data-confirm="Удалить этот подраздел?"
+                data-confirm-title="Удаление подраздела"
+                data-confirm-ok="Удалить"
+                data-confirm-danger>
+            {{ csrf_field() }}
+            <button type="submit" class="btn btn-sm btn-danger-text" title="Удалить">×</button>
+          </form>
+        </div>
+      </li>
+      {% else %}
+      <li class="hint tutorial-admin-lessons-empty">Подразделов пока нет — добавьте ниже.</li>
+      {% endfor %}
+    </ul>
+
+    <form method="post" action="{{ url_for('admin.tutorial_lesson_add', sid=sec.id) }}" class="tutorial-admin-add-lesson" data-structure-ajax>
+      {{ csrf_field() }}
+      <input name="lesson_title" class="form-control" placeholder="Название нового подраздела" autocomplete="off">
+      <button class="btn btn-sm btn-secondary" type="submit">+ Подраздел в этом разделе</button>
+    </form>
+  </article>
+  {% endfor %}
+</div>
+
+<div class="tutorial-admin-save-bar tutorial-admin-save-bar--bottom">
+  <button type="submit" form="tutorial-structure-save" class="btn btn-primary">Сохранить названия</button>
+</div>
+{% endif %}

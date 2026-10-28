@@ -35,7 +35,9 @@ class Config:
 
     UPLOAD_FOLDER = os.environ.get("UPLOAD_FOLDER", "/app/data/uploads")
     MAX_UPLOAD_MB = int(os.environ.get("MAX_UPLOAD_MB", "100"))
-    MAX_CONTENT_LENGTH = MAX_UPLOAD_MB * 1024 * 1024
+    # Видеоуроки: до 1 ГБ (ТЗ CMS); лимит тела запроса — максимум из вложений и видео
+    VIDEO_MAX_UPLOAD_MB = int(os.environ.get("VIDEO_MAX_UPLOAD_MB", "1024"))
+    MAX_CONTENT_LENGTH = max(MAX_UPLOAD_MB, VIDEO_MAX_UPLOAD_MB) * 1024 * 1024
     CHUNK_SIZE = int(os.environ.get("CHUNK_SIZE_MB", "8")) * 1024 * 1024
 
     SESSION_COOKIE_NAME = "ss_session"

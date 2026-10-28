@@ -1,12 +1,84 @@
 {% extends "base.html" %}
-{% block title %}{{ tutorial.title }}{% endblock %}
+{% block title %}{{ tutorial.title }}{% if current_lesson %} — {{ current_lesson.title }}{% endif %}{% endblock %}
 {% block content %}
-<div class="container prose">
+<div class="container {% if has_structure %}tutorial-layout-wrap{% else %}prose{% endif %}">
   <a href="{{ url_for('cabinet.tutorials') }}" class="back-link">← К базе знаний</a>
+
+  {% if has_structure %}
+  <div class="tutorial-layout">
+    <aside class="tutorial-nav card" id="tutorial-nav">
+      <button type="button" class="tutorial-nav__toggle btn btn-sm btn-outline" id="tutorial-nav-toggle" aria-expanded="false">
+        Содержание
+      </button>
+      <div class="tutorial-nav__body" id="tutorial-nav-body">
+        <div class="tutorial-nav__title">{{ tutorial.title }}</div>
+        {% if tutorial.category %}<span class="kb-cat">{{ tutorial.category }}</span>{% endif %}
+        <nav class="tutorial-nav__list" aria-label="Разделы туториала">
+          {% for sec in section_nav %}
+          <div class="tutorial-nav__section">
+            <div class="tutorial-nav__section-title">{{ sec.num }}. {{ sec.title }}</div>
+            <ul>
+              {% for item in sec.lessons %}
+              <li>
+                <a href="{{ url_for('cabinet.tutorial_detail', slug=tutorial.slug, lesson_slug=item.lesson.slug) }}"
+                   class="tutorial-nav__link{% if item.active %} is-active{% endif %}">
+                  <span class="tutorial-nav__num">{{ item.num }}</span>
+                  {{ item.lesson.title }}
+                </a>
+              </li>
+              {% endfor %}
+            </ul>
+          </div>
+          {% endfor %}
+        </nav>
+      </div>
+    </aside>
+
+    <main class="tutorial-main card">
+      {% if current_lesson %}
+      <h1 class="tutorial-main__title">{{ current_lesson.title }}</h1>
+      {% else %}
+      <h1 class="tutorial-main__title">{{ tutorial.title }}</h1>
+      {% endif %}
+      <div class="markdown-body article-body">{{ content_html|safe }}</div>
+      {% if current_lesson %}
+      <div class="tutorial-pager">
+        {% if prev_lesson %}
+        <a class="btn btn-outline" href="{{ url_for('cabinet.tutorial_detail', slug=tutorial.slug, lesson_slug=prev_lesson.slug) }}">← Назад</a>
+        {% else %}
+        <span></span>
+        {% endif %}
+        {% if next_lesson %}
+        <a class="btn btn-primary" href="{{ url_for('cabinet.tutorial_detail', slug=tutorial.slug, lesson_slug=next_lesson.slug) }}">Далее →</a>
+        {% endif %}
+      </div>
+      {% elif section_nav %}
+      <p class="hint">Добавьте подразделы в админке, чтобы открывать материал по пунктам меню.</p>
+      {% endif %}
+    </main>
+  </div>
+  {% else %}
   <div class="card">
     <span class="kb-cat">{{ tutorial.category }}</span>
     <h1>{{ tutorial.title }}</h1>
     <div class="markdown-body article-body">{{ content_html|safe }}</div>
   </div>
+  {% endif %}
 </div>
+{% endblock %}
+{% block scripts %}
+{% if has_structure %}
+<script>
+(function () {
+  var btn = document.getElementById('tutorial-nav-toggle');
+  var body = document.getElementById('tutorial-nav-body');
+  var nav = document.getElementById('tutorial-nav');
+  if (!btn || !body || !nav) return;
+  btn.addEventListener('click', function () {
+    var open = nav.classList.toggle('is-open');
+    btn.setAttribute('aria-expanded', open ? 'true' : 'false');
+  });
+})();
+</script>
+{% endif %}
 {% endblock %}

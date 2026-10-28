@@ -1,0 +1,36 @@
+{% extends "base.html" %}
+{% from "macros/forms.html" import csrf_field %}
+{% block title %}Урок — {{ lesson.title }}{% endblock %}
+{% block head %}{% from "macros/editor.html" import cms_editor_assets %}{{ cms_editor_assets() }}{% endblock %}
+{% block content %}
+<div class="container cms-page">
+  <a href="{{ url_for('admin.tutorial_edit', tid=tutorial.id) }}#tutorial-structure" class="back-link">← Структура: {{ tutorial.title }}</a>
+  <div class="card cms-editor-card">
+    <p class="hint">Раздел: {{ section.title }}</p>
+    <h1 class="section-title">{{ lesson.title }}</h1>
+    <form method="post">
+      {{ csrf_field() }}
+      <div class="cms-meta-grid">
+        <div class="form-group">
+          <label>Заголовок урока *</label>
+          <input name="title" class="form-control" value="{{ lesson.title }}" required>
+        </div>
+        <div class="form-group">
+          <label>Slug (в URL туториала)</label>
+          <input name="slug" class="form-control" value="{{ lesson.slug }}" placeholder="авто из заголовка">
+        </div>
+      </div>
+      <div class="form-group cms-editor-wrap">
+        <label>Содержание урока *</label>
+        <p class="hint">Картинка: иконка изображения → файл с диска → глаз (предпросмотр). Выход из полного экрана: та же иконка стрелок, ✕ в панели или Esc.</p>
+        <textarea name="content_md" class="form-control cms-editor-field" rows="14">{{ lesson.content_md }}</textarea>
+      </div>
+      <div class="form-actions">
+        <button class="btn btn-primary">Сохранить</button>
+        <a class="btn btn-secondary" href="{{ url_for('admin.tutorial_edit', tid=tutorial.id) }}#tutorial-structure">К структуре</a>
+      </div>
+    </form>
+  </div>
+</div>
+{% endblock %}
+{% block scripts %}{% from "macros/editor.html" import init_cms_editor %}{{ init_cms_editor('.cms-editor-field', 560) }}{% endblock %}

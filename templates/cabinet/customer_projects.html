@@ -1,7 +1,7 @@
 {% extends "base.html" %}
 {% from "macros/forms.html" import csrf_field %}
 {% block title %}Текущие проекты{% endblock %}
-{% block head %}<link rel="stylesheet" href="{{ url_for('static', filename='css/projects.css') }}?v=104">{% endblock %}
+{% block head %}<link rel="stylesheet" href="{{ url_for('static', filename='css/projects.css') }}?v=107">{% endblock %}
 {% block content %}
 <div class="container container-wide cms-page">
   <h1>Текущие проекты</h1>
@@ -94,13 +94,14 @@
               {% if s.acceptance_status == 'accepted' %}
               <span class="muted">Замечания отсутствуют</span>
               {% elif s.acceptance_status in ('accepted_remarks', 'rework') %}
-              <form method="post" action="{{ url_for('cabinet.curator_stage_remark', sid=s.id) }}" class="projects-curator-remark-form" enctype="multipart/form-data">
-                {{ csrf_field() }}
-                <textarea name="remark" class="form-control" rows="2" required placeholder="Текст замечания…"></textarea>
-                <input type="file" name="remark_files" class="form-control form-control--compact" multiple>
-                <button type="submit" class="btn btn-primary btn-xs">＋ Замечание (тикет)</button>
-              </form>
-              <p class="muted projects-cms-hint" style="margin:4px 0 0;font-size:11px">{% if s.acceptance_status == 'accepted_remarks' %}Критичность: низкая{% else %}После ответа ГИП смените статус на «Принято»{% endif %}</p>
+              <a href="{{ url_for('cabinet.curator_stage_remark', sid=s.id) }}" class="btn btn-primary btn-xs projects-curator-remark-btn">＋ Замечание</a>
+              <p class="muted projects-curator-remark-hint">
+                {% if s.acceptance_status == 'accepted_remarks' %}
+                Критичность: низшая
+                {% else %}
+                Критичность: высшая
+                {% endif %}
+              </p>
               {% else %}
               <span class="muted">—</span>
               {% endif %}

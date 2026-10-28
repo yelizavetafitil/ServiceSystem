@@ -5,6 +5,7 @@
 
 {% macro cms_editor_assets() %}
 {{ editor_assets() }}
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/font-awesome@4.7.0/css/font-awesome.min.css">
 <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/highlight.js@11.9.0/styles/github.min.css">
 <script src="https://cdn.jsdelivr.net/npm/highlight.js@11.9.0/highlight.min.js"></script>
 {% endmacro %}
@@ -14,12 +15,244 @@
 document.addEventListener('DOMContentLoaded', function() {
   const editors = [];
   const cmsMode = {{ 'true' if cms else 'false' }};
-  const basicToolbar = ['bold', 'italic', 'heading', '|', 'quote', 'unordered-list', 'ordered-list', '|', 'link', 'code', 'table', '|', 'preview', 'guide'];
+  const basicToolbar = [
+    'bold', 'italic', 'strikethrough', 'heading', '|',
+    'quote', 'unordered-list', 'ordered-list', '|',
+    'link', 'code', 'table', 'horizontal-rule', '|',
+    'preview', 'guide'
+  ];
   const uploadUrl = '{{ url_for("admin.cms_image_upload") }}';
+  const previewUrl = '{{ url_for("admin.cms_preview_md") }}';
 
   function csrfToken() {
     return document.querySelector('meta[name=csrf-token]')?.content || '';
   }
+
+  function wrapSelection(editor, before, after, placeholder) {
+    var cm = editor.codemirror;
+    var sel = cm.getSelection();
+    var empty = !sel;
+    if (empty) sel = placeholder || 'текст';
+    cm.replaceSelection(before + sel + after);
+    if (empty) {
+      var cur = cm.getCursor();
+      cm.setSelection(
+        { line: cur.line, ch: cur.ch - after.length - sel.length },
+        { line: cur.line, ch: cur.ch - after.length }
+      );
+    }
+    cm.focus();
+  }
+
+  function prefixLines(editor, prefix) {
+    var cm = editor.codemirror;
+    var sel = cm.getSelection();
+    if (sel) {
+      cm.replaceSelection(sel.split('\n').map(function(line) {
+        return line ? prefix + line : line;
+      }).join('\n'));
+    } else {
+      cm.replaceSelection(prefix + 'Заголовок');
+    }
+    cm.focus();
+  }
+
+  function cmsToolbarRowBreak() {
+    return {
+      name: 'cms-toolbar-row-break',
+      className: 'cms-toolbar-row-break',
+      title: '',
+      action: function () {}
+    };
+  }
+
+  function cmsLabeledBtn(name, faClass, title, action) {
+    return {
+      name: name,
+      className: 'cms-tb-labeled ' + faClass + ' cms-tb-lbl-' + name,
+      title: title,
+      action: action
+    };
+  }
+
+  function cmsHeadingBtn(level, prefix) {
+    return {
+      name: 'heading-' + level,
+      className: 'cms-tb-heading cms-tb-labeled cms-tb-h' + level + ' cms-tb-lbl-heading-' + level,
+      title: 'Заголовок ' + level + ' (' + '#'.repeat(level) + ')',
+      action: function (ed) { prefixLines(ed, prefix); }
+    };
+  }
+
+  function cmsToolbarRow1() {
+    return [
+      'undo', 'redo', '|',
+      'bold', 'italic', 'strikethrough', '|',
+      cmsLabeledBtn('underline', 'fa fa-underline', 'Подчёркивание (<u>)', function (ed) {
+        wrapSelection(ed, '<u>', '</u>', 'текст');
+      }),
+      cmsLabeledBtn('mark', 'fa fa-paint-brush', 'Выделение (<mark>)', function (ed) {
+        wrapSelection(ed, '<mark>', '</mark>', 'важно');
+      }),
+      cmsLabeledBtn('subscript', 'fa fa-subscript', 'Подстрочный (<sub>)', function (ed) {
+        wrapSelection(ed, '<sub>', '</sub>', '2');
+      }),
+      cmsLabeledBtn('superscript', 'fa fa-superscript', 'Надстрочный (<sup>)', function (ed) {
+        wrapSelection(ed, '<sup>', '</sup>', '2');
+      }),
+      cmsLabeledBtn('kbd', 'fa fa-keyboard-o', 'Клавиша (<kbd>)', function (ed) {
+        wrapSelection(ed, '<kbd>', '</kbd>', 'Enter');
+      }),
+      '|',
+      cmsHeadingBtn(1, '# '),
+      cmsHeadingBtn(2, '## '),
+      cmsHeadingBtn(3, '### '),
+      cmsHeadingBtn(4, '#### '),
+      '|',
+      'link'
+    ];
+  }
+
+  function buildUploadImageToolbar() {
+    return cmsLabeledBtn('upload-image', 'fa fa-picture-o', 'Картинка с диска', function (editor) {
+      var input = document.createElement('input');
+      input.type = 'file';
+      input.accept = 'image/png,image/jpeg,image/jpg,image/gif,image/webp,.png,.jpg,.jpeg,.gif,.webp';
+      input.style.display = 'none';
+      document.body.appendChild(input);
+      input.addEventListener('change', function () {
+        var file = input.files && input.files[0];
+        document.body.removeChild(input);
+        if (!file) return;
+        var form = new FormData();
+        form.append('image', file);
+        form.append('csrf_token', csrfToken());
+        var wrap = editor.codemirror.getWrapperElement();
+        var tip = document.createElement('div');
+        tip.className = 'cms-upload-tip';
+        tip.textContent = 'Загрузка изображения…';
+        wrap.appendChild(tip);
+        editor.codemirror.setOption('readOnly', 'nocursor');
+        fetch(uploadUrl, {
+          method: 'POST',
+          headers: { 'X-CSRFToken': csrfToken() },
+          body: form
+        }).then(function (r) {
+          return r.json().then(function (j) { return { ok: r.ok, j: j }; });
+        }).then(function (res) {
+          tip.remove();
+          editor.codemirror.setOption('readOnly', false);
+          if (!res.ok || !res.j.url) {
+            alert((res.j && res.j.error) || 'Не удалось загрузить изображение');
+            return;
+          }
+          var alt = (file.name || 'image').replace(/\.[^.]+$/, '');
+          editor.codemirror.replaceSelection('![' + alt + '](' + res.j.url + ')');
+          editor.codemirror.focus();
+        }).catch(function () {
+          tip.remove();
+          editor.codemirror.setOption('readOnly', false);
+          alert('Ошибка сети при загрузке изображения');
+        });
+      });
+      input.click();
+    });
+  }
+
+  function cmsToolbarRow2(uploadImageToolbar) {
+    return [
+      'quote', 'unordered-list', 'ordered-list', '|',
+      'code',
+      cmsLabeledBtn('code-block', 'fa fa-file-code-o', 'Блок кода (```)', function (ed) {
+        var cm = ed.codemirror;
+        var sel = cm.getSelection();
+        if (sel) {
+          cm.replaceSelection('```\n' + sel + '\n```');
+        } else {
+          cm.replaceSelection('```\nкод\n```');
+          var cur = cm.getCursor();
+          cm.setSelection({ line: cur.line - 1, ch: 0 }, { line: cur.line - 1, ch: 4 });
+        }
+        cm.focus();
+      }),
+      'table', 'horizontal-rule', '|',
+      cmsLabeledBtn('line-break', 'fa fa-level-down', 'Перенос строки (<br>)', function (ed) {
+        ed.codemirror.replaceSelection('<br>\n');
+        ed.codemirror.focus();
+      }),
+      cmsLabeledBtn('center-block', 'fa fa-align-center', 'Блок по центру', function (ed) {
+        wrapSelection(ed, '<center>\n', '\n</center>', 'текст или ![картинка](url)');
+      }),
+      cmsLabeledBtn('callout', 'fa fa-info-circle', 'Примечание (выноска)', function (ed) {
+        wrapSelection(ed, '<div class="cms-callout" markdown="1">\n', '\n</div>', 'Важно: …');
+      }),
+      cmsLabeledBtn('callout-warn', 'fa fa-exclamation-triangle', 'Предупреждение (выноска)', function (ed) {
+        wrapSelection(ed, '<div class="cms-callout cms-callout--warn" markdown="1">\n', '\n</div>', 'Внимание: …');
+      }),
+      cmsLabeledBtn('task-list', 'fa fa-check-square-o', 'Пункт чек-листа (- [ ] )', function (ed) {
+        ed.codemirror.replaceSelection('- [ ] Пункт\n');
+        ed.codemirror.focus();
+      }),
+      cmsLabeledBtn('task-done', 'fa fa-check-square', 'Выполнено (- [x] )', function (ed) {
+        ed.codemirror.replaceSelection('- [x] Выполнено\n');
+        ed.codemirror.focus();
+      }),
+      '|',
+      imageUrlToolbar,
+      uploadImageToolbar,
+      '|',
+      'preview', 'side-by-side', 'fullscreen',
+      {
+        name: 'exit-modes',
+        className: 'fa fa-times cms-tb-labeled cms-tb-lbl-exit-modes',
+        title: 'Выйти из полного экрана / разделённого вида (Esc)',
+        action: exitEditorModes
+      },
+      '|', 'guide'
+    ];
+  }
+
+  function serverPreviewRender(plainText, preview) {
+    if (preview._cmsPreviewTimer) clearTimeout(preview._cmsPreviewTimer);
+    preview._cmsPreviewTimer = setTimeout(function () {
+      fetch(previewUrl, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'X-CSRFToken': csrfToken(),
+          'Accept': 'application/json',
+        },
+        credentials: 'same-origin',
+        body: JSON.stringify({ md: plainText }),
+      })
+        .then(function (r) { return r.json().then(function (j) { return { ok: r.ok, j: j }; }); })
+        .then(function (res) {
+          if (!res.ok || !res.j || typeof res.j.html !== 'string') {
+            preview.innerHTML = '<p class="hint">Не удалось построить предпросмотр.</p>';
+            return;
+          }
+          preview.innerHTML = res.j.html;
+          preview.querySelectorAll('pre code').forEach(function (block) {
+            if (typeof hljs !== 'undefined' && hljs.highlightElement) hljs.highlightElement(block);
+          });
+        })
+        .catch(function () {
+          preview.innerHTML = '<p class="hint">Ошибка сети при предпросмотре.</p>';
+        });
+    }, 280);
+    return '<p class="hint cms-preview-loading">Предпросмотр…</p>';
+  }
+
+  var imageUrlToolbar = cmsLabeledBtn('image-url', 'fa fa-image', 'Картинка по ссылке',
+    function (editor) {
+      var url = window.prompt('URL изображения', 'https://');
+      if (!url) return;
+      var alt = window.prompt('Подпись (alt)', 'Изображение');
+      if (alt == null) alt = 'Изображение';
+      editor.codemirror.replaceSelection('![' + alt + '](' + url.trim() + ')');
+      editor.codemirror.focus();
+    }
+  );
 
   function exitEditorModes(editor) {
     try { if (editor.isFullscreenActive()) EasyMDE.toggleFullScreen(editor); } catch (e) {}
@@ -41,55 +274,6 @@ document.addEventListener('DOMContentLoaded', function() {
     editor.codemirror.focus();
   }
 
-  var uploadImageToolbar = {
-    name: 'upload-image',
-    className: 'fa fa-picture-o',
-    title: 'Вставить изображение с диска',
-    action: function(editor) {
-      var input = document.createElement('input');
-      input.type = 'file';
-      input.accept = 'image/png,image/jpeg,image/jpg,image/gif,image/webp,.png,.jpg,.jpeg,.gif,.webp';
-      input.style.display = 'none';
-      document.body.appendChild(input);
-      input.addEventListener('change', function() {
-        var file = input.files && input.files[0];
-        document.body.removeChild(input);
-        if (!file) return;
-        var form = new FormData();
-        form.append('image', file);
-        form.append('csrf_token', csrfToken());
-        var wrap = editor.codemirror.getWrapperElement();
-        var tip = document.createElement('div');
-        tip.className = 'cms-upload-tip';
-        tip.textContent = 'Загрузка изображения…';
-        wrap.appendChild(tip);
-        editor.codemirror.setOption('readOnly', 'nocursor');
-        fetch(uploadUrl, {
-          method: 'POST',
-          headers: { 'X-CSRFToken': csrfToken() },
-          body: form
-        }).then(function(r) {
-          return r.json().then(function(j) { return { ok: r.ok, j: j }; });
-        }).then(function(res) {
-          tip.remove();
-          editor.codemirror.setOption('readOnly', false);
-          if (!res.ok || !res.j.url) {
-            alert((res.j && res.j.error) || 'Не удалось загрузить изображение');
-            return;
-          }
-          var alt = (file.name || 'image').replace(/\.[^.]+$/, '');
-          editor.codemirror.replaceSelection('![' + alt + '](' + res.j.url + ')');
-          editor.codemirror.focus();
-        }).catch(function() {
-          tip.remove();
-          editor.codemirror.setOption('readOnly', false);
-          alert('Ошибка сети при загрузке изображения');
-        });
-      });
-      input.click();
-    }
-  };
-
   document.querySelectorAll('{{ selector }}').forEach(function(el) {
     if (el.dataset.editorInit) return;
     el.dataset.editorInit = '1';
@@ -103,7 +287,7 @@ document.addEventListener('DOMContentLoaded', function() {
     };
 
     if (cmsMode) {
-      opts.placeholder = 'Текст статьи (Markdown). Картинка — иконка изображения (файл с диска). Предпросмотр — глаз. Выход из полного экрана — та же иконка стрелок, ✕ в панели или Esc.';
+      opts.placeholder = 'Markdown и панель: заголовки H1–H4, таблица, выноски, чек-лист, <mark>, <kbd>, картинка (URL или с диска). Предпросмотр = как в ЛК.';
       opts.status = ['lines', 'words', 'cursor'];
       opts.lineWrapping = true;
       opts.lineNumbers = false;
@@ -112,20 +296,9 @@ document.addEventListener('DOMContentLoaded', function() {
         singleLineBreaks: false,
         codeSyntaxHighlighting: true,
       };
-      opts.toolbar = [
-        'undo', 'redo', '|',
-        'bold', 'italic', 'strikethrough', 'heading', '|',
-        'quote', 'unordered-list', 'ordered-list', 'code', 'table', 'horizontal-rule', '|',
-        'link', uploadImageToolbar, '|',
-        'preview', 'side-by-side', 'fullscreen',
-        {
-          name: 'exit-modes',
-          className: 'fa fa-times',
-          title: 'Выйти из полного экрана / разделённого вида (Esc)',
-          action: exitEditorModes
-        },
-        '|', 'guide'
-      ];
+      opts.toolbar = cmsToolbarRow1()
+        .concat([cmsToolbarRowBreak()])
+        .concat(cmsToolbarRow2(buildUploadImageToolbar()));
       opts.shortcuts = {
         togglePreview: 'Ctrl-Alt-P',
         toggleSideBySide: 'F9',
@@ -135,6 +308,7 @@ document.addEventListener('DOMContentLoaded', function() {
         horizontalRule: ['', '\n\n---\n\n'],
         link: ['[', '](https://)'],
       };
+      opts.previewRender = serverPreviewRender;
     } else {
       opts.status = false;
       opts.toolbar = basicToolbar;
@@ -149,6 +323,7 @@ document.addEventListener('DOMContentLoaded', function() {
 
     var container = ed.codemirror.getWrapperElement().closest('.EasyMDEContainer');
     if (cmsMode && container) {
+      container.classList.add('cms-rich-toolbar');
       var mo = new MutationObserver(function() {
         document.body.classList.toggle(
           'cms-editor-immersive',

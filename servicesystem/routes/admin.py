@@ -1,6 +1,6 @@
 from datetime import datetime, timezone
 
-from flask import Blueprint, abort, flash, jsonify, redirect, render_template, request, send_file, url_for
+from flask import Blueprint, abort, current_app, flash, jsonify, redirect, render_template, request, send_file, url_for
 from flask_login import current_user, login_required
 
 from servicesystem.decorators import admin_required, content_cms_required, staff_required
@@ -21,6 +21,8 @@ from servicesystem.models import (
     PhoneDirectoryContact,
     PhoneDirectoryDepartment,
     Tutorial,
+    TutorialLesson,
+    TutorialSection,
     User,
     VideoChapter,
     VideoTutorial,
@@ -513,6 +515,43 @@ def plugin_edit(pid):
     return render_template("admin/plugin_edit.html", plugin=plugin, versions=versions)
 
 
+def _wants_structure_ajax() -> bool:
+    return request.headers.get("X-Structure-Ajax") == "1"
+
+
+def _tutorial_structure_bundle(tutorial: Tutorial):
+    sections = (
+        TutorialSection.query.filter_by(tutorial_id=tutorial.id)
+        .order_by(TutorialSection.sort_order, TutorialSection.id)
+        .all()
+    )
+    lessons_by_section: dict[int, list] = {}
+    for sec in sections:
+        lessons_by_section[sec.id] = (
+            TutorialLesson.query.filter_by(section_id=sec.id)
+            .order_by(TutorialLesson.sort_order, TutorialLesson.id)
+            .all()
+        )
+    return sections, lessons_by_section
+
+
+def _structure_response(tutorial_id: int, message: str, category: str = "success", **extra):
+    t = db.session.get(Tutorial, tutorial_id) or abort(404)
+    if _wants_structure_ajax():
+        sections, lessons_by_section = _tutorial_structure_bundle(t)
+        html = render_template(
+            "admin/tutorial_structure_body.html",
+            tutorial=t,
+            sections=sections,
+            lessons_by_section=lessons_by_section,
+        )
+        payload = {"ok": category != "danger", "message": message, "html": html}
+        payload.update(extra)
+        return jsonify(payload)
+    flash(message, category)
+    return redirect(url_for("admin.tutorial_edit", tid=tutorial_id) + "#tutorial-structure")
+
+
 @bp.route("/tutorials/<int:tid>/edit", methods=["GET", "POST"])
 @login_required
 @content_cms_required
@@ -523,12 +562,211 @@ def tutorial_edit(tid):
         t.slug = request.form.get("slug") or t.slug
         t.category = request.form.get("category")
         t.tags = request.form.get("tags")
-        t.content_md = request.form["content_md"]
+        t.content_md = request.form.get("content_md") if "content_md" in request.form else t.content_md
+        if t.content_md is None:
+            t.content_md = ""
         t.is_published = request.form.get("is_published") == "1"
         db.session.commit()
         flash("Туториал обновлён.", "success")
-        return redirect(url_for("admin.tutorials"))
-    return render_template("admin/tutorial_edit.html", tutorial=t)
+        return redirect(url_for("admin.tutorial_edit", tid=tid))
+    sections, lessons_by_section = _tutorial_structure_bundle(t)
+    return render_template(
+        "admin/tutorial_edit.html",
+        tutorial=t,
+        sections=sections,
+        lessons_by_section=lessons_by_section,
+    )
+
+
+@bp.route("/tutorials/<int:tid>/sections", methods=["POST"])
+@login_required
+@content_cms_required
+def tutorial_section_add(tid):
+    from servicesystem.services.tutorial_structure import next_section_sort
+
+    t = db.session.get(Tutorial, tid) or abort(404)
+    title = (request.form.get("section_title") or "").strip() or "Новый раздел"
+    sec = TutorialSection(tutorial_id=t.id, title=title[:512], sort_order=next_section_sort(t))
+    db.session.add(sec)
+    db.session.commit()
+    return _structure_response(tid, "Раздел добавлен.", "success")
+
+
+@bp.route("/tutorials/<int:tid>/structure/save", methods=["POST"])
+@login_required
+@content_cms_required
+def tutorial_structure_save(tid):
+    """Сохранить названия разделов и подразделов одной кнопкой."""
+    t = db.session.get(Tutorial, tid) or abort(404)
+    updated = 0
+    sections = TutorialSection.query.filter_by(tutorial_id=t.id).all()
+    for sec in sections:
+        key = f"section_title_{sec.id}"
+        val = (request.form.get(key) or "").strip()
+        if not val:
+            continue
+        if sec.title != val:
+            sec.title = val[:512]
+            updated += 1
+    for sec in sections:
+        for les in (
+            TutorialLesson.query.filter_by(section_id=sec.id)
+            .order_by(TutorialLesson.sort_order, TutorialLesson.id)
+            .all()
+        ):
+            key = f"lesson_title_{les.id}"
+            val = (request.form.get(key) or "").strip()
+            if not val:
+                continue
+            if les.title != val:
+                les.title = val[:512]
+                updated += 1
+    if updated:
+        db.session.commit()
+        return _structure_response(tid, "Названия разделов и подразделов сохранены.", "success")
+    return _structure_response(tid, "Изменений нет или не заполнены названия.", "warning")
+
+
+@bp.route("/tutorials/sections/<int:sid>/rename", methods=["POST"])
+@login_required
+@content_cms_required
+def tutorial_section_rename(sid):
+    """Совместимость: один раздел."""
+    sec = db.session.get(TutorialSection, sid) or abort(404)
+    title = (request.form.get("section_title") or "").strip()
+    if not title:
+        for key, raw in request.form.items():
+            if key.startswith("section_title_"):
+                title = (raw or "").strip()
+                break
+    if title:
+        sec.title = title[:512]
+        db.session.commit()
+        flash("Раздел переименован.", "success")
+    return redirect(url_for("admin.tutorial_edit", tid=sec.tutorial_id) + "#tutorial-structure")
+
+
+@bp.route("/tutorials/sections/<int:sid>/move", methods=["POST"])
+@login_required
+@content_cms_required
+def tutorial_section_move(sid):
+    from servicesystem.services.tutorial_structure import move_section
+
+    sec = db.session.get(TutorialSection, sid) or abort(404)
+    direction = -1 if request.form.get("dir") == "up" else 1
+    move_section(sec, direction)
+    db.session.commit()
+    return _structure_response(sec.tutorial_id, "Порядок разделов обновлён.", "success")
+
+
+@bp.route("/tutorials/sections/<int:sid>/delete", methods=["POST"])
+@login_required
+@content_cms_required
+def tutorial_section_delete(sid):
+    sec = db.session.get(TutorialSection, sid) or abort(404)
+    tid = sec.tutorial_id
+    db.session.delete(sec)
+    db.session.commit()
+    return _structure_response(tid, "Раздел удалён.", "success")
+
+
+@bp.route("/tutorials/sections/<int:sid>/lessons", methods=["POST"])
+@login_required
+@content_cms_required
+def tutorial_lesson_add(sid):
+    from servicesystem.services.tutorial_structure import next_lesson_sort, unique_lesson_slug
+
+    sec = db.session.get(TutorialSection, sid) or abort(404)
+    title = (request.form.get("lesson_title") or "").strip() or "Новый урок"
+    les = TutorialLesson(
+        section_id=sec.id,
+        title=title[:512],
+        slug=unique_lesson_slug(sec, title),
+        content_md="",
+        sort_order=next_lesson_sort(sec),
+    )
+    db.session.add(les)
+    db.session.commit()
+    edit_url = url_for("admin.tutorial_lesson_edit", lid=les.id)
+    if _wants_structure_ajax():
+        return _structure_response(
+            sec.tutorial_id,
+            "Подраздел добавлен. Нажмите «Редактировать» для текста.",
+            "success",
+            edit_url=edit_url,
+        )
+    flash("Урок создан — заполните содержание.", "success")
+    return redirect(edit_url)
+
+
+@bp.route("/tutorials/lessons/<int:lid>/edit", methods=["GET", "POST"])
+@login_required
+@content_cms_required
+def tutorial_lesson_edit(lid):
+    from servicesystem.services.tutorial_structure import unique_lesson_slug
+
+    les = db.session.get(TutorialLesson, lid) or abort(404)
+    sec = les.section
+    if request.method == "POST":
+        les.title = (request.form.get("title") or les.title).strip()[:512]
+        raw_slug = (request.form.get("slug") or "").strip()
+        if raw_slug:
+            les.slug = unique_lesson_slug(sec, raw_slug, exclude_id=les.id)
+        else:
+            les.slug = unique_lesson_slug(sec, les.title, exclude_id=les.id)
+        les.content_md = request.form.get("content_md") or ""
+        db.session.commit()
+        flash("Урок сохранён.", "success")
+        return redirect(url_for("admin.tutorial_lesson_edit", lid=lid))
+    return render_template(
+        "admin/tutorial_lesson_edit.html",
+        lesson=les,
+        section=sec,
+        tutorial=sec.tutorial,
+    )
+
+
+@bp.route("/tutorials/lessons/<int:lid>/move", methods=["POST"])
+@login_required
+@content_cms_required
+def tutorial_lesson_move(lid):
+    from servicesystem.services.tutorial_structure import move_lesson
+
+    les = db.session.get(TutorialLesson, lid) or abort(404)
+    direction = -1 if request.form.get("dir") == "up" else 1
+    move_lesson(les, direction)
+    db.session.commit()
+    return _structure_response(les.section.tutorial_id, "Порядок уроков обновлён.", "success")
+
+
+@bp.route("/tutorials/lessons/<int:lid>/delete", methods=["POST"])
+@login_required
+@content_cms_required
+def tutorial_lesson_delete(lid):
+    les = db.session.get(TutorialLesson, lid) or abort(404)
+    tid = les.section.tutorial_id
+    db.session.delete(les)
+    db.session.commit()
+    return _structure_response(tid, "Урок удалён.", "success")
+
+
+@bp.route("/tutorials/<int:tid>/split-md", methods=["POST"])
+@login_required
+@content_cms_required
+def tutorial_split_md(tid):
+    """Разбить legacy content_md по заголовкам # / ## на разделы и уроки."""
+    from servicesystem.services.tutorial_structure import split_markdown_into_structure
+
+    t = db.session.get(Tutorial, tid) or abort(404)
+    n = split_markdown_into_structure(t, t.content_md or "")
+    db.session.commit()
+    if n:
+        return _structure_response(
+            tid,
+            f"Создано уроков: {n}. Проверьте структуру и отредактируйте при необходимости.",
+            "success",
+        )
+    return _structure_response(tid, "Нечего разбивать — пустое содержание.", "warning")
 
 
 @bp.route("/videos/<int:vid>/edit", methods=["GET", "POST"])
@@ -546,6 +784,21 @@ def video_edit(vid):
         v.is_published = request.form.get("is_published") == "1"
         f = request.files.get("video_file")
         if f and f.filename:
+            max_video = current_app.config.get("VIDEO_MAX_UPLOAD_MB", 1024) * 1024 * 1024
+            f.seek(0, 2)
+            fsize = f.tell()
+            f.seek(0)
+            if fsize > max_video:
+                flash(
+                    f"Видео больше {current_app.config.get('VIDEO_MAX_UPLOAD_MB', 1024)} МБ. "
+                    "Сожмите файл или увеличьте VIDEO_MAX_UPLOAD_MB.",
+                    "danger",
+                )
+                chapters = "\n".join(
+                    f"{c.start_sec}|{c.title}" + (f";{c.description}" if c.description else "")
+                    for c in v.chapters.all()
+                )
+                return render_template("admin/video_edit.html", video=v, chapters=chapters)
             stored = unique_filename(f.filename)
             storage = get_storage()
             storage.ensure_dir("videos")
@@ -679,6 +932,20 @@ def plugin_version_upload(pid):
     db.session.commit()
     flash(f"Версия {version} загружена. Предыдущая перемещена в архив.", "success")
     return redirect(url_for("admin.plugin_edit", pid=pid))
+
+
+@bp.route("/cms/preview-md", methods=["POST"])
+@login_required
+@content_cms_required
+def cms_preview_md():
+    """Предпросмотр Markdown тем же пайплайном, что и в ЛК."""
+    from servicesystem.services.cms_html import render_cms_markdown
+
+    data = request.get_json(silent=True) or {}
+    md = data.get("md")
+    if md is None:
+        md = request.form.get("md") or ""
+    return jsonify({"html": render_cms_markdown(md)})
 
 
 @bp.route("/cms-images", methods=["POST"])
@@ -1362,6 +1629,16 @@ def video_create():
     video_file = None
     f = request.files.get("video_file")
     if f and f.filename:
+        max_video = current_app.config.get("VIDEO_MAX_UPLOAD_MB", 1024) * 1024 * 1024
+        f.seek(0, 2)
+        fsize = f.tell()
+        f.seek(0)
+        if fsize > max_video:
+            flash(
+                f"Видео больше {current_app.config.get('VIDEO_MAX_UPLOAD_MB', 1024)} МБ.",
+                "danger",
+            )
+            return redirect(url_for("admin.videos"))
         stored = unique_filename(f.filename)
         storage = get_storage()
         storage.ensure_dir("videos")

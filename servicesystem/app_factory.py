@@ -162,6 +162,7 @@ def create_app(config_class=Config):
             "maintenance_banner": maintenance_banner,
             "MAINTENANCE_AT": app.config.get("MAINTENANCE_AT", ""),
             "MAX_UPLOAD_MB": app.config.get("MAX_UPLOAD_MB", 100),
+            "VIDEO_MAX_UPLOAD_MB": app.config.get("VIDEO_MAX_UPLOAD_MB", 1024),
             "sla_status": sla_status,
             "format_duration": format_duration,
         }
@@ -180,6 +181,21 @@ def create_app(config_class=Config):
         if wants_json:
             return jsonify({"error": "forbidden", "message": "Недостаточно прав."}), 403
         return render_template("errors/403.html"), 403
+
+    @app.errorhandler(413)
+    def request_entity_too_large(e):
+        from flask import flash, jsonify, redirect, request, url_for
+
+        video_mb = app.config.get("VIDEO_MAX_UPLOAD_MB", 1024)
+        msg = (
+            f"Файл слишком большой для сервера (лимит видео до {video_mb} МБ). "
+            "Уменьшите файл или задайте VIDEO_MAX_UPLOAD_MB в окружении."
+        )
+        wants_json = request.is_json or "application/json" in (request.headers.get("Accept") or "")
+        if wants_json:
+            return jsonify({"error": "too_large", "message": msg}), 413
+        flash(msg, "danger")
+        return redirect(request.referrer or url_for("auth.login"))
 
     @app.errorhandler(404)
     def not_found(e):
@@ -206,6 +222,12 @@ def create_app(config_class=Config):
         return redirect(request.referrer or url_for("auth.login"))
 
     with app.app_context():
+        # Патчи (IF NOT EXISTS) — до create_all, чтобы не гонять SERIAL-последовательности
+        # с несколькими gunicorn-воркерами на пустой БД.
+        try:
+            _apply_schema_patches()
+        except Exception:
+            app.logger.exception("schema patches failed")
         try:
             db.create_all()
         except Exception:
@@ -217,10 +239,9 @@ def create_app(config_class=Config):
         except Exception:
             app.logger.exception("project schema ensure failed")
         try:
-            _apply_schema_patches()
             _setup_audit_triggers()
         except Exception:
-            app.logger.exception("schema patches / audit triggers failed")
+            app.logger.exception("audit triggers failed")
 
     return app
 
@@ -236,6 +257,30 @@ def _apply_schema_patches():
         "ALTER TABLE phone_directory_contacts ADD COLUMN IF NOT EXISTS phone_extension VARCHAR(16)",
         "UPDATE phone_directory_contacts SET phone_mobile = '' WHERE phone_mobile IS NULL",
         "CREATE UNIQUE INDEX IF NOT EXISTS ix_phone_directory_contacts_user_id ON phone_directory_contacts (user_id) WHERE user_id IS NOT NULL",
+        """
+        CREATE TABLE IF NOT EXISTS tutorial_sections (
+          id SERIAL PRIMARY KEY,
+          tutorial_id INTEGER NOT NULL REFERENCES tutorials(id) ON DELETE CASCADE,
+          title VARCHAR(512) NOT NULL,
+          sort_order INTEGER DEFAULT 0,
+          created_at TIMESTAMPTZ DEFAULT NOW()
+        )
+        """,
+        "CREATE INDEX IF NOT EXISTS ix_tutorial_sections_tutorial_id ON tutorial_sections (tutorial_id)",
+        """
+        CREATE TABLE IF NOT EXISTS tutorial_lessons (
+          id SERIAL PRIMARY KEY,
+          section_id INTEGER NOT NULL REFERENCES tutorial_sections(id) ON DELETE CASCADE,
+          title VARCHAR(512) NOT NULL,
+          slug VARCHAR(128) NOT NULL,
+          content_md TEXT NOT NULL DEFAULT '',
+          sort_order INTEGER DEFAULT 0,
+          created_at TIMESTAMPTZ DEFAULT NOW(),
+          updated_at TIMESTAMPTZ DEFAULT NOW(),
+          CONSTRAINT uq_tutorial_lesson_section_slug UNIQUE (section_id, slug)
+        )
+        """,
+        "CREATE INDEX IF NOT EXISTS ix_tutorial_lessons_section_id ON tutorial_lessons (section_id)",
     ]
     for sql in patches:
         try:

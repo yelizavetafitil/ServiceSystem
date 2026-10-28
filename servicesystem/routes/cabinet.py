@@ -137,20 +137,103 @@ def tutorials():
     return render_template("cabinet/tutorials.html", **ctx)
 
 
-@bp.route("/tutorials/<slug>")
-@login_required
-@contract_access_required
-def tutorial_detail(slug):
-    t = Tutorial.query.filter_by(slug=slug, is_published=True).first_or_404()
+def _tutorial_access_or_abort(t):
     if current_user.is_customer:
         allowed = _allowed_content_ids(current_user.contract_id, "tutorial")
         if t.id not in allowed:
             abort(403)
+
+
+@bp.route("/tutorials/<slug>")
+@bp.route("/tutorials/<slug>/<lesson_slug>")
+@login_required
+@contract_access_required
+def tutorial_detail(slug, lesson_slug=None):
+    from servicesystem.models import TutorialSection
     from servicesystem.services.cms_html import render_cms_markdown
-    html = render_cms_markdown(t.content_md or "")
+    from servicesystem.services.tutorial_structure import find_lesson_in_tutorial
+
+    t = Tutorial.query.filter_by(slug=slug, is_published=True).first_or_404()
+    _tutorial_access_or_abort(t)
+
+    sections = (
+        TutorialSection.query.filter_by(tutorial_id=t.id)
+        .order_by(TutorialSection.sort_order, TutorialSection.id)
+        .all()
+    )
+    has_structure = bool(sections)
+    current_lesson = None
+    prev_lesson = None
+    next_lesson = None
+    content_html = ""
+    section_nav = []
+
+    if has_structure:
+        from servicesystem.models import TutorialLesson
+
+        lessons = t.ordered_lessons()
+
+        def _section_nav_entry(si, sec, current_id=None):
+            les_list = (
+                TutorialLesson.query.filter_by(section_id=sec.id)
+                .order_by(TutorialLesson.sort_order, TutorialLesson.id)
+                .all()
+            )
+            return {
+                "num": si,
+                "title": sec.title,
+                "lessons": [
+                    {
+                        "num": f"{si}.{li}",
+                        "lesson": les,
+                        "active": current_id is not None and les.id == current_id,
+                    }
+                    for li, les in enumerate(les_list, start=1)
+                ],
+            }
+
+        if not lessons:
+            if lesson_slug:
+                abort(404)
+            content_html = render_cms_markdown(t.content_md or "")
+            for si, sec in enumerate(sections, start=1):
+                section_nav.append(_section_nav_entry(si, sec))
+        else:
+            if lesson_slug:
+                current_lesson = find_lesson_in_tutorial(t, lesson_slug)
+                if not current_lesson:
+                    abort(404)
+            else:
+                current_lesson = lessons[0]
+                return redirect(
+                    url_for(
+                        "cabinet.tutorial_detail",
+                        slug=t.slug,
+                        lesson_slug=current_lesson.slug,
+                    )
+                )
+            idx = next((i for i, L in enumerate(lessons) if L.id == current_lesson.id), 0)
+            prev_lesson = lessons[idx - 1] if idx > 0 else None
+            next_lesson = lessons[idx + 1] if idx + 1 < len(lessons) else None
+            content_html = render_cms_markdown(current_lesson.content_md or "")
+            cur_id = current_lesson.id
+            for si, sec in enumerate(sections, start=1):
+                section_nav.append(_section_nav_entry(si, sec, cur_id))
+    else:
+        content_html = render_cms_markdown(t.content_md or "")
+
     log_audit(current_user.id, "view", "tutorial", t.id)
     db.session.commit()
-    return render_template("cabinet/tutorial_detail.html", tutorial=t, content_html=html)
+    return render_template(
+        "cabinet/tutorial_detail.html",
+        tutorial=t,
+        content_html=content_html,
+        has_structure=has_structure,
+        section_nav=section_nav,
+        current_lesson=current_lesson,
+        prev_lesson=prev_lesson,
+        next_lesson=next_lesson,
+    )
 
 
 @bp.route("/news")
@@ -298,9 +381,14 @@ def _curator_stage_or_403(stage_id: int):
     return stage
 
 
+def _stage_remark_priority(acceptance_status: str) -> int:
+    """ТЗ: «Принято с замечаниями» → Низший (1); «На доработку» → Самый высший (4)."""
+    return 1 if acceptance_status == "accepted_remarks" else 4
+
+
 def _create_stage_remark_ticket(stage, subject: str, description: str, priority: int = 1):
-    """Тикет-замечание по этапу (низкая критичность по умолчанию)."""
-    from servicesystem.models import IncidentCategory, ObjectCategory, Ticket
+    """Тикет-замечание по этапу. Категории объекта/инцидента скрыты в UI — подставляются автоматически."""
+    from servicesystem.models import IncidentCategory, ObjectCategory, Ticket, TicketAttachment
     from servicesystem.routes.tickets import _next_ticket_number
     from servicesystem.services.notify import notify_ticket_created
     from servicesystem.services.routing import resolve_auditor, resolve_default_executor
@@ -347,6 +435,15 @@ def _create_stage_remark_ticket(stage, subject: str, description: str, priority:
     db.session.flush()
     on_ticket_created(ticket)
     on_ticket_created_hook(ticket)
+    attachment_ids = (request.form.get("attachment_ids") or "").strip()
+    if attachment_ids:
+        for aid in attachment_ids.split(","):
+            aid = aid.strip()
+            if not aid:
+                continue
+            att = db.session.get(TicketAttachment, int(aid))
+            if att and att.ticket_id is None:
+                att.ticket_id = ticket.id
     log_ticket_history(
         ticket.id,
         current_user.id,
@@ -450,61 +547,77 @@ def curator_stage_act_upload(sid):
     return redirect(url_for("cabinet.customer_projects") + f"#project-{stage.project_id}")
 
 
-@bp.route("/projects/stages/<int:sid>/remark", methods=["POST"])
+@bp.route("/projects/stages/<int:sid>/remark", methods=["GET", "POST"])
 @login_required
 @contract_access_required
 @write_access_required
 def curator_stage_remark(sid):
-    """Замечание → тикет (низкая критичность для «принято с замечаниями»)."""
+    """Замечание по этапу → полная форма заявки (ТЗ: категории скрыты, пресет критичности)."""
     if not current_user.is_customer_curator:
         abort(403)
     stage = _curator_stage_or_403(sid)
     if stage.acceptance_status not in ("accepted_remarks", "rework"):
         flash("Сначала выберите статус «Принято с замечаниями» или «На доработку».", "warning")
         return redirect(url_for("cabinet.customer_projects") + f"#project-{stage.project_id}")
-    body = (request.form.get("remark") or "").strip()
-    if not body:
-        flash("Введите текст замечания.", "warning")
+
+    contract = current_user.contract or (stage.project.contract if stage.project else None)
+    if not contract:
+        flash("Нет договора для создания заявки.", "danger")
         return redirect(url_for("cabinet.customer_projects") + f"#project-{stage.project_id}")
-    # 1 = низший для «с замечаниями»; для доработки — обычный (2)
-    priority = 1 if stage.acceptance_status == "accepted_remarks" else 2
-    subject = f"Замечание по этапу «{stage.title}»"
-    desc = (
+
+    default_priority = _stage_remark_priority(stage.acceptance_status)
+    pref_subject = f"Замечание по этапу «{stage.title}»"
+    pref_description = (
         f"**Проект:** {stage.project.name}\n"
         f"**Этап:** {stage.title}\n"
         f"**Статус приёмки:** {stage.acceptance_label}\n\n"
-        f"{body}"
     )
-    try:
-        ticket = _create_stage_remark_ticket(stage, subject, desc, priority=priority)
-        # Вложения к замечанию (ТЗ: «добавляет вложения»)
-        import uuid as _uuid
 
-        from servicesystem.models import TicketAttachment
-
-        storage = get_storage()
-        for f in request.files.getlist("remark_files"):
-            if not f or not f.filename:
-                continue
-            stored = f"{_uuid.uuid4().hex}_{f.filename}"
-            rel = f"tickets/{ticket.id}/{stored}"
-            size = storage.save_file(rel, f)
-            db.session.add(
-                TicketAttachment(
-                    ticket_id=ticket.id,
-                    original_name=(f.filename or "file")[:512],
-                    stored_name=f"{ticket.id}/{stored}",
-                    mime_type=getattr(f, "mimetype", None),
-                    size_bytes=size,
-                )
+    if request.method == "POST":
+        subject = (request.form.get("subject") or "").strip()[:120]
+        description = (request.form.get("description") or "").strip()
+        try:
+            priority = int(request.form.get("priority") or default_priority)
+        except (TypeError, ValueError):
+            priority = default_priority
+        if priority not in (1, 2, 3, 4):
+            priority = default_priority
+        # Для статуса 2/3 по ТЗ фиксируем пресет (куратор может сменить вручную на форме — оставляем выбор)
+        if not subject or not description:
+            flash("Заполните тему и описание замечания.", "danger")
+            return render_template(
+                "cabinet/stage_remark_ticket.html",
+                stage=stage,
+                contract=contract,
+                default_priority=priority,
+                pref_subject=subject or pref_subject,
+                pref_description=description or pref_description,
             )
-        db.session.commit()
-    except ValueError as e:
-        db.session.rollback()
-        flash(f"Не удалось создать тикет ({e}).", "danger")
-        return redirect(url_for("cabinet.customer_projects") + f"#project-{stage.project_id}")
-    flash(f"Замечание оформлено заявкой №{ticket.number}.", "success")
-    return redirect(url_for("tickets.detail", tid=ticket.id))
+        try:
+            ticket = _create_stage_remark_ticket(stage, subject, description, priority=priority)
+            db.session.commit()
+        except ValueError as e:
+            db.session.rollback()
+            flash(f"Не удалось создать тикет ({e}).", "danger")
+            return render_template(
+                "cabinet/stage_remark_ticket.html",
+                stage=stage,
+                contract=contract,
+                default_priority=priority,
+                pref_subject=subject,
+                pref_description=description,
+            )
+        flash(f"Замечание оформлено заявкой №{ticket.number}.", "success")
+        return redirect(url_for("tickets.detail", tid=ticket.id))
+
+    return render_template(
+        "cabinet/stage_remark_ticket.html",
+        stage=stage,
+        contract=contract,
+        default_priority=default_priority,
+        pref_subject=pref_subject,
+        pref_description=pref_description,
+    )
 
 
 @bp.route("/projects/stages/<int:sid>/files/<int:aid>")

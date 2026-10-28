@@ -20,6 +20,7 @@
       <div class="form-group">
         <label>Или загрузить видеофайл</label>
         <input type="file" name="video_file" class="form-control" accept="video/*">
+        <p class="hint">До {{ VIDEO_MAX_UPLOAD_MB }} МБ на файл. После смены лимита перезапустите контейнер web.</p>
         {% if video.video_file %}<p class="hint">Текущий файл: {{ video.video_file }}</p>{% endif %}
       </div>
       <div class="form-group"><label>Описание</label><textarea name="description" class="form-control" rows="2">{{ video.description or '' }}</textarea></div>

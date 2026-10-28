@@ -1,43 +1,148 @@
 {% extends "base.html" %}
+
 {% from "macros/forms.html" import csrf_field %}
+
 {% block title %}Редактирование — {{ tutorial.title }}{% endblock %}
+
 {% block head %}{% from "macros/editor.html" import cms_editor_assets %}{{ cms_editor_assets() }}{% endblock %}
+
 {% block content %}
+
 <div class="container cms-page">
+
   <a href="{{ url_for('admin.tutorials') }}" class="back-link">← Туториалы</a>
+
   <div class="card cms-editor-card">
+
     <h1 class="section-title">{{ tutorial.title }}</h1>
-    <form method="post">
+
+    <form method="post" action="{{ url_for('admin.tutorial_edit', tid=tutorial.id) }}">
+
       {{ csrf_field() }}
+
       <div class="cms-meta-grid">
+
         <div class="form-group">
+
           <label>Заголовок *</label>
+
           <input name="title" class="form-control" value="{{ tutorial.title }}" required>
+
         </div>
+
         <div class="form-group">
+
           <label>Slug</label>
+
           <input name="slug" class="form-control" value="{{ tutorial.slug }}">
+
         </div>
+
         <div class="form-group">
+
           <label>Категория</label>
+
           <input name="category" class="form-control" value="{{ tutorial.category or '' }}" placeholder="Категория">
+
         </div>
+
         <div class="form-group">
+
           <label>Теги</label>
+
           <input name="tags" class="form-control" value="{{ tutorial.tags or '' }}" placeholder="теги через запятую">
+
         </div>
+
       </div>
+
       <div class="form-group cms-editor-wrap">
-        <label>Содержание *</label>
-        <p class="hint">Картинка: иконка изображения → файл с диска → глаз (предпросмотр). Выход из полного экрана: та же иконка стрелок, ✕ в панели или Esc. Сохранить и «Опубликован» — чтобы увидеть в ЛК.</p>
-        <textarea name="content_md" class="form-control cms-editor-field" rows="12" required>{{ tutorial.content_md }}</textarea>
+
+        <label>Содержание (целиком)</label>
+
+        <p class="hint">Если есть подразделы — в ЛК читают их текст. Пока подразделов нет, в меню видны только названия разделов, а справа — это поле. Можно разбить кнопкой «Разбить Markdown».</p>
+
+        <textarea name="content_md" class="form-control cms-editor-field" rows="12">{{ tutorial.content_md }}</textarea>
+
       </div>
-      <label class="check-row"><input type="checkbox" name="is_published" value="1" {% if tutorial.is_published %}checked{% endif %}> Опубликован (виден в списках CMS и может попасть в ЛК по договору)</label>
+
+      <label class="check-row"><input type="checkbox" name="is_published" value="1" {% if tutorial.is_published %}checked{% endif %}> Опубликован</label>
+
       <div class="form-actions">
-        <button class="btn btn-primary">Сохранить</button>
+
+        <button class="btn btn-primary" type="submit">Сохранить туториал</button>
+
       </div>
+
     </form>
+
   </div>
+
+
+
+  <div class="card cms-editor-card tutorial-structure-card" id="tutorial-structure">
+
+    <h2 class="section-title">Структура (разделы и подразделы)</h2>
+
+    <p class="hint">Названия разделов сохраняются и <strong>без подразделов</strong>. Добавление, порядок и «Сохранить названия» — без перезагрузки. Текст — «Редактировать» у подраздела.</p>
+
+
+
+    <form method="post" action="{{ url_for('admin.tutorial_section_add', tid=tutorial.id) }}" class="tutorial-admin-add-section" data-structure-ajax>
+
+      {{ csrf_field() }}
+
+      <label class="tutorial-admin-add-section__label">Новый раздел</label>
+
+      <div class="tutorial-admin-add-section__row">
+
+        <input name="section_title" class="form-control" placeholder="Например: 1 Введение" autocomplete="off">
+
+        <button class="btn btn-secondary" type="submit">+ Добавить раздел</button>
+
+      </div>
+
+    </form>
+
+
+
+    {% if tutorial.content_md and tutorial.content_md.strip() %}
+
+    <form method="post" action="{{ url_for('admin.tutorial_split_md', tid=tutorial.id) }}" class="tutorial-admin-split" data-structure-ajax
+
+          data-confirm="Разбить «Содержание» по заголовкам # / ##? Существующие разделы не удаляются."
+
+          data-confirm-title="Разбиение Markdown"
+
+          data-confirm-ok="Разбить">
+
+      {{ csrf_field() }}
+
+      <button class="btn btn-outline" type="submit">Разбить Markdown по # / ##</button>
+
+    </form>
+
+    {% endif %}
+
+
+
+    <div id="tutorial-structure-ajax-root">
+
+      {% include "admin/tutorial_structure_body.html" %}
+
+    </div>
+
+  </div>
+
 </div>
+
 {% endblock %}
-{% block scripts %}{% from "macros/editor.html" import init_cms_editor %}{{ init_cms_editor('.cms-editor-field', 560) }}{% endblock %}
+
+{% block scripts %}
+
+{% from "macros/editor.html" import init_cms_editor %}{{ init_cms_editor('.cms-editor-field', 560) }}
+
+<script src="{{ url_for('static', filename='js/tutorial-structure-admin.js') }}?v=2"></script>
+
+{% endblock %}
+

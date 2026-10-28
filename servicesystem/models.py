@@ -359,6 +359,67 @@ class Tutorial(db.Model):
     created_at = db.Column(db.DateTime(timezone=True), default=utcnow)
     updated_at = db.Column(db.DateTime(timezone=True), default=utcnow, onupdate=utcnow)
 
+    sections = db.relationship(
+        "TutorialSection",
+        back_populates="tutorial",
+        lazy="dynamic",
+        order_by="TutorialSection.sort_order, TutorialSection.id",
+        cascade="all, delete-orphan",
+    )
+
+    def has_structure(self) -> bool:
+        return self.sections.count() > 0
+
+    def ordered_lessons(self) -> list:
+        """Плоский список уроков в порядке разделов (для prev/next)."""
+        out = []
+        for sec in self.sections.order_by(TutorialSection.sort_order, TutorialSection.id):
+            for les in sec.lessons.order_by(TutorialLesson.sort_order, TutorialLesson.id):
+                out.append(les)
+        return out
+
+
+class TutorialSection(db.Model):
+    """Раздел туториала (Stepik-style: «1 Введение»)."""
+
+    __tablename__ = "tutorial_sections"
+
+    id = db.Column(db.Integer, primary_key=True)
+    tutorial_id = db.Column(db.Integer, db.ForeignKey("tutorials.id", ondelete="CASCADE"), nullable=False, index=True)
+    title = db.Column(db.String(512), nullable=False)
+    sort_order = db.Column(db.Integer, default=0)
+    created_at = db.Column(db.DateTime(timezone=True), default=utcnow)
+
+    tutorial = db.relationship("Tutorial", back_populates="sections")
+    lessons = db.relationship(
+        "TutorialLesson",
+        back_populates="section",
+        lazy="dynamic",
+        order_by="TutorialLesson.sort_order, TutorialLesson.id",
+        cascade="all, delete-orphan",
+    )
+
+
+class TutorialLesson(db.Model):
+    """Подраздел / урок («1.1 …») со своим Markdown."""
+
+    __tablename__ = "tutorial_lessons"
+
+    id = db.Column(db.Integer, primary_key=True)
+    section_id = db.Column(db.Integer, db.ForeignKey("tutorial_sections.id", ondelete="CASCADE"), nullable=False, index=True)
+    title = db.Column(db.String(512), nullable=False)
+    slug = db.Column(db.String(128), nullable=False)
+    content_md = db.Column(db.Text, nullable=False, default="")
+    sort_order = db.Column(db.Integer, default=0)
+    created_at = db.Column(db.DateTime(timezone=True), default=utcnow)
+    updated_at = db.Column(db.DateTime(timezone=True), default=utcnow, onupdate=utcnow)
+
+    section = db.relationship("TutorialSection", back_populates="lessons")
+
+    __table_args__ = (
+        db.UniqueConstraint("section_id", "slug", name="uq_tutorial_lesson_section_slug"),
+    )
+
 
 class PhoneDirectoryDepartment(db.Model):
     """Подразделение для выпадающего списка в CMS справочника."""
