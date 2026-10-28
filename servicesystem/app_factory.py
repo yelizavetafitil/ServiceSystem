@@ -195,7 +195,10 @@ def create_app(config_class=Config):
         if wants_json:
             return jsonify({"error": "too_large", "message": msg}), 413
         flash(msg, "danger")
-        return redirect(request.referrer or url_for("auth.login"))
+        ref = request.referrer or ""
+        if "/admin/videos" in (request.path or "") or "/videos" in ref:
+            return redirect(ref or url_for("admin.videos"))
+        return redirect(ref or url_for("auth.login"))
 
     @app.errorhandler(404)
     def not_found(e):

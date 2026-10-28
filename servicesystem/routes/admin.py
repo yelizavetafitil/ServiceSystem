@@ -32,7 +32,12 @@ from servicesystem.services.storage import get_storage
 from servicesystem.services.directory import find_active_contact_by_mobile, staff_directory_query
 from servicesystem.services.directory_import import parse_directory_csv
 from servicesystem.services.directory_sync import log_directory_field_changes, snapshot_contact, sync_contact_to_user
+from servicesystem.services.cms_html import normalize_cms_markdown_source
 from servicesystem.services.phone_format import split_work_phone
+
+
+def _form_cms_md(key: str = "content_md") -> str:
+    return normalize_cms_markdown_source(request.form.get(key) or "")
 from servicesystem.services.vcard import (
     build_vcard,
     parse_vcf_text,
@@ -562,8 +567,9 @@ def tutorial_edit(tid):
         t.slug = request.form.get("slug") or t.slug
         t.category = request.form.get("category")
         t.tags = request.form.get("tags")
-        t.content_md = request.form.get("content_md") if "content_md" in request.form else t.content_md
-        if t.content_md is None:
+        if "content_md" in request.form:
+            t.content_md = _form_cms_md("content_md")
+        elif t.content_md is None:
             t.content_md = ""
         t.is_published = request.form.get("is_published") == "1"
         db.session.commit()
@@ -714,7 +720,7 @@ def tutorial_lesson_edit(lid):
             les.slug = unique_lesson_slug(sec, raw_slug, exclude_id=les.id)
         else:
             les.slug = unique_lesson_slug(sec, les.title, exclude_id=les.id)
-        les.content_md = request.form.get("content_md") or ""
+        les.content_md = _form_cms_md("content_md")
         db.session.commit()
         flash("Урок сохранён.", "success")
         return redirect(url_for("admin.tutorial_lesson_edit", lid=lid))
@@ -1013,7 +1019,7 @@ def news_create():
         title=request.form["title"].strip(),
         slug=slug,
         summary=(request.form.get("summary") or "").strip() or None,
-        content_md=request.form["content_md"],
+        content_md=_form_cms_md("content_md"),
         is_published=published,
         author_id=current_user.id,
         published_at=now if published else None,
@@ -1033,7 +1039,7 @@ def news_edit(nid):
         post.title = request.form["title"].strip()
         post.slug = (request.form.get("slug") or post.slug).strip()
         post.summary = (request.form.get("summary") or "").strip() or None
-        post.content_md = request.form["content_md"]
+        post.content_md = _form_cms_md("content_md")
         was_published = post.is_published
         post.is_published = request.form.get("is_published") == "1"
         if post.is_published and not post.published_at:
@@ -1606,7 +1612,7 @@ def tutorial_create():
         slug=slug,
         category=request.form.get("category"),
         tags=request.form.get("tags"),
-        content_md=request.form["content_md"],
+        content_md=_form_cms_md("content_md"),
     )
     db.session.add(t)
     db.session.commit()

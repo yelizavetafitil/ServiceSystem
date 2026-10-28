@@ -23,4 +23,4 @@ RUN mkdir -p /app/data/uploads/plugins /app/data/uploads/tickets /app/data/uploa
 
 EXPOSE 5000
 
-CMD ["python", "-m", "gunicorn", "--bind", "0.0.0.0:5000", "--workers", "2", "--threads", "4", "--timeout", "300", "--worker-class", "gthread", "wsgi:app"]
+CMD ["python", "-m", "gunicorn", "--bind", "0.0.0.0:5000", "--workers", "2", "--threads", "4", "--timeout", "900", "--worker-class", "gthread", "wsgi:app"]

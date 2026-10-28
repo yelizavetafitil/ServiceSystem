@@ -131,10 +131,17 @@ class S3StorageBackend(StorageBackend):
             return False
 
     def save_file(self, rel_path: str, file_obj) -> int:
+        from boto3.s3.transfer import TransferConfig
+
         key = self._key(rel_path)
-        body = file_obj.read()
-        self.client.put_object(Bucket=self.bucket, Key=key, Body=body)
-        return len(body)
+        file_obj.seek(0)
+        self.client.upload_fileobj(
+            file_obj,
+            self.bucket,
+            key,
+            Config=TransferConfig(multipart_threshold=8 * 1024 * 1024, multipart_chunksize=8 * 1024 * 1024),
+        )
+        return self.size(rel_path)
 
     def size(self, rel_path: str) -> int:
         resp = self.client.head_object(Bucket=self.bucket, Key=self._key(rel_path))
