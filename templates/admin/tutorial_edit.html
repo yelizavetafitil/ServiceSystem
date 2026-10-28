@@ -56,15 +56,26 @@
 
       </div>
 
+      {% set has_lessons = namespace(value=false) %}
+      {% for sec_lessons in lessons_by_section.values() %}
+        {% if sec_lessons %}{% set has_lessons.value = true %}{% endif %}
+      {% endfor %}
+
+      {% if has_lessons.value %}
       <div class="form-group cms-editor-wrap">
-
         <label>Содержание (целиком)</label>
-
-        <p class="hint">Если есть подразделы — в ЛК читают их текст. Пока подразделов нет, в меню видны только названия разделов, а справа — это поле. Можно разбить кнопкой «Разбить Markdown».</p>
-
-        <textarea name="content_md" class="form-control cms-editor-field" rows="12">{{ tutorial.content_md }}</textarea>
-
+        <div class="alert alert-info">
+          В этом туториале есть подразделы. Текст читается из них, поэтому общее содержание скрыто.
+          <br>Редактируйте текст внутри каждого подраздела (кнопка «Редактировать» ниже).
+        </div>
       </div>
+      {% else %}
+      <div class="form-group cms-editor-wrap">
+        <label>Содержание (целиком)</label>
+        <p class="hint">Пока подразделов нет, в меню видны только названия разделов, а справа — это поле. Можно разбить кнопкой «Разбить Markdown».</p>
+        <textarea name="content_md" class="form-control cms-editor-field" rows="12">{{ tutorial.content_md }}</textarea>
+      </div>
+      {% endif %}
 
       <label class="check-row"><input type="checkbox" name="is_published" value="1" {% if tutorial.is_published %}checked{% endif %}> Опубликован</label>
 

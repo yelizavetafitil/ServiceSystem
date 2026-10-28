@@ -44,6 +44,16 @@ document.addEventListener('DOMContentLoaded', function() {
     cm.focus();
   }
 
+  function wrapAlignBlock(ed, align) {
+    var extra = align === 'center' ? ' cms-center' : '';
+    wrapSelection(
+      ed,
+      '<div class="cms-align cms-align-' + align + extra + '" markdown="1">\n\n',
+      '\n\n</div>',
+      'текст или ![картинка](url)'
+    );
+  }
+
   function prefixLines(editor, prefix) {
     var cm = editor.codemirror;
     var sel = cm.getSelection();
@@ -176,12 +186,21 @@ document.addEventListener('DOMContentLoaded', function() {
         cm.focus();
       }),
       'table', 'horizontal-rule', '|',
-      cmsLabeledBtn('line-break', 'fa fa-level-down', 'Перенос строки (<br>)', function (ed) {
+      cmsLabeledBtn('line-break', 'fa fa-level-down', 'Перенос строки', function (ed) {
         ed.codemirror.replaceSelection('<br>\n');
         ed.codemirror.focus();
       }),
+      cmsLabeledBtn('align-left', 'fa fa-align-left', 'Блок по левому краю', function (ed) {
+        wrapAlignBlock(ed, 'left');
+      }),
       cmsLabeledBtn('center-block', 'fa fa-align-center', 'Блок по центру', function (ed) {
-        wrapSelection(ed, '<center>\n', '\n</center>', 'текст или ![картинка](url)');
+        wrapAlignBlock(ed, 'center');
+      }),
+      cmsLabeledBtn('align-right', 'fa fa-align-right', 'Блок по правому краю', function (ed) {
+        wrapAlignBlock(ed, 'right');
+      }),
+      cmsLabeledBtn('align-justify', 'fa fa-align-justify', 'Блок по ширине (justify)', function (ed) {
+        wrapAlignBlock(ed, 'justify');
       }),
       cmsLabeledBtn('callout', 'fa fa-info-circle', 'Примечание (выноска)', function (ed) {
         wrapSelection(ed, '<div class="cms-callout" markdown="1">\n', '\n</div>', 'Важно: …');
@@ -232,6 +251,7 @@ document.addEventListener('DOMContentLoaded', function() {
             return;
           }
           preview.innerHTML = res.j.html;
+          preview.classList.add('markdown-body', 'article-body');
           preview.querySelectorAll('pre code').forEach(function (block) {
             if (typeof hljs !== 'undefined' && hljs.highlightElement) hljs.highlightElement(block);
           });

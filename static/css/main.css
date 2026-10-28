@@ -1951,13 +1951,72 @@ a.directory-contact-title:hover {
 .markdown-body { overflow-wrap: anywhere; word-break: break-word; line-height: 1.65; max-width: 100%; }
 .prose .card { max-width: 100%; overflow-x: auto; -webkit-overflow-scrolling: touch; }
 .article-body { overflow-x: auto; -webkit-overflow-scrolling: touch; }
-.markdown-body .cms-center,
-.article-body .cms-center,
-.EasyMDEContainer .editor-preview .cms-center,
-.EasyMDEContainer .editor-preview-side .cms-center {
-  text-align: center;
+.markdown-body .cms-align,
+.article-body .cms-align,
+.EasyMDEContainer .editor-preview .cms-align,
+.EasyMDEContainer .editor-preview-side .cms-align {
+  display: block;
+  width: 100%;
   margin: 12px 0;
 }
+.markdown-body .cms-align-left,
+.article-body .cms-align-left,
+.EasyMDEContainer .editor-preview .cms-align-left,
+.EasyMDEContainer .editor-preview-side .cms-align-left {
+  text-align: left;
+}
+.markdown-body .cms-align-center,
+.article-body .cms-align-center,
+.markdown-body .cms-center,
+.article-body .cms-center,
+.EasyMDEContainer .editor-preview .cms-align-center,
+.EasyMDEContainer .editor-preview .cms-center,
+.EasyMDEContainer .editor-preview-side .cms-align-center,
+.EasyMDEContainer .editor-preview-side .cms-center {
+  text-align: center;
+}
+.markdown-body .cms-align-right,
+.article-body .cms-align-right,
+.EasyMDEContainer .editor-preview .cms-align-right,
+.EasyMDEContainer .editor-preview-side .cms-align-right {
+  text-align: right;
+}
+.markdown-body .cms-align-justify,
+.article-body .cms-align-justify,
+.EasyMDEContainer .editor-preview .cms-align-justify,
+.EasyMDEContainer .editor-preview-side .cms-align-justify {
+  text-align: justify;
+}
+.markdown-body .cms-align-left p,
+.article-body .cms-align-left p,
+.markdown-body .cms-align-left ul,
+.article-body .cms-align-left ul,
+.markdown-body .cms-align-left ol,
+.article-body .cms-align-left ol { text-align: left; }
+.markdown-body .cms-align-center p,
+.article-body .cms-align-center p,
+.markdown-body .cms-center p,
+.article-body .cms-center p,
+.markdown-body .cms-align-center ul,
+.article-body .cms-align-center ul,
+.markdown-body .cms-center ul,
+.article-body .cms-center ul,
+.markdown-body .cms-align-center ol,
+.article-body .cms-align-center ol,
+.markdown-body .cms-center ol,
+.article-body .cms-center ol { text-align: center; list-style-position: inside; }
+.markdown-body .cms-align-right p,
+.article-body .cms-align-right p,
+.markdown-body .cms-align-right ul,
+.article-body .cms-align-right ul,
+.markdown-body .cms-align-right ol,
+.article-body .cms-align-right ol { text-align: right; list-style-position: inside; }
+.markdown-body .cms-align-justify p,
+.article-body .cms-align-justify p,
+.markdown-body .cms-align-justify ul,
+.article-body .cms-align-justify ul,
+.markdown-body .cms-align-justify ol,
+.article-body .cms-align-justify ol { text-align: justify; }
 .markdown-body .cms-callout,
 .article-body .cms-callout,
 .EasyMDEContainer .editor-preview .cms-callout,
@@ -2034,7 +2093,10 @@ a.directory-contact-title:hover {
 .EasyMDEContainer.cms-rich-toolbar .editor-toolbar .cms-tb-lbl-kbd::after { content: 'Клав'; }
 .EasyMDEContainer.cms-rich-toolbar .editor-toolbar .cms-tb-lbl-code-block::after { content: 'Код'; }
 .EasyMDEContainer.cms-rich-toolbar .editor-toolbar .cms-tb-lbl-line-break::after { content: 'BR'; }
+.EasyMDEContainer.cms-rich-toolbar .editor-toolbar .cms-tb-lbl-align-left::after { content: 'Влево'; }
 .EasyMDEContainer.cms-rich-toolbar .editor-toolbar .cms-tb-lbl-center-block::after { content: 'Центр'; }
+.EasyMDEContainer.cms-rich-toolbar .editor-toolbar .cms-tb-lbl-align-right::after { content: 'Вправо'; }
+.EasyMDEContainer.cms-rich-toolbar .editor-toolbar .cms-tb-lbl-align-justify::after { content: 'Ширина'; }
 .EasyMDEContainer.cms-rich-toolbar .editor-toolbar .cms-tb-lbl-callout::after { content: 'Инфо'; }
 .EasyMDEContainer.cms-rich-toolbar .editor-toolbar .cms-tb-lbl-callout-warn::after { content: 'Риск'; }
 .EasyMDEContainer.cms-rich-toolbar .editor-toolbar .cms-tb-lbl-task-list::after { content: '□'; }
@@ -2065,6 +2127,36 @@ a.directory-contact-title:hover {
   display: block;
   margin: 12px 0;
   border: 1px solid var(--border);
+}
+.markdown-body img.cms-img-center,
+.article-body img.cms-img-center,
+.markdown-body .cms-align-center img,
+.article-body .cms-align-center img,
+.markdown-body .cms-center img,
+.article-body .cms-center img,
+.EasyMDEContainer .editor-preview img.cms-img-center,
+.EasyMDEContainer .editor-preview .cms-align-center img,
+.EasyMDEContainer .editor-preview .cms-center img,
+.EasyMDEContainer .editor-preview-side img.cms-img-center,
+.EasyMDEContainer .editor-preview-side .cms-align-center img,
+.EasyMDEContainer .editor-preview-side .cms-center img {
+  display: block;
+  margin-left: auto;
+  margin-right: auto;
+}
+.markdown-body .cms-align-left img,
+.article-body .cms-align-left img,
+.EasyMDEContainer .editor-preview .cms-align-left img,
+.EasyMDEContainer .editor-preview-side .cms-align-left img {
+  margin-left: 0;
+  margin-right: auto;
+}
+.markdown-body .cms-align-right img,
+.article-body .cms-align-right img,
+.EasyMDEContainer .editor-preview .cms-align-right img,
+.EasyMDEContainer .editor-preview-side .cms-align-right img {
+  margin-left: auto;
+  margin-right: 0;
 }
 .markdown-body pre, .markdown-body code { max-width: 100%; }
 .markdown-body pre { overflow-x: auto; padding: 12px; background: var(--surface-muted); border-radius: 8px; font-size: 13px; }
@@ -2472,13 +2564,18 @@ body.cms-editor-immersive .topbar { visibility: hidden; pointer-events: none; }
 }
 
 /* —— Tutorial structure (Stepik-style nav) —— */
-.tutorial-layout-wrap { max-width: 1180px; }
+.tutorial-layout-wrap {
+  max-width: 1180px;
+  margin-left: auto;
+  margin-right: auto;
+}
 .tutorial-layout {
   display: grid;
   grid-template-columns: minmax(220px, 280px) minmax(0, 1fr);
   gap: 20px;
   align-items: start;
   margin-top: 8px;
+  width: 100%;
 }
 .tutorial-nav {
   position: sticky;
