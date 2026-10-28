@@ -187,10 +187,7 @@ def create_app(config_class=Config):
         from flask import flash, jsonify, redirect, request, url_for
 
         video_mb = app.config.get("VIDEO_MAX_UPLOAD_MB", 1024)
-        msg = (
-            f"Файл слишком большой для сервера (лимит видео до {video_mb} МБ). "
-            "Уменьшите файл или задайте VIDEO_MAX_UPLOAD_MB в окружении."
-        )
+        msg = f"Файл слишком большой для сервера (лимит видео до {video_mb} МБ)."
         wants_json = request.is_json or "application/json" in (request.headers.get("Accept") or "")
         if wants_json:
             return jsonify({"error": "too_large", "message": msg}), 413

@@ -796,8 +796,7 @@ def video_edit(vid):
             f.seek(0)
             if fsize > max_video:
                 flash(
-                    f"Видео больше {current_app.config.get('VIDEO_MAX_UPLOAD_MB', 1024)} МБ. "
-                    "Сожмите файл или увеличьте VIDEO_MAX_UPLOAD_MB.",
+                    f"Видео больше {current_app.config.get('VIDEO_MAX_UPLOAD_MB', 1024)} МБ.",
                     "danger",
                 )
                 chapters = "\n".join(
