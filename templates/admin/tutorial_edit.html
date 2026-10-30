@@ -87,6 +87,15 @@
 
     </form>
 
+    <form method="post" action="{{ url_for('admin.tutorial_delete', tid=tutorial.id) }}" class="form-actions form-actions--danger"
+          data-confirm="Удалить «{{ tutorial.title }}» вместе с разделами и подразделами? Доступ в договорах будет снят."
+          data-confirm-title="Удаление текстового материала"
+          data-confirm-ok="Удалить"
+          data-confirm-danger>
+      {{ csrf_field() }}
+      <button type="submit" class="btn btn-danger btn-sm">Удалить материал</button>
+    </form>
+
   </div>
 
 

@@ -584,6 +584,22 @@ def tutorial_edit(tid):
     )
 
 
+@bp.route("/tutorials/<int:tid>/delete", methods=["POST"])
+@login_required
+@content_cms_required
+def tutorial_delete(tid):
+    t = db.session.get(Tutorial, tid) or abort(404)
+    title = (t.title or "")[:512]
+    ContractContentAccess.query.filter_by(content_type="tutorial", content_id=t.id).delete(
+        synchronize_session=False
+    )
+    db.session.delete(t)
+    db.session.commit()
+    log_audit(current_user.id, "tutorial_delete", "tutorial", tid, title)
+    flash(f"Текстовый материал «{title}» удалён.", "success")
+    return redirect(url_for("admin.tutorials"))
+
+
 @bp.route("/tutorials/<int:tid>/sections", methods=["POST"])
 @login_required
 @content_cms_required

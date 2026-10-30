@@ -29,7 +29,17 @@
         <strong>{{ t.title }}</strong>
         <span class="muted"> — {{ t.category or 'без категории' }}{% if t.is_published %} · опубликован{% else %} · черновик{% endif %}</span>
       </div>
-      <a href="{{ url_for('admin.tutorial_edit', tid=t.id) }}" class="btn btn-outline btn-sm">Изменить</a>
+      <div class="list-row-actions">
+        <a href="{{ url_for('admin.tutorial_edit', tid=t.id) }}" class="btn btn-outline btn-sm">Изменить</a>
+        <form method="post" action="{{ url_for('admin.tutorial_delete', tid=t.id) }}" class="inline-form"
+              data-confirm="Удалить «{{ t.title }}» вместе с разделами и подразделами?"
+              data-confirm-title="Удаление материала"
+              data-confirm-ok="Удалить"
+              data-confirm-danger>
+          {{ csrf_field() }}
+          <button type="submit" class="btn btn-outline btn-sm btn-danger-text">Удалить</button>
+        </form>
+      </div>
     </div>
   </div>
   {% endfor %}

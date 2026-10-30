@@ -2447,6 +2447,9 @@ body.cms-editor-immersive .topbar { visibility: hidden; pointer-events: none; }
 .list-divider:last-child { border-bottom: none; margin-bottom: 0; padding-bottom: 0; }
 .list-row { display: flex; justify-content: space-between; align-items: flex-start; flex-wrap: wrap; gap: 12px; }
 .list-row-main { flex: 1; min-width: 0; }
+.list-row-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+.list-row-actions .inline-form { margin: 0; }
+.form-actions--danger { margin-top: 12px; padding-top: 12px; border-top: 1px dashed var(--border); }
 .access-section h4 { margin: 16px 0 8px; }
 .access-section h4:first-child { margin-top: 0; }
 .consent-label { display: flex; gap: 10px; align-items: flex-start; font-weight: 400; color: var(--text); line-height: 1.5; }
