@@ -414,6 +414,7 @@
     <summary>Связи задач</summary>
 
     <div class="projects-task-extra-body">
+    {% set links_ok = can_manage_task_links if can_manage_task_links is defined else (can_edit_task if can_edit_task is defined else current_user.is_staff) %}
 
     <h3 class="projects-cms-subheading">Эта задача предшествует</h3>
     <ul class="projects-link-list">{% for l in link_rows %}
@@ -421,7 +422,7 @@
         <span>{{ project_link_labels.get(l.link_type, l.link_type) }} →
           <a href="{{ url_for('projects.task_detail', tid=l.to_task_id) }}">{% if l.to_task %}{{ l.to_task.title }}{% else %}№{{ l.to_task_id }}{% endif %}</a>
         </span>
-        {% if current_user.is_staff %}
+        {% if links_ok %}
         <form method="post" action="{{ url_for('projects.task_update', tid=task.id) }}" class="inline-form">
           {{ csrf_field() }}<input type="hidden" name="action" value="link_remove"><input type="hidden" name="link_id" value="{{ l.id }}">
           <button type="submit" class="btn btn-outline btn-icon-xs" title="Удалить связь" aria-label="Удалить связь">×</button>
@@ -437,7 +438,7 @@
           <a href="{{ url_for('projects.task_detail', tid=l.from_task_id) }}">{% if l.from_task %}{{ l.from_task.title }}{% else %}№{{ l.from_task_id }}{% endif %}</a>
           → {{ project_link_labels.get(l.link_type, l.link_type) }}
         </span>
-        {% if current_user.is_staff %}
+        {% if links_ok %}
         <form method="post" action="{{ url_for('projects.task_update', tid=task.id) }}" class="inline-form">
           {{ csrf_field() }}<input type="hidden" name="action" value="link_remove"><input type="hidden" name="link_id" value="{{ l.id }}">
           <button type="submit" class="btn btn-outline btn-icon-xs" title="Удалить связь" aria-label="Удалить связь">×</button>
@@ -446,7 +447,7 @@
       </li>
     {% else %}<li class="muted">Нет</li>{% endfor %}</ul>
 
-    {% if current_user.is_staff %}
+    {% if links_ok %}
 
     <form method="post" action="{{ url_for('projects.task_update', tid=task.id) }}" class="form-row form-row--align-end projects-cms-inline-form">
 
@@ -474,6 +475,8 @@
 
     </form>
 
+    {% else %}
+    <p class="muted projects-cms-hint">Добавлять связи может исполнитель или соисполнитель этой задачи.</p>
     {% endif %}
 
     </div>

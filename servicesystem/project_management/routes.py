@@ -56,6 +56,7 @@ from servicesystem.project_management.services import (
     user_can_create_task,
     user_can_edit_task,
     user_can_edit_task_plan,
+    user_can_manage_task_links,
     user_can_manage_collaborators,
     user_can_manage_project,
     user_can_reschedule_gantt,
@@ -1361,6 +1362,7 @@ def task_detail(tid):
         can_edit_task=user_can_edit_task(current_user, task),
         can_plan_task=user_can_edit_task_plan(current_user, task),
         can_manage_collaborators=user_can_manage_collaborators(current_user, task),
+        can_manage_task_links=user_can_manage_task_links(current_user, task),
         can_view_others_time=user_can_view_others_time_logs(current_user),
         link_type_choices=list(PROJECT_LINK_UI_CHOICES),
         **projects_ui_context(),
@@ -1561,8 +1563,6 @@ def gantt_task_panel(tid):
 def gantt_link_add():
     """Связь FS (blocks) между задачами с Ганта."""
     _staff_or_curator()
-    if not (current_user.is_admin or current_user.is_auditor):
-        abort(403)
     data = request.get_json(silent=True) or {}
     from_id = data.get("from_task_id")
     to_id = data.get("to_task_id")
@@ -1576,6 +1576,15 @@ def gantt_link_add():
         return jsonify({"error": "same"}), 400
     from_task = db.session.get(ProjectTask, from_id) or abort(404)
     to_task = db.session.get(ProjectTask, to_id) or abort(404)
+    if not (
+        current_user.is_admin
+        or current_user.is_auditor
+        or (
+            user_can_manage_task_links(current_user, from_task)
+            and user_can_manage_task_links(current_user, to_task)
+        )
+    ):
+        abort(403)
     if from_task.project_id != to_task.project_id:
         return jsonify({"error": "different_project"}), 400
     from servicesystem.project_management.models import ProjectTaskLink
@@ -1616,13 +1625,24 @@ def gantt_link_add():
 def gantt_link_remove(lid):
     """Удаление связи с Ганта (таблица связей / панель задачи)."""
     _staff_or_curator()
-    if not (current_user.is_admin or current_user.is_auditor):
-        abort(403)
     from servicesystem.project_management.models import ProjectTaskLink
 
     link = db.session.get(ProjectTaskLink, lid)
     if not link:
         return jsonify({"error": "not_found"}), 404
+    from_task = db.session.get(ProjectTask, link.from_task_id)
+    to_task = db.session.get(ProjectTask, link.to_task_id)
+    if not (
+        current_user.is_admin
+        or current_user.is_auditor
+        or (
+            from_task
+            and to_task
+            and user_can_manage_task_links(current_user, from_task)
+            and user_can_manage_task_links(current_user, to_task)
+        )
+    ):
+        abort(403)
     db.session.delete(link)
     db.session.commit()
     return jsonify({"ok": True})

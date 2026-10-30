@@ -38,6 +38,7 @@ from servicesystem.project_management.services import (
     timer_stop,
     user_can_edit_task,
     user_can_edit_task_plan,
+    user_can_manage_task_links,
     user_can_view_task,
     user_can_view_custom_field,
     sync_calendar_events_for_task,
@@ -120,6 +121,8 @@ def task_update(tid):
                 flash("Файл превышает 100 Мб.", "danger")
         return redirect(url_for("projects.task_detail", tid=tid) + "#task-files")
     if action == "link_add":
+        if not user_can_manage_task_links(current_user, task):
+            abort(403)
         other_id = request.form.get("other_task_id", type=int)
         link_type = request.form.get("link_type") or "related"
         other = db.session.get(ProjectTask, other_id) if other_id else None
@@ -179,6 +182,8 @@ def task_update(tid):
                         flash("Связь добавлена.", "success")
         return redirect(url_for("projects.task_detail", tid=tid) + "#task-links")
     if action == "link_remove":
+        if not user_can_manage_task_links(current_user, task):
+            abort(403)
         lid = request.form.get("link_id", type=int)
         link = db.session.get(ProjectTaskLink, lid) if lid else None
         if link and (link.from_task_id == task.id or link.to_task_id == task.id):

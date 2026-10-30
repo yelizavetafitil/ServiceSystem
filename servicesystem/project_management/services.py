@@ -1645,9 +1645,14 @@ def user_can_edit_task(user: User, task: ProjectTask) -> bool:
 def user_can_edit_task_plan(user: User, task: ProjectTask | None = None) -> bool:
     """Планирование задачи (сроки, этап, исполнитель, иерархия) — только ГИП/админ.
 
-    Исполнитель правит контент: статус, чек-лист, файлы, комментарии, время, соисполнители.
+    Исполнитель правит контент: статус, чек-лист, файлы, комментарии, время, соисполнители, связи FS.
     """
     return bool(user and (user.is_admin or user.is_auditor))
+
+
+def user_can_manage_task_links(user: User, task: ProjectTask) -> bool:
+    """Связи между задачами проекта — исполнитель/соисполнитель своей карточки и ГИП."""
+    return user_can_edit_task(user, task)
 
 
 def user_can_delete_task(user: User, task: ProjectTask | None = None) -> bool:
