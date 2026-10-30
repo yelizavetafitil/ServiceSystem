@@ -1290,19 +1290,10 @@ def task_detail(tid):
         user_can_delete_task_attachment,
     )
 
-    preview_att = None
+    if request.args.get("preview", type=int):
+        return redirect(url_for("projects.task_detail", tid=tid) + "#task-files")
     task_files: list = list(list_task_attachments(task.id))
     deletable_file_ids: set[int] = set()
-    preview_aid = request.args.get("preview", type=int)
-    known_ids = {f.id for f in task_files}
-    if preview_aid:
-        att = db.session.get(ProjectTaskAttachment, preview_aid)
-        if att and att.task_id == task.id:
-            preview_att = att
-            if att.id not in known_ids:
-                task_files.insert(0, att)
-    elif task_files:
-        preview_att = task_files[0]
     for f in task_files:
         if user_can_delete_task_attachment(current_user, task, f):
             deletable_file_ids.add(f.id)
@@ -1331,7 +1322,6 @@ def task_detail(tid):
         task=task,
         task_files=task_files,
         deletable_file_ids=deletable_file_ids,
-        preview_att=preview_att,
         kanban_labels=KANBAN_LABELS,
         tab="main",
         **_task_detail_tree_context(task),

@@ -5,7 +5,7 @@
 {% block title %}{{ task.title }}{% endblock %}
 
 {% block head %}
-<link rel="stylesheet" href="{{ url_for('static', filename='css/projects.css') }}?v=103">
+<link rel="stylesheet" href="{{ url_for('static', filename='css/projects.css') }}?v=104">
 <script src="{{ url_for('static', filename='js/task-date-duration.js') }}?v=1"></script>
 {% if can_plan_task is defined and can_plan_task %}
 <script src="{{ url_for('static', filename='js/task-project-tree-nav.js') }}?v=4"></script>
@@ -243,72 +243,43 @@
 
   </div>
 
-  <section id="task-files" class="card projects-task-section projects-files-layout">
-    <div class="card projects-files-list-card">
-      <h2>Файлы (до 100 Мб){% if task_files %} · {{ task_files|length }}{% endif %}</h2>
-      {% if current_user.is_staff %}
-      <form method="post" enctype="multipart/form-data" action="{{ url_for('projects.task_update', tid=task.id) }}" class="projects-file-upload-form">
-        {{ csrf_field() }}
-        <input type="hidden" name="action" value="upload">
-        <div class="projects-file-upload-field">
-          <input type="file" name="file" class="form-control projects-file-input" required>
+  <section id="task-files" class="card projects-task-section projects-files-block">
+    <h2 class="projects-task-section-title">Файлы (до 100 Мб){% if task_files %} · {{ task_files|length }}{% endif %}</h2>
+    {% if current_user.is_staff %}
+    <form method="post" enctype="multipart/form-data" action="{{ url_for('projects.task_update', tid=task.id) }}" class="projects-file-upload-form">
+      {{ csrf_field() }}
+      <input type="hidden" name="action" value="upload">
+      <div class="projects-file-upload-row">
+        <input type="file" name="file" class="form-control projects-file-input" required>
+        <button type="submit" class="btn btn-primary btn-sm">Загрузить</button>
+      </div>
+    </form>
+    {% endif %}
+    <ul class="projects-file-list">
+      {% for f in task_files %}
+      {% set ext = f.original_name.rsplit('.', 1)[-1].lower() if '.' in f.original_name else 'file' %}
+      {% set dl_url = url_for('projects.task_file_view', tid=task.id, aid=f.id, download=1) %}
+      <li class="projects-file-item projects-file-item--row">
+        <span class="projects-file-ext" aria-hidden="true">{{ ext[:4] }}</span>
+        <div class="projects-file-item-main">
+          <a class="projects-file-name" href="{{ dl_url }}" download>{{ f.original_name }}</a>
+          <span class="projects-file-sub muted">
+            {% if f.size_bytes >= 1048576 %}{{ (f.size_bytes / 1048576)|round(1) }} Мб{% elif f.size_bytes >= 1024 %}{{ (f.size_bytes / 1024)|round(1) }} Кб{% elif f.size_bytes %}{{ f.size_bytes }} б{% endif %}
+            {% if f.verified_at %} · ✓ утверждён ГИП{% endif %}
+          </span>
         </div>
-        <div class="projects-file-upload-actions">
-          <button type="submit" class="btn btn-primary btn-sm">Загрузить</button>
-        </div>
-      </form>
-      {% endif %}
-      <ul class="projects-file-list">
-        {% for f in task_files %}
-        {% set ext = f.original_name.rsplit('.', 1)[-1].lower() if '.' in f.original_name else 'file' %}
-        <li class="projects-file-item{% if preview_att and preview_att.id == f.id %} is-active{% endif %}">
-          <a class="projects-file-item-link" href="{{ url_for('projects.task_detail', tid=task.id, preview=f.id) }}#task-files" title="Просмотр">
-            <span class="projects-file-ext" aria-hidden="true">{{ ext[:4] }}</span>
-            <span class="projects-file-item-text">
-              <span class="projects-file-name">{{ f.original_name }}</span>
-              <span class="projects-file-sub muted">
-                {% if f.size_bytes >= 1048576 %}{{ (f.size_bytes / 1048576)|round(1) }} Мб{% elif f.size_bytes >= 1024 %}{{ (f.size_bytes / 1024)|round(1) }} Кб{% elif f.size_bytes %}{{ f.size_bytes }} б{% endif %}
-                {% if f.verified_at %} · ✓ утверждён ГИП{% endif %}
-              </span>
-            </span>
-          </a>
-          <div class="projects-file-item-actions">
-            <a href="{{ url_for('projects.task_file_view', tid=task.id, aid=f.id, download=1) }}" class="btn btn-outline btn-xs">Скачать</a>
-            {% if (current_user.is_auditor or current_user.is_admin) and not f.verified_at %}
-            <form method="post" action="{{ url_for('projects.task_file_verify', tid=task.id, aid=f.id) }}" class="projects-file-inline-form">
-              {{ csrf_field() }}
-              <button type="submit" class="btn btn-outline btn-xs">Утвердить</button>
-            </form>
-            {% elif f.verified_at %}
-            <span class="badge badge-success projects-file-badge">ГИП</span>
-            {% endif %}
-            {% if f.id in deletable_file_ids %}
-            <form method="post" action="{{ url_for('projects.task_file_delete', tid=task.id, aid=f.id) }}" class="projects-file-inline-form"
-                  data-confirm="Удалить этот файл?"
-                  data-confirm-title="Удаление файла"
-                  data-confirm-ok="Удалить"
-                  data-confirm-danger>
-              {{ csrf_field() }}
-              <button type="submit" class="btn btn-outline btn-xs btn-danger-text">Удалить</button>
-            </form>
-            {% endif %}
-          </div>
-        </li>
-        {% else %}
-        <li class="muted projects-file-empty">Нет файлов — загрузите документ выше.</li>
-        {% endfor %}
-      </ul>
-    </div>
-    <div class="card projects-files-preview-card">
-      {% if preview_att %}
-      {% set mime = preview_att.mime_type or '' %}
-      {% set pv_url = url_for('projects.task_file_view', tid=task.id, aid=preview_att.id) %}
-      <div class="projects-file-preview-head">
-        <h2 class="projects-file-preview-title">{{ preview_att.original_name }}</h2>
-        <div class="projects-file-preview-toolbar">
-          <a href="{{ pv_url }}" class="btn btn-outline btn-xs" download>Скачать</a>
-          {% if preview_att.id in deletable_file_ids %}
-          <form method="post" action="{{ url_for('projects.task_file_delete', tid=task.id, aid=preview_att.id) }}" class="projects-file-inline-form"
+        <div class="projects-file-item-actions">
+          <a href="{{ dl_url }}" class="btn btn-outline btn-xs" download>Скачать</a>
+          {% if (current_user.is_auditor or current_user.is_admin) and not f.verified_at %}
+          <form method="post" action="{{ url_for('projects.task_file_verify', tid=task.id, aid=f.id) }}" class="projects-file-inline-form">
+            {{ csrf_field() }}
+            <button type="submit" class="btn btn-outline btn-xs">Утвердить</button>
+          </form>
+          {% elif f.verified_at %}
+          <span class="badge badge-success projects-file-badge">ГИП</span>
+          {% endif %}
+          {% if f.id in deletable_file_ids %}
+          <form method="post" action="{{ url_for('projects.task_file_delete', tid=task.id, aid=f.id) }}" class="projects-file-inline-form"
                 data-confirm="Удалить этот файл?"
                 data-confirm-title="Удаление файла"
                 data-confirm-ok="Удалить"
@@ -318,21 +289,11 @@
           </form>
           {% endif %}
         </div>
-      </div>
-      {% if mime.startswith('image/') %}
-      <img class="projects-file-preview-img" src="{{ pv_url }}" alt="{{ preview_att.original_name }}">
-      {% elif mime == 'application/pdf' or preview_att.original_name.lower().endswith('.pdf') %}
-      <iframe class="projects-file-preview-frame" src="{{ pv_url }}" title="{{ preview_att.original_name }}"></iframe>
-      {% elif mime.startswith('video/') %}
-      <video class="projects-file-preview-video" controls src="{{ pv_url }}"></video>
+      </li>
       {% else %}
-      <p class="muted">Предпросмотр недоступен для этого типа. <a href="{{ pv_url }}" target="_blank">Открыть</a> или скачать.</p>
-      {% endif %}
-      {% else %}
-      <h2>Просмотр</h2>
-      <p class="muted">Выберите файл слева для просмотра (изображения, PDF, видео).</p>
-      {% endif %}
-    </div>
+      <li class="muted projects-file-empty">Нет файлов{% if current_user.is_staff %} — загрузите документ выше{% endif %}.</li>
+      {% endfor %}
+    </ul>
   </section>
 
   <section id="task-checklist" class="card projects-task-section"

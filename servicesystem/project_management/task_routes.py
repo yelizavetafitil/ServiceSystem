@@ -114,9 +114,7 @@ def task_update(tid):
                 db.session.add(att)
                 db.session.commit()
                 flash("Файл загружен.", "success")
-                return redirect(
-                    url_for("projects.task_detail", tid=tid, preview=att.id) + "#task-files"
-                )
+                return redirect(url_for("projects.task_detail", tid=tid) + "#task-files")
             except ValueError:
                 flash("Файл превышает 100 Мб.", "danger")
         return redirect(url_for("projects.task_detail", tid=tid) + "#task-files")
