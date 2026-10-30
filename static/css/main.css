@@ -2218,24 +2218,43 @@ a.directory-contact-title:hover {
 /* CMS Markdown: две строки панели + подписи к кнопкам */
 .EasyMDEContainer.cms-rich-toolbar .editor-toolbar {
   display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 2px 1px;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 0;
+  height: auto !important;
+  max-height: none !important;
+  overflow: visible;
   padding: 8px 8px 6px;
   border-bottom: 1px solid var(--border);
+  background: #f6f8fb;
+  position: relative;
+  z-index: 3;
+  box-sizing: border-box;
+}
+.EasyMDEContainer.cms-rich-toolbar .cms-editor-toolbar-row {
+  display: flex;
+  flex-wrap: nowrap;
+  align-items: center;
+  gap: 2px 1px;
+  width: 100%;
+  max-width: 100%;
+  overflow-x: auto;
+  overflow-y: hidden;
+  -webkit-overflow-scrolling: touch;
+  scrollbar-width: thin;
+  box-sizing: border-box;
+}
+.EasyMDEContainer.cms-rich-toolbar .cms-editor-toolbar-row--2 {
+  margin-top: 6px;
+  padding-top: 6px;
+  border-top: 1px solid var(--border);
+}
+.EasyMDEContainer.cms-rich-toolbar .cms-editor-toolbar-row > button,
+.EasyMDEContainer.cms-rich-toolbar .cms-editor-toolbar-row > i.separator {
+  flex: 0 0 auto;
 }
 .EasyMDEContainer.cms-rich-toolbar .editor-toolbar button.cms-toolbar-row-break {
-  flex: 0 0 100%;
-  width: 100%;
-  height: 0;
-  min-height: 0;
-  padding: 0;
-  margin: 6px 0 2px;
-  border: none;
-  border-top: 1px solid var(--border);
-  background: transparent;
-  pointer-events: none;
-  opacity: 0;
+  display: none !important;
 }
 .EasyMDEContainer.cms-rich-toolbar .editor-toolbar button.cms-tb-labeled {
   width: auto !important;
@@ -2318,6 +2337,24 @@ body.cms-editor-immersive .topbar { visibility: hidden; pointer-events: none; }
   left: 0 !important;
   right: 0 !important;
   background: #fff !important;
+}
+.EasyMDEContainer.cms-rich-toolbar.fullscreen .editor-toolbar.fullscreen {
+  height: auto !important;
+  min-height: 50px;
+  flex-direction: column;
+  align-items: stretch;
+  overflow: visible;
+  background: #f6f8fb !important;
+}
+.EasyMDEContainer.cms-rich-toolbar.fullscreen .editor-toolbar.fullscreen::before,
+.EasyMDEContainer.cms-rich-toolbar.fullscreen .editor-toolbar.fullscreen::after {
+  display: none !important;
+}
+.EasyMDEContainer.cms-rich-toolbar.fullscreen .CodeMirror-fullscreen {
+  top: var(--cms-toolbar-height, 84px) !important;
+}
+.EasyMDEContainer.cms-rich-toolbar.fullscreen .editor-preview-side {
+  top: var(--cms-toolbar-height, 84px) !important;
 }
 .CodeMirror-fullscreen {
   z-index: 2147482100 !important;

@@ -274,6 +274,59 @@ document.addEventListener('DOMContentLoaded', function() {
     }
   );
 
+  function cmsSplitToolbarRows(container) {
+    var tb = container.querySelector('.editor-toolbar');
+    if (!tb || tb.dataset.cmsRows === '1') return;
+    var br = tb.querySelector('button.cms-toolbar-row-break');
+    if (!br) return;
+    var row1 = document.createElement('div');
+    row1.className = 'cms-editor-toolbar-row cms-editor-toolbar-row--1';
+    var row2 = document.createElement('div');
+    row2.className = 'cms-editor-toolbar-row cms-editor-toolbar-row--2';
+    var nodes = Array.prototype.slice.call(tb.childNodes);
+    var afterBreak = false;
+    nodes.forEach(function (node) {
+      if (node === br) {
+        afterBreak = true;
+        return;
+      }
+      if (!afterBreak) row1.appendChild(node);
+      else row2.appendChild(node);
+    });
+    br.remove();
+    tb.textContent = '';
+    tb.appendChild(row1);
+    tb.appendChild(row2);
+    tb.dataset.cmsRows = '1';
+  }
+
+  function cmsSyncToolbarHeight(container, editor) {
+    var tb = container.querySelector('.editor-toolbar');
+    if (!tb) return;
+    var h = Math.ceil(tb.getBoundingClientRect().height);
+    if (h > 0) container.style.setProperty('--cms-toolbar-height', h + 'px');
+    if (editor && editor.codemirror) {
+      window.requestAnimationFrame(function () { editor.codemirror.refresh(); });
+    }
+  }
+
+  function cmsBindToolbarLayout(container, editor) {
+    cmsSplitToolbarRows(container);
+    cmsSyncToolbarHeight(container, editor);
+    var tb = container.querySelector('.editor-toolbar');
+    if (!tb || tb.dataset.cmsLayoutBound === '1') return;
+    tb.dataset.cmsLayoutBound = '1';
+    if (typeof ResizeObserver !== 'undefined') {
+      var ro = new ResizeObserver(function () {
+        cmsSyncToolbarHeight(container, editor);
+      });
+      ro.observe(tb);
+    }
+    window.addEventListener('resize', function () {
+      cmsSyncToolbarHeight(container, editor);
+    });
+  }
+
   function exitEditorModes(editor) {
     try { if (editor.isFullscreenActive()) EasyMDE.toggleFullScreen(editor); } catch (e) {}
     try { if (editor.isSideBySideActive()) EasyMDE.toggleSideBySide(editor); } catch (e) {}
@@ -344,11 +397,13 @@ document.addEventListener('DOMContentLoaded', function() {
     var container = ed.codemirror.getWrapperElement().closest('.EasyMDEContainer');
     if (cmsMode && container) {
       container.classList.add('cms-rich-toolbar');
+      cmsBindToolbarLayout(container, ed);
       var mo = new MutationObserver(function() {
         document.body.classList.toggle(
           'cms-editor-immersive',
           container.classList.contains('fullscreen')
         );
+        cmsSyncToolbarHeight(container, ed);
       });
       mo.observe(container, { attributes: true, attributeFilter: ['class'] });
     }
