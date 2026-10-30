@@ -10,12 +10,24 @@
   </div>
 
   <div class="card">
-    {% set doc_url = contract.document_url or url_for('cabinet.contract') %}
     <div class="form-group">
-      <label>Номер договора</label>
-      <p class="contract-ref">Договор <a href="{{ doc_url }}" target="_blank"><strong>№{{ contract.number }}</strong></a>
-        от {{ contract.signed_at.strftime('%d.%m.%Y') if contract.signed_at else '—' }}</p>
+      <label>Проект</label>
+      <p class="contract-ref"><strong>{{ project.name }}</strong></p>
+      <p class="hint">Этап: {{ stage.title }}</p>
     </div>
+    {% if project.contract_id and project.contract %}
+    {% set doc_url = project.contract.document_url or url_for('cabinet.contract') %}
+    <div class="form-group">
+      <label>Договор проекта</label>
+      <p class="contract-ref">Договор <a href="{{ doc_url }}" target="_blank"><strong>№{{ project.contract.number }}</strong></a>
+        от {{ project.contract.signed_at.strftime('%d.%m.%Y') if project.contract.signed_at else '—' }}</p>
+    </div>
+    {% elif contract %}
+    <div class="form-group">
+      <label>Договор для SLA</label>
+      <p class="hint muted">К проекту договор не привязан. Заявка оформляется по договору вашей организации <strong>№{{ contract.number }}</strong>.</p>
+    </div>
+    {% endif %}
 
     <form method="post" id="ticket-form">
       {{ csrf_field() }}

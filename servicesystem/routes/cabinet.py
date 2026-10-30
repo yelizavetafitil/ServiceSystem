@@ -386,6 +386,14 @@ def _stage_remark_priority(acceptance_status: str) -> int:
     return 1 if acceptance_status == "accepted_remarks" else 4
 
 
+def _contract_for_stage_remark(stage):
+    """Договор для SLA заявки: сначала договор проекта, не личный договор куратора."""
+    project = stage.project if stage else None
+    if project and project.contract_id:
+        return project.contract
+    return current_user.contract
+
+
 def _create_stage_remark_ticket(stage, subject: str, description: str, priority: int = 1):
     """Тикет-замечание по этапу. Категории объекта/инцидента скрыты в UI — подставляются автоматически."""
     from servicesystem.models import IncidentCategory, ObjectCategory, Ticket, TicketAttachment
@@ -394,10 +402,15 @@ def _create_stage_remark_ticket(stage, subject: str, description: str, priority:
     from servicesystem.services.routing import resolve_auditor, resolve_default_executor
     from servicesystem.services.sla import compute_deadlines
     from servicesystem.services.ticket_workflow import on_ticket_created
-    from servicesystem.project_management.services import on_ticket_created_hook
+    from servicesystem.project_management.services import (
+        create_stage_remark_project_task,
+        on_ticket_created_hook,
+    )
     from servicesystem.services.audit import log_ticket_history
 
-    contract = current_user.contract or (stage.project.contract if stage.project else None)
+    if not stage.project:
+        raise ValueError("no_project")
+    contract = _contract_for_stage_remark(stage)
     if not contract:
         raise ValueError("no_contract")
     obj = ObjectCategory.query.filter_by(is_active=True).order_by(ObjectCategory.sort_order).first()
@@ -434,6 +447,7 @@ def _create_stage_remark_ticket(stage, subject: str, description: str, priority:
     db.session.add(ticket)
     db.session.flush()
     on_ticket_created(ticket)
+    create_stage_remark_project_task(stage, ticket)
     on_ticket_created_hook(ticket)
     attachment_ids = (request.form.get("attachment_ids") or "").strip()
     if attachment_ids:
@@ -448,7 +462,7 @@ def _create_stage_remark_ticket(stage, subject: str, description: str, priority:
         ticket.id,
         current_user.id,
         "created",
-        details=f"stage_remark stage_id={stage.id}; priority={priority}",
+        details=f"stage_remark stage_id={stage.id}; project_id={stage.project_id}; priority={priority}",
     )
     log_audit(current_user.id, "ticket_create", "ticket", ticket.id, f"stage={stage.id}")
     notify_ticket_created(ticket, current_user, auditor)
@@ -560,9 +574,13 @@ def curator_stage_remark(sid):
         flash("Сначала выберите статус «Принято с замечаниями» или «На доработку».", "warning")
         return redirect(url_for("cabinet.customer_projects") + f"#project-{stage.project_id}")
 
-    contract = current_user.contract or (stage.project.contract if stage.project else None)
+    project = stage.project
+    contract = _contract_for_stage_remark(stage)
     if not contract:
-        flash("Нет договора для создания заявки.", "danger")
+        flash(
+            "Нет договора для оформления заявки: привяжите договор к проекту или к учётной записи куратора.",
+            "danger",
+        )
         return redirect(url_for("cabinet.customer_projects") + f"#project-{stage.project_id}")
 
     default_priority = _stage_remark_priority(stage.acceptance_status)
@@ -588,6 +606,7 @@ def curator_stage_remark(sid):
             return render_template(
                 "cabinet/stage_remark_ticket.html",
                 stage=stage,
+                project=project,
                 contract=contract,
                 default_priority=priority,
                 pref_subject=subject or pref_subject,
@@ -602,6 +621,7 @@ def curator_stage_remark(sid):
             return render_template(
                 "cabinet/stage_remark_ticket.html",
                 stage=stage,
+                project=project,
                 contract=contract,
                 default_priority=priority,
                 pref_subject=subject,
@@ -613,6 +633,7 @@ def curator_stage_remark(sid):
     return render_template(
         "cabinet/stage_remark_ticket.html",
         stage=stage,
+        project=project,
         contract=contract,
         default_priority=default_priority,
         pref_subject=pref_subject,

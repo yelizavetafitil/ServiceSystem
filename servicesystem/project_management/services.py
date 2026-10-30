@@ -100,6 +100,38 @@ def on_ticket_created_hook(ticket: Ticket) -> None:
     return
 
 
+def create_stage_remark_project_task(stage: ProjectStage, ticket: Ticket) -> ProjectTask:
+    """Заявка-замечание по этапу — задача в проекте этапа, не в «техподдержке» договора куратора."""
+    if not stage or not stage.project_id:
+        raise ValueError("no_project")
+    existing = ProjectTask.query.filter_by(ticket_id=ticket.id).first()
+    if existing:
+        if existing.project_id != stage.project_id:
+            existing.project_id = stage.project_id
+        if stage.id and existing.stage_id != stage.id:
+            existing.stage_id = stage.id
+        return existing
+    priority = ticket.priority
+    if priority >= 3:
+        priority = max(priority, 3)
+    task = ProjectTask(
+        project_id=stage.project_id,
+        stage_id=stage.id,
+        ticket_id=ticket.id,
+        title=f"Заявка {ticket.number}: {ticket.subject}",
+        description=ticket.description_md,
+        priority=priority,
+        kanban_status="todo",
+        gantt_sort=next_gantt_sort(stage.project_id),
+        assignee_id=ticket.executor_id,
+        due_date=ticket.resolution_deadline.date() if ticket.resolution_deadline else None,
+        created_by_id=ticket.auditor_id or ticket.author_id,
+    )
+    db.session.add(task)
+    db.session.flush()
+    return task
+
+
 def on_ticket_assign_hook(ticket: Ticket) -> None:
     if not ticket.executor_id:
         return
