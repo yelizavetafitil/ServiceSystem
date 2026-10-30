@@ -37,6 +37,7 @@ services:
       PUBLIC_BASE_URL: ${PUBLIC_BASE_URL:-http://192.168.1.4:8095}
       MAX_UPLOAD_MB: ${MAX_UPLOAD_MB:-100}
       VIDEO_MAX_UPLOAD_MB: ${VIDEO_MAX_UPLOAD_MB:-1024}
+      CURATOR_ACCEPTANCE_TEST: ${CURATOR_ACCEPTANCE_TEST:-1}
     volumes:
       - upload_data:/app/data/uploads
       # Код с хоста: правки templates/static/python без пересборки образа (docker compose restart web)

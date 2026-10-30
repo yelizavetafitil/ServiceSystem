@@ -371,6 +371,12 @@ def _curator_projects():
     )
 
 
+def _curator_acceptance_test_enabled() -> bool:
+    from flask import current_app
+
+    return bool(current_app.config.get("CURATOR_ACCEPTANCE_TEST"))
+
+
 def _curator_stage_or_403(stage_id: int):
     from servicesystem.project_management.models import ProjectStage
 
@@ -498,7 +504,51 @@ def customer_projects():
         stages_by_project=stages_by_project,
         stage_timers=timers,
         stage_files=stage_files,
+        curator_acceptance_test=_curator_acceptance_test_enabled(),
     )
+
+
+@bp.route("/projects/stages/<int:sid>/test-release", methods=["POST"])
+@login_required
+@contract_access_required
+@write_access_required
+def curator_stage_test_release(sid):
+    """Демо: выпуск этапа с этой страницы (без карточки ГИП), если включён CURATOR_ACCEPTANCE_TEST."""
+    if not current_user.is_customer_curator:
+        abort(403)
+    if not _curator_acceptance_test_enabled():
+        abort(404)
+    from datetime import datetime, timezone
+
+    from servicesystem.project_management.services import save_stage_attachment
+
+    stage = _curator_stage_or_403(sid)
+    if stage.released_at:
+        flash("Этап уже выпущен.", "info")
+        return redirect(url_for("cabinet.customer_projects") + f"#project-{stage.project_id}")
+    stage.release_notes = (request.form.get("release_notes") or "").strip() or None
+    stage.released_at = datetime.now(timezone.utc)
+    for f in request.files.getlist("stage_files"):
+        if f and f.filename:
+            try:
+                att = save_stage_attachment(stage, f, current_user.id)
+                db.session.add(att)
+            except ValueError:
+                flash("Файл этапа превышает 100 Мб.", "danger")
+                return redirect(url_for("cabinet.customer_projects") + f"#project-{stage.project_id}")
+    db.session.commit()
+    log_audit(
+        current_user.id,
+        "stage_test_release",
+        "project_stage",
+        stage.id,
+        f"project_id={stage.project_id}",
+    )
+    flash(
+        "Этап выпущен (режим тестирования). Выберите статус приёмки и проверьте замечания.",
+        "success",
+    )
+    return redirect(url_for("cabinet.customer_projects") + f"#project-{stage.project_id}")
 
 
 @bp.route("/projects/stages/<int:sid>/accept", methods=["POST"])

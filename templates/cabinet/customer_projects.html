@@ -1,11 +1,14 @@
 {% extends "base.html" %}
 {% from "macros/forms.html" import csrf_field %}
 {% block title %}Текущие проекты{% endblock %}
-{% block head %}<link rel="stylesheet" href="{{ url_for('static', filename='css/projects.css') }}?v=107">{% endblock %}
+{% block head %}<link rel="stylesheet" href="{{ url_for('static', filename='css/projects.css') }}?v=108">{% endblock %}
 {% block content %}
 <div class="container container-wide cms-page">
   <h1>Текущие проекты</h1>
   <p class="hint">Приёмка отчётных этапов (куратор-заказчик).</p>
+  {% if curator_acceptance_test %}
+  <p class="hint projects-curator-test-banner">Режим тестирования: для этапов в «Черновик» можно выпустить этап на этой странице и проверить статусы, замечания и акт.</p>
+  {% endif %}
 
   {% for p in projects %}
   <section class="card mb-md projects-curator-project" id="project-{{ p.id }}">
@@ -87,7 +90,17 @@
                 <button type="submit" class="btn btn-outline btn-xs">Применить</button>
               </form>
               {% else %}
+              {% if curator_acceptance_test %}
+              <form method="post" action="{{ url_for('cabinet.curator_stage_test_release', sid=s.id) }}" enctype="multipart/form-data" class="projects-curator-test-release">
+                {{ csrf_field() }}
+                <p class="muted projects-curator-test-label">Тест: выпуск этапа</p>
+                <textarea name="release_notes" class="form-control form-control--compact" rows="2" placeholder="Комментарий к материалам (необяз.)"></textarea>
+                <input type="file" name="stage_files" class="form-control form-control--compact" multiple>
+                <button type="submit" class="btn btn-primary btn-xs">Выпустить для теста</button>
+              </form>
+              {% else %}
               <span class="muted">После выпуска ГИП</span>
+              {% endif %}
               {% endif %}
             </td>
             <td>
