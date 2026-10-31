@@ -8,9 +8,14 @@ WORKDIR /app
 ENV PYTHONUNBUFFERED=1 \
     UPLOAD_FOLDER=/app/data/uploads
 
+# Установка системных зависимостей:
+# - libpq-dev: для PostgreSQL (psycopg2)
+# - pandoc: для импорта DOCX в Markdown (CMS редактор)
 RUN apt-get update && apt-get install -y --no-install-recommends \
     libpq-dev \
-    && rm -rf /var/lib/apt/lists/*
+    pandoc \
+    && rm -rf /var/lib/apt/lists/* \
+    && pandoc --version
 
 COPY docker/pydeps.tgz /tmp/pydeps.tgz
 RUN tar xzf /tmp/pydeps.tgz -C /usr/local/lib/python3.12 \

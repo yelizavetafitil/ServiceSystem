@@ -1956,7 +1956,7 @@ a.directory-contact-title:hover {
 .EasyMDEContainer .editor-preview ol,
 .EasyMDEContainer .editor-preview-side ul,
 .EasyMDEContainer .editor-preview-side ol {
-  margin: 8px 0 12px;
+  margin: 8px 0 12px 15px;
   padding-left: 15px;
   list-style-position: outside;
 }
@@ -2129,6 +2129,7 @@ a.directory-contact-title:hover {
 .EasyMDEContainer.cms-rich-toolbar .editor-toolbar .cms-tb-lbl-task-done::after { content: '✓'; }
 .EasyMDEContainer.cms-rich-toolbar .editor-toolbar .cms-tb-lbl-image-url::after { content: 'URL'; }
 .EasyMDEContainer.cms-rich-toolbar .editor-toolbar .cms-tb-lbl-upload-image::after { content: 'Файл'; }
+.EasyMDEContainer.cms-rich-toolbar .editor-toolbar .cms-tb-lbl-import-docx::after { content: 'DOCX'; }
 .EasyMDEContainer.cms-rich-toolbar .editor-toolbar .cms-tb-lbl-exit-modes::after { content: 'Закр'; }
 .cms-preview-loading { margin: 12px; }
 .markdown-body .cms-center img,
@@ -2252,7 +2253,7 @@ a.directory-contact-title:hover {
 }
 .editor-toolbar { border-radius: 10px 10px 0 0 !important; flex-wrap: wrap; }
 
-/* CMS Markdown: две строки панели + подписи к кнопкам */
+/* CMS Markdown: две строки панели + подписи к кнопкам (обычный режим) */
 .EasyMDEContainer.cms-rich-toolbar .editor-toolbar {
   display: flex !important;
   flex-direction: column !important;
@@ -2266,8 +2267,13 @@ a.directory-contact-title:hover {
   background: #f6f8fb !important;
   position: sticky !important;
   top: var(--topbar-h, 64px) !important;
-  z-index: 90 !important;
+  left: auto !important;
+  right: auto !important;
+  width: auto !important;
+  z-index: 50 !important;
   box-sizing: border-box !important;
+  box-shadow: none !important;
+  transform: none !important;
 }
 .EasyMDEContainer.cms-rich-toolbar .cms-editor-toolbar-row {
   display: flex;
@@ -2372,149 +2378,292 @@ a.directory-contact-title:hover {
 
 .editor-toolbar .exit-modes { color: var(--primary) !important; }
 
-body.cms-editor-immersive .topbar {
-  position: relative;
-  z-index: 2147483000;
-  visibility: visible;
-  pointer-events: auto;
+/* —— Полноэкранный CMS: cms-editor-wrap вместо header.topbar —— */
+html.cms-editor-immersive,
+body.cms-editor-immersive {
+  overflow: hidden !important;
+  height: 100% !important;
+  max-height: 100% !important;
+  width: 100% !important;
+  overscroll-behavior: none !important;
 }
-.EasyMDEContainer.cms-rich-toolbar.sided {
-  position: relative !important;
-  display: flex !important;
-  flex-direction: row !important;
-  flex-wrap: wrap !important;
-  align-content: flex-start !important;
+body.cms-editor-immersive header.topbar,
+body.cms-editor-immersive .banner-warning,
+body.cms-editor-immersive .banner-info,
+body.cms-editor-immersive .banner-maintenance {
+  display: none !important;
+}
+.cms-editor-wrap-placeholder {
+  display: none !important;
+}
+
+/* Общий контейнер immersive: один скролл справа */
+.cms-editor-wrap.cms-editor-wrap--immersive {
+  position: fixed !important;
+  top: 0 !important;
+  left: 0 !important;
+  right: 0 !important;
+  bottom: 0 !important;
+  width: 100% !important;
+  max-width: 100% !important;
+  height: 100% !important;
+  margin: 0 !important;
+  padding: 0 !important;
+  z-index: 10000 !important;
   background: #fff !important;
+  display: block !important;
+  box-sizing: border-box !important;
+  overflow-x: hidden !important;
+  overflow-y: auto !important;
 }
-.EasyMDEContainer.cms-rich-toolbar.fullscreen {
-  z-index: 2147482000 !important;
-  position: relative !important;
-  display: flex !important;
-  flex-direction: row !important;
-  flex-wrap: wrap !important;
-  align-content: flex-start !important;
-  background: #fff !important;
+.cms-editor-wrap.cms-editor-wrap--immersive > label {
+  display: none !important;
 }
-/* Toolbar on top (in flow) */
-.EasyMDEContainer.cms-rich-toolbar.fullscreen > .editor-toolbar,
-.EasyMDEContainer.cms-rich-toolbar.sided > .editor-toolbar {
+
+/* Панель всегда сверху */
+.cms-editor-wrap--immersive .editor-toolbar,
+body.cms-editor-immersive .editor-toolbar.fullscreen {
   display: flex !important;
   visibility: visible !important;
   opacity: 1 !important;
   pointer-events: auto !important;
   position: sticky !important;
-  top: var(--topbar-h, 64px) !important;
-  left: auto !important;
-  right: auto !important;
+  top: 0 !important;
   width: 100% !important;
-  flex: 0 0 100% !important;
+  max-width: 100% !important;
   height: auto !important;
   min-height: 84px !important;
-  max-height: none !important;
-  flex-direction: column !important;
-  overflow: visible !important;
   margin: 0 !important;
-  padding: 8px 10px 6px !important;
-  border-radius: 0 !important;
+  padding: 8px 12px 6px !important;
   border: none !important;
+  border-radius: 0 !important;
   border-bottom: 1px solid var(--border) !important;
   background: #f6f8fb !important;
-  box-shadow: 0 2px 8px rgba(15, 23, 42, 0.1);
+  box-shadow: 0 2px 10px rgba(15, 23, 42, 0.12) !important;
   box-sizing: border-box !important;
   z-index: 5 !important;
+  flex-direction: column !important;
+  transform: none !important;
+  float: none !important;
 }
-.EasyMDEContainer.cms-rich-toolbar.fullscreen > .editor-toolbar .cms-editor-toolbar-row {
-  display: flex !important;
-  background: #f6f8fb !important;
-}
-.EasyMDEContainer.cms-rich-toolbar.fullscreen > .editor-toolbar button {
-  background: #fff;
-}
-.EasyMDEContainer.cms-rich-toolbar.fullscreen > .editor-toolbar::before,
-.EasyMDEContainer.cms-rich-toolbar.fullscreen > .editor-toolbar::after {
+.cms-editor-wrap--immersive .editor-toolbar::before,
+.cms-editor-wrap--immersive .editor-toolbar::after {
   display: none !important;
   content: none !important;
 }
-/* Fullscreen editor only (not side-by-side) */
-.EasyMDEContainer.cms-rich-toolbar.fullscreen:not(.sided) .CodeMirror,
-.EasyMDEContainer.cms-rich-toolbar.fullscreen:not(.sided) .CodeMirror-fullscreen {
-  position: relative !important;
-  top: auto !important;
-  left: auto !important;
-  right: auto !important;
-  bottom: auto !important;
-  width: 100% !important;
-  flex: 1 1 100% !important;
-  min-height: 400px !important;
-  height: auto !important;
-  border-radius: 0 !important;
-  z-index: 1 !important;
+.cms-editor-wrap--immersive .editor-toolbar .cms-editor-toolbar-row {
+  display: flex !important;
+  max-width: 100% !important;
+  overflow-x: auto !important;
+  overflow-y: hidden !important;
+  background: #f6f8fb !important;
 }
-.EasyMDEContainer.cms-rich-toolbar.fullscreen:not(.sided) .CodeMirror-scroll {
+.cms-editor-wrap--immersive .editor-toolbar button { 
+  background: #fff; 
+  opacity: 1 !important; 
+  pointer-events: auto !important; 
+}
+
+.cms-editor-wrap--immersive .CodeMirror-vscrollbar,
+.cms-editor-wrap--immersive .CodeMirror-hscrollbar,
+.cms-editor-wrap--immersive .CodeMirror-scrollbar-filler,
+.cms-editor-wrap--immersive .CodeMirror-gutter-filler {
+  display: none !important;
+}
+
+/* —— 1) Обычный fullscreen: одна колонка редактора + скролл —— */
+.cms-editor-wrap--immersive > .EasyMDEContainer.fullscreen:not(.sided),
+body.cms-editor-immersive .EasyMDEContainer.cms-rich-toolbar.fullscreen:not(.sided) {
+  position: relative !important;
+  display: block !important;
+  width: 100% !important;
+  max-width: 100% !important;
+  height: auto !important;
+  min-height: 100% !important;
+  margin: 0 !important;
+  padding: 0 !important;
+  overflow: visible !important;
+  background: #fff !important;
+  box-sizing: border-box !important;
+}
+.cms-editor-wrap--immersive .EasyMDEContainer.fullscreen:not(.sided) .CodeMirror,
+.cms-editor-wrap--immersive .EasyMDEContainer.fullscreen:not(.sided) .CodeMirror-fullscreen {
+  position: relative !important;
+  inset: auto !important;
+  float: none !important;
+  width: 100% !important;
+  max-width: 100% !important;
+  height: auto !important;
+  min-height: calc(100vh - 120px) !important;
+  overflow: visible !important;
+  border-radius: 0 !important;
+  box-sizing: border-box !important;
+}
+.cms-editor-wrap--immersive .EasyMDEContainer.fullscreen:not(.sided) .CodeMirror-scroll {
+  overflow: visible !important;
   max-height: none !important;
   height: auto !important;
-  overflow: visible !important;
+  min-height: calc(100vh - 120px) !important;
 }
-.EasyMDEContainer.cms-rich-toolbar.fullscreen:not(.sided) .editor-preview-active {
+.cms-editor-wrap--immersive .EasyMDEContainer.fullscreen:not(.sided) .editor-preview-active {
   position: relative !important;
-  top: auto !important;
-  left: auto !important;
-  right: auto !important;
-  bottom: auto !important;
+  inset: auto !important;
   width: 100% !important;
-  flex: 1 1 100% !important;
-  min-height: 400px !important;
   height: auto !important;
+  min-height: calc(100vh - 120px) !important;
   overflow: visible !important;
   padding: 12px 24px 24px !important;
   background: #fff !important;
-  z-index: 1 !important;
+  box-sizing: border-box !important;
 }
-/* Dual screen: editor | preview, sync scroll via EasyMDE (no custom listeners) */
-.EasyMDEContainer.cms-rich-toolbar.sided .CodeMirror,
-.EasyMDEContainer.cms-rich-toolbar.sided .CodeMirror-fullscreen {
+.cms-editor-wrap--immersive .EasyMDEContainer.fullscreen:not(.sided) .editor-statusbar {
   position: relative !important;
-  top: auto !important;
-  left: auto !important;
-  right: auto !important;
-  bottom: auto !important;
-  width: 50% !important;
-  flex: 1 1 50% !important;
-  min-height: 400px !important;
-  height: auto !important;
-  max-height: none !important;
-  border-radius: 0 !important;
-  overflow: visible !important;
-  z-index: 1 !important;
+  width: 100% !important;
+  box-sizing: border-box !important;
 }
-.EasyMDEContainer.cms-rich-toolbar.sided .CodeMirror-scroll {
-  max-height: none !important;
-  height: auto !important;
-  overflow: visible !important;
-}
-.EasyMDEContainer.cms-rich-toolbar.sided .editor-preview-side,
-.EasyMDEContainer.cms-rich-toolbar.sided .editor-preview-active-side {
-  display: block !important;
+
+/* —— 2) Side-by-side: вертикальный сплит 50|50 без наложений —— */
+.cms-editor-wrap--immersive > .EasyMDEContainer.sided,
+body.cms-editor-immersive .EasyMDEContainer.cms-rich-toolbar.sided {
   position: relative !important;
-  top: auto !important;
-  left: auto !important;
-  right: auto !important;
-  bottom: auto !important;
-  width: 50% !important;
-  flex: 1 1 50% !important;
-  min-height: 400px !important;
+  display: grid !important;
+  grid-template-columns: 1fr 1fr !important;
+  grid-template-rows: auto 1fr !important;
+  grid-template-areas:
+    "toolbar toolbar"
+    "editor preview" !important;
+  width: 100% !important;
+  max-width: 100% !important;
+  min-height: 100% !important;
   height: auto !important;
-  max-height: none !important;
+  margin: 0 !important;
+  padding: 0 !important;
   overflow: visible !important;
-  padding: 8px 16px 16px !important;
   background: #fff !important;
-  border-left: 1px solid var(--border);
+  box-sizing: border-box !important;
+  float: none !important;
+}
+.cms-editor-wrap--immersive .EasyMDEContainer.sided > .editor-toolbar {
+  grid-area: toolbar !important;
+  width: 100% !important;
+  max-width: none !important;
+}
+.cms-editor-wrap--immersive .EasyMDEContainer.sided .CodeMirror,
+.cms-editor-wrap--immersive .EasyMDEContainer.sided .CodeMirror-fullscreen {
+  grid-area: editor !important;
+  position: relative !important;
+  inset: auto !important;
+  top: auto !important;
+  left: auto !important;
+  right: auto !important;
+  bottom: auto !important;
+  float: none !important;
+  width: auto !important;
+  max-width: none !important;
+  height: auto !important;
+  min-height: calc(100vh - 140px) !important;
+  overflow: visible !important;
+  border-radius: 0 !important;
+  border-right: 1px solid var(--border) !important;
   box-sizing: border-box !important;
   z-index: 1 !important;
 }
-
-.CodeMirror-fullscreen {
+.cms-editor-wrap--immersive .EasyMDEContainer.sided .CodeMirror-scroll {
+  overflow: visible !important;
+  max-height: none !important;
+  height: auto !important;
+  min-height: calc(100vh - 140px) !important;
+}
+.cms-editor-wrap--immersive .EasyMDEContainer.sided .editor-preview-side,
+.cms-editor-wrap--immersive .EasyMDEContainer.sided .editor-preview-active-side {
+  grid-area: preview !important;
+  display: block !important;
+  position: relative !important;
+  inset: auto !important;
+  top: auto !important;
+  left: auto !important;
+  right: auto !important;
+  bottom: auto !important;
+  float: none !important;
+  width: auto !important;
+  max-width: none !important;
+  height: auto !important;
+  min-height: calc(100vh - 140px) !important;
+  overflow: visible !important;
+  overflow-x: hidden !important;
+  margin: 0 !important;
+  padding: 12px 20px 24px !important;
+  border: none !important;
+  background: #fff !important;
+  box-sizing: border-box !important;
   z-index: 1 !important;
+}
+.cms-editor-wrap--immersive .editor-statusbar {
+  display: none !important;
+}
+
+/* EasyMDE по умолчанию ставит preview absolute/fixed — сбрасываем */
+.cms-editor-wrap--immersive .editor-preview,
+.cms-editor-wrap--immersive .editor-preview-side,
+.cms-editor-wrap--immersive .editor-preview-active,
+.cms-editor-wrap--immersive .editor-preview-active-side {
+  position: relative !important;
+  top: auto !important;
+  left: auto !important;
+  right: auto !important;
+  bottom: auto !important;
+  float: none !important;
+}
+
+.cms-editor-wrap--immersive .EasyMDEContainer.cms-preview-active .editor-toolbar {
+  opacity: 1 !important;
+  pointer-events: auto !important;
+  visibility: visible !important;
+  display: flex !important;
+  z-index: 100 !important;
+}
+
+.cms-editor-wrap--immersive .EasyMDEContainer.cms-preview-active .editor-toolbar::before,
+.cms-editor-wrap--immersive .EasyMDEContainer.cms-preview-active .editor-toolbar::after {
+  display: none !important;
+  pointer-events: none !important;
+}
+
+.cms-editor-wrap--immersive .EasyMDEContainer.cms-preview-active .editor-toolbar button,
+.cms-editor-wrap--immersive .editor-toolbar button {
+  opacity: 1 !important;
+  pointer-events: auto !important;
+  visibility: visible !important;
+  color: #2c3e50 !important;
+  cursor: pointer !important;
+}
+
+.cms-editor-wrap--immersive .EasyMDEContainer.cms-preview-active .editor-toolbar button:hover,
+.cms-editor-wrap--immersive .editor-toolbar button:hover {
+  background: #e2e8f0 !important;
+}
+
+.cms-editor-wrap--immersive .EasyMDEContainer.cms-preview-active .editor-toolbar button.active,
+.cms-editor-wrap--immersive .EasyMDEContainer.cms-preview-active .editor-toolbar button.preview-active {
+  background: #e2e8f0 !important;
+  color: var(--primary) !important;
+}
+
+/* Переопределяем стандартное поведение EasyMDE для disabled кнопок */
+.cms-editor-wrap--immersive .editor-toolbar button:disabled,
+.cms-editor-wrap--immersive .editor-toolbar button.disabled {
+  opacity: 1 !important;
+  pointer-events: auto !important;
+  cursor: pointer !important;
+  filter: none !important;
+}
+
+/* Глобально для всех режимов редактора */
+.EasyMDEContainer .editor-toolbar button:disabled,
+.EasyMDEContainer .editor-toolbar button.disabled {
+  opacity: 1 !important;
+  pointer-events: auto !important;
+  cursor: pointer !important;
 }
 
 .cms-page .cms-meta-grid-full { grid-column: 1 / -1; }

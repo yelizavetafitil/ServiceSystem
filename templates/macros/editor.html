@@ -169,7 +169,87 @@ document.addEventListener('DOMContentLoaded', function() {
     });
   }
 
-  function cmsToolbarRow2(uploadImageToolbar) {
+  function cmsNotify(message, title) {
+    if (typeof window.ssAlert === 'function') {
+      return window.ssAlert(message, { title: title || 'Сообщение', confirmLabel: 'OK' });
+    }
+    window.alert(message);
+    return Promise.resolve(true);
+  }
+
+  function buildImportDocxToolbar() {
+    const importUrl = '{{ url_for("admin.cms_import_docx") }}';
+    return cmsLabeledBtn('import-docx', 'fa fa-file-word-o', 'Импорт из DOCX (Pandoc)', function (editor) {
+      var input = document.createElement('input');
+      input.type = 'file';
+      input.accept = '.docx,application/vnd.openxmlformats-officedocument.wordprocessingml.document';
+      input.style.display = 'none';
+      document.body.appendChild(input);
+      input.addEventListener('change', function () {
+        var file = input.files && input.files[0];
+        document.body.removeChild(input);
+        if (!file) return;
+
+        if (!file.name.toLowerCase().endsWith('.docx')) {
+          cmsNotify('Разрешены только файлы .docx', 'Импорт DOCX');
+          return;
+        }
+
+        var form = new FormData();
+        form.append('docx_file', file);
+        form.append('csrf_token', csrfToken());
+
+        var wrap = editor.codemirror.getWrapperElement();
+        var tip = document.createElement('div');
+        tip.className = 'cms-upload-tip';
+        tip.textContent = 'Импорт DOCX…';
+        wrap.appendChild(tip);
+        editor.codemirror.setOption('readOnly', 'nocursor');
+
+        fetch(importUrl, {
+          method: 'POST',
+          headers: { 'X-CSRFToken': csrfToken() },
+          body: form
+        }).then(function (r) {
+          return r.json().then(function (j) { return { ok: r.ok, status: r.status, j: j }; });
+        }).then(function (res) {
+          tip.remove();
+          editor.codemirror.setOption('readOnly', false);
+
+          if (!res.ok || !res.j || !res.j.success) {
+            cmsNotify((res.j && res.j.error) || 'Не удалось импортировать DOCX', 'Ошибка импорта');
+            return;
+          }
+
+          var markdown = res.j.markdown || '';
+          if (!markdown.trim()) {
+            cmsNotify('Файл обработан, но текст пустой. Проверьте DOCX.', 'Импорт DOCX');
+            return;
+          }
+
+          editor.codemirror.setValue(markdown);
+          editor.codemirror.save();
+          editor.codemirror.focus();
+          document.dispatchEvent(new CustomEvent('editor-change'));
+
+          var imagesCount = res.j.images_count || 0;
+          var msg = 'Документ преобразован в Markdown и вставлен в редактор.';
+          if (imagesCount > 0) {
+            msg += ' Изображений: ' + imagesCount + '.';
+          }
+          msg += ' Проверьте таблицы и оформление перед сохранением.';
+          cmsNotify(msg, 'Импорт DOCX');
+        }).catch(function (err) {
+          tip.remove();
+          editor.codemirror.setOption('readOnly', false);
+          cmsNotify('Ошибка сети при импорте DOCX: ' + (err.message || err), 'Ошибка');
+        });
+      });
+      input.click();
+    });
+  }
+
+  function cmsToolbarRow2(uploadImageToolbar, importDocxToolbar) {
     return [
       'quote', 'unordered-list', 'ordered-list', '|',
       cmsLabeledBtn('code-block', 'fa fa-file-code-o', 'Блок кода (```)', function (ed) {
@@ -221,10 +301,119 @@ document.addEventListener('DOMContentLoaded', function() {
       '|',
       imageUrlToolbar,
       uploadImageToolbar,
+      importDocxToolbar,
       '|',
-      'preview',
-      'side-by-side',
-      'fullscreen',
+      {
+        name: 'preview',
+        className: 'fa fa-eye',
+        title: 'Предпросмотр статьи',
+        action: function (ed) {
+          // Выключаем side-by-side если он активен
+          if (ed.isSideBySideActive()) EasyMDE.toggleSideBySide(ed);
+          
+          // Переключаем preview
+          EasyMDE.togglePreview(ed);
+          
+          var c = ed.codemirror.getWrapperElement().closest('.EasyMDEContainer');
+          if (c) {
+            // Добавляем/убираем класс для стилизации
+            if (ed.isPreviewActive()) {
+              c.classList.add('cms-preview-active');
+            } else {
+              c.classList.remove('cms-preview-active');
+            }
+            
+            // Перестраиваем layout если в immersive режиме
+            window.setTimeout(function () {
+              if (ed.isFullscreenActive() || c.classList.contains('fullscreen') || c.classList.contains('cms-immersive')) {
+                cmsForceImmersiveLayout(c, ed);
+              }
+              
+              // КРИТИЧЕСКИ ВАЖНО: принудительно разблокируем ВСЕ кнопки
+              var toolbar = c.querySelector('.editor-toolbar');
+              if (toolbar) {
+                toolbar.querySelectorAll('button').forEach(function(btn) {
+                  btn.disabled = false;
+                  btn.classList.remove('disabled');
+                  btn.style.opacity = '1';
+                  btn.style.pointerEvents = 'auto';
+                  btn.style.cursor = 'pointer';
+                });
+              }
+            }, 30);
+          }
+        }
+      },
+      {
+        name: 'side-by-side',
+        className: 'fa fa-columns',
+        title: 'Два режима рядом: редактор | превью (общий скролл)',
+        action: function (ed) {
+          if (ed.isPreviewActive()) EasyMDE.togglePreview(ed);
+          // Всегда полноценный immersive-сплит 50|50
+          if (!ed.isSideBySideActive()) {
+            if (!ed.isFullscreenActive()) EasyMDE.toggleFullScreen(ed);
+            if (!ed.isSideBySideActive()) EasyMDE.toggleSideBySide(ed);
+          } else {
+            EasyMDE.toggleSideBySide(ed);
+          }
+          var c = ed.codemirror.getWrapperElement().closest('.EasyMDEContainer');
+          if (c) {
+            c.classList.remove('cms-preview-active');
+            window.setTimeout(function () { 
+              cmsForceImmersiveLayout(c, ed); 
+              ed.codemirror.refresh(); 
+              // Разблокируем кнопки
+              var toolbar = c.querySelector('.editor-toolbar');
+              if (toolbar) {
+                toolbar.querySelectorAll('button').forEach(function(btn) {
+                  btn.disabled = false;
+                  btn.classList.remove('disabled');
+                });
+              }
+            }, 40);
+            window.setTimeout(function () { 
+              cmsForceImmersiveLayout(c, ed); 
+              ed.codemirror.refresh(); 
+            }, 120);
+          }
+        }
+      },
+      {
+        name: 'fullscreen',
+        className: 'fa fa-arrows-alt',
+        title: 'Полный экран: статья для редактирования (один скролл)',
+        action: function (ed) {
+          if (ed.isPreviewActive()) EasyMDE.togglePreview(ed);
+          // Из сплита → одна колонка; иначе вкл/выкл fullscreen
+          if (ed.isSideBySideActive()) {
+            EasyMDE.toggleSideBySide(ed);
+            if (!ed.isFullscreenActive()) EasyMDE.toggleFullScreen(ed);
+          } else {
+            EasyMDE.toggleFullScreen(ed);
+          }
+          var c = ed.codemirror.getWrapperElement().closest('.EasyMDEContainer');
+          if (c) {
+            c.classList.remove('cms-preview-active');
+            window.setTimeout(function () {
+              if (ed.isFullscreenActive() || ed.isSideBySideActive()) cmsForceImmersiveLayout(c, ed);
+              ed.codemirror.refresh();
+              // Разблокируем кнопки
+              var toolbar = c.querySelector('.editor-toolbar');
+              if (toolbar) {
+                toolbar.querySelectorAll('button').forEach(function(btn) {
+                  btn.disabled = false;
+                  btn.classList.remove('disabled');
+                });
+              }
+            }, 40);
+            window.setTimeout(function () {
+              if (ed.isFullscreenActive() || ed.isSideBySideActive()) cmsForceImmersiveLayout(c, ed);
+              ed.codemirror.refresh();
+            }, 120);
+          }
+        }
+      },
       {
         name: 'exit-modes',
         className: 'fa fa-times cms-tb-labeled cms-tb-lbl-exit-modes',
@@ -318,31 +507,381 @@ document.addEventListener('DOMContentLoaded', function() {
     }
   }
 
-  function cmsEnterImmersive(container, editor) {
-    document.body.classList.add('cms-editor-immersive');
-    if (editor && editor.options) editor.options.syncSideBySidePreviewScroll = false;
+  function cmsForceImmersiveLayout(container, editor) {
+    var topbar = document.querySelector('header.topbar');
+    if (topbar) {
+      topbar.style.setProperty('display', 'none', 'important');
+    }
+
+    var isPreview = false;
+    if (editor) {
+      try { isPreview = !!editor.isPreviewActive(); } catch(e) {}
+    } else {
+      isPreview = !!container.querySelector('.editor-preview-active');
+    }
+    
+    if (isPreview && !isSided) {
+      container.classList.add('cms-preview-active');
+    } else {
+      container.classList.remove('cms-preview-active');
+    }
+
+    var wrap = container.closest('.cms-editor-wrap');
+    if (wrap) {
+      if (!wrap._cmsPlaceholder) {
+        var placeholder = document.createElement('div');
+        placeholder.className = 'cms-editor-wrap-placeholder';
+        placeholder.setAttribute('aria-hidden', 'true');
+        wrap.parentNode.insertBefore(placeholder, wrap);
+        wrap._cmsPlaceholder = placeholder;
+        var shell = document.querySelector('.shell') || document.body;
+        if (topbar && topbar.parentNode) {
+          topbar.parentNode.insertBefore(wrap, topbar);
+        } else {
+          shell.insertBefore(wrap, shell.firstChild);
+        }
+      }
+      wrap.classList.add('cms-editor-wrap--immersive');
+      // Один вертикальный скролл как у обычной страницы; без 100vw (он даёт полосу снизу)
+      var isSided = false;
+      var isFullscreen = false;
+      if (editor) {
+        try { isSided = !!editor.isSideBySideActive(); } catch(e) {}
+        try { isFullscreen = !!editor.isFullscreenActive(); } catch(e) {}
+      } else {
+        isSided = container.classList.contains('sided');
+        isFullscreen = container.classList.contains('fullscreen');
+      }
+
+      wrap.style.cssText = [
+        'position:fixed',
+        'top:0',
+        'left:0',
+        'right:0',
+        'bottom:0',
+        'width:100%',
+        'max-width:100%',
+        'height:100%',
+        'margin:0',
+        'padding:0',
+        'z-index:2147483000',
+        'background:#fff',
+        'display:block',
+        'box-sizing:border-box',
+        'overflow-x:hidden',
+        // В полноэкранном режиме скролл браузера отключаем всегда, 
+        // так как скролл теперь находится внутри контейнеров редактора и превью
+        'overflow-y:' + (isFullscreen ? 'hidden' : 'auto'),
+        'pointer-events:auto' // Возвращаем кликабельность
+      ].join(';');
+      
+      // Сбрасываем pointer-events:none у контейнера если он был добавлен случайно из-за EasyMDE
+      container.style.pointerEvents = 'auto';
+      var first = wrap.firstElementChild;
+      if (first && first.tagName === 'LABEL') first.style.display = 'none';
+    }
+
+    var isSided = false;
+    var isFullscreen = false;
+    if (editor) {
+      try { isSided = !!editor.isSideBySideActive(); } catch(e) {}
+      try { isFullscreen = !!editor.isFullscreenActive(); } catch(e) {}
+    } else {
+      isSided = container.classList.contains('sided');
+      isFullscreen = container.classList.contains('fullscreen');
+    }
+
+    container.classList.add('cms-immersive');
+
+    if (isSided) {
+      container.style.cssText = [
+        'position:relative',
+        'display:grid',
+        'grid-template-columns:1fr 1fr',
+        'grid-template-rows:auto 1fr',
+        'grid-template-areas:"toolbar toolbar" "editor preview"',
+        'width:100%',
+        'max-width:100%',
+        'height:auto',
+        'min-height:100%',
+        'margin:0',
+        'padding:0',
+        'overflow:visible',
+        'background:#fff',
+        'box-sizing:border-box',
+        'z-index:1',
+        'pointer-events:auto'
+      ].join(';');
+    } else {
+      container.style.cssText = [
+        'position:relative',
+        'display:block',
+        'width:100%',
+        'max-width:100%',
+        'height:100vh',
+        'min-height:100%',
+        'margin:0',
+        'padding:0',
+        'overflow:hidden',
+        'background:#fff',
+        'box-sizing:border-box',
+        'z-index:1',
+        'pointer-events:auto'
+      ].join(';');
+    }
+
     var tb = container.querySelector('.editor-toolbar');
     if (tb) {
-      tb.classList.add('fullscreen');
-      tb.style.display = 'flex';
-      tb.style.visibility = 'visible';
-      tb.style.opacity = '1';
+      if (isFullscreen) {
+        tb.classList.add('fullscreen');
+      } else {
+        tb.classList.remove('fullscreen');
+      }
+      tb.style.cssText = [
+        'display:flex',
+        'visibility:visible',
+        'opacity:1',
+        'position:' + (isFullscreen ? 'sticky' : 'relative'),
+        'top:0',
+        'grid-area:toolbar',
+        'width:100%',
+        'max-width:100%',
+        'margin:0',
+        'padding:8px 12px 6px',
+        'border:none',
+        'border-radius:0',
+        'border-bottom:1px solid #d8e2f0',
+        'background:#f6f8fb',
+        'box-shadow:none', // Убираем тень (блюр), делаем как обычную панель
+        'z-index:100', // Повышаем z-index, чтобы не перекрывался
+        'flex-direction:column',
+        'transform:none',
+        'box-sizing:border-box',
+        'pointer-events:auto'
+      ].join(';');
+      
+      // Явно снимаем disabled и pointer-events со всех кнопок в панели, 
+      // так как EasyMDE по умолчанию отключает кнопки при предпросмотре
+      tb.querySelectorAll('button').forEach(function(btn) {
+        btn.disabled = false;
+        btn.classList.remove('disabled');
+        btn.style.pointerEvents = 'auto';
+        btn.style.opacity = '1';
+        btn.style.cursor = 'pointer';
+      });
     }
-    cmsSyncToolbarHeight(container, editor, false);
+
+    if (editor && editor.codemirror) {
+      if (editor._cmsPrevScrollbarStyle === undefined) {
+        editor._cmsPrevScrollbarStyle = editor.codemirror.getOption('scrollbarStyle');
+      }
+      try { editor.codemirror.setOption('scrollbarStyle', isSided ? 'null' : 'native'); } catch (e) {}
+
+      // Это вернёт прокрутку в полноэкранном режиме, даже если видимых скроллбаров нет
+      if (editor.options) editor.options.syncSideBySidePreviewScroll = false;
+    }
+
+    if (isSided) {
+      container.classList.add('sided');
+      container.classList.remove('cms-preview-active');
+    } else {
+      container.classList.remove('sided');
+    }
+
+    var paneW = isSided ? '50%' : '100%';
+    var cm = container.querySelector('.CodeMirror');
+    if (cm) {
+      cm.style.cssText = [
+        'position:relative',
+        'inset:auto',
+        'float:none',
+        'grid-area:' + (isSided ? 'editor' : 'auto'),
+        'width:' + (isSided ? 'auto' : '100%'),
+        'max-width:' + (isSided ? 'none' : '100%'),
+        'height:' + (isSided ? 'auto' : (isFullscreen && !isPreview ? 'calc(100vh - ' + (tb ? tb.offsetHeight : 0) + 'px)' : 'auto')),
+        'min-height:calc(100vh - 140px)',
+        'border-radius:0',
+        'border-right:' + (isSided ? '1px solid #d8e2f0' : 'none'),
+        'z-index:1',
+        'overflow:' + (isSided || !isFullscreen ? 'visible' : 'hidden'),
+        'box-sizing:border-box',
+        'display:' + (isPreview && !isSided ? 'none' : 'block'),
+        'pointer-events:auto'
+      ].join(';');
+      var scroll = cm.querySelector('.CodeMirror-scroll');
+      if (scroll) {
+        scroll.style.cssText = [
+          'overflow:' + (isSided || !isFullscreen ? 'visible' : 'auto'),
+          'max-height:none',
+          'height:' + (isSided || !isFullscreen ? 'auto' : 'calc(100vh - ' + (tb ? tb.offsetHeight : 0) + 'px)'),
+          'min-height:calc(100vh - 140px)',
+          'width:100%',
+          'box-sizing:border-box',
+          'pointer-events:auto'
+        ].join(';');
+      }
+      container.querySelectorAll('.CodeMirror-vscrollbar, .CodeMirror-hscrollbar, .CodeMirror-scrollbar-filler, .CodeMirror-gutter-filler').forEach(function (el) {
+        if (isSided) {
+          el.style.display = 'none';
+        } else {
+          el.style.display = 'block';
+        }
+      });
+    }
+
+    var previewSide = container.querySelector('.editor-preview-side');
+    if (previewSide) {
+      if (isSided) {
+        previewSide.style.cssText = [
+          'display:block',
+          'position:relative',
+          'inset:auto',
+          'float:none',
+          'grid-area:preview',
+          'width:auto',
+          'max-width:none',
+          'height:auto',
+          'min-height:calc(100vh - 140px)',
+          'overflow:visible',
+          'overflow-x:hidden',
+          'margin:0',
+          'padding:12px 20px 24px',
+          'background:#fff',
+          'border:none',
+          'box-sizing:border-box',
+          'z-index:1',
+          'pointer-events:auto'
+        ].join(';');
+      } else {
+        previewSide.style.cssText = 'display:none;';
+      }
+    }
+    
+    // В полноэкранном режиме предпросмотру отводим отдельное окно со скроллом, если он активен
+    var previewFull = container.querySelector('.editor-preview');
+    if (previewFull) {
+      if (isPreview && !isSided) {
+        var h = (!isFullscreen) ? 'auto' : 'calc(100vh - ' + (tb ? tb.offsetHeight : 0) + 'px)';
+        previewFull.style.cssText = [
+          'display:block',
+          'position:relative',
+          'inset:auto',
+          'float:none',
+          'grid-area:auto',
+          'width:100%',
+          'max-width:100%',
+          'height:' + h,
+          'min-height:calc(100vh - 140px)',
+          'overflow:auto',
+          'overflow-x:hidden',
+          'margin:0',
+          'padding:12px 20px 24px',
+          'background:#fff',
+          'border:none',
+          'box-sizing:border-box',
+          'z-index:1',
+          'pointer-events:auto'
+        ].join(';');
+      } else {
+        previewFull.style.cssText = 'display:none;';
+      }
+    }
+
+    // Строка статуса не должна наезжать на контент — прячем в immersive
+    var status = container.querySelector('.editor-statusbar');
+    if (status) {
+      status.style.cssText = 'display:none !important';
+    }
   }
 
-  function cmsLeaveImmersive(container) {
-    document.body.classList.remove('cms-editor-immersive');
+  function cmsClearImmersiveLayout(container) {
+    var topbar = document.querySelector('header.topbar');
+    if (topbar) topbar.style.display = '';
+
+    var wrap = document.querySelector('.cms-editor-wrap--immersive')
+      || (container && container.closest('.cms-editor-wrap'));
+    if (wrap) {
+      var placeholder = wrap._cmsPlaceholder
+        || document.querySelector('.cms-editor-wrap-placeholder');
+      wrap.classList.remove('cms-editor-wrap--immersive');
+      wrap.style.cssText = '';
+      var first = wrap.firstElementChild;
+      if (first && first.tagName === 'LABEL') first.style.display = '';
+      if (placeholder && placeholder.parentNode) {
+        placeholder.parentNode.insertBefore(wrap, placeholder);
+        placeholder.remove();
+      }
+      wrap._cmsPlaceholder = null;
+    }
+
     if (container) {
-      container.classList.remove('cms-preview-only');
+      container.classList.remove('cms-preview-only', 'cms-immersive');
+      container.style.cssText = 'overflow:visible';
       var tb = container.querySelector('.editor-toolbar');
       if (tb) {
         tb.classList.remove('fullscreen');
-        tb.style.display = '';
-        tb.style.visibility = '';
-        tb.style.opacity = '';
+        tb.style.cssText = '';
+      }
+      var cm = container.querySelector('.CodeMirror');
+      if (cm) {
+        cm.style.cssText = '';
+        var scroll = cm.querySelector('.CodeMirror-scroll');
+        if (scroll) scroll.style.cssText = '';
+        container.querySelectorAll('.CodeMirror-vscrollbar, .CodeMirror-hscrollbar').forEach(function (el) {
+          el.style.display = '';
+        });
+      }
+      container.querySelectorAll('.editor-preview, .editor-preview-active, .editor-preview-active-side, .editor-preview-side').forEach(function (el) {
+        el.style.cssText = '';
+      });
+      var status = container.querySelector('.editor-statusbar');
+      if (status) status.style.cssText = '';
+    }
+  }
+
+  function cmsEnterImmersive(container, editor) {
+    document.body.classList.add('cms-editor-immersive');
+    document.documentElement.classList.add('cms-editor-immersive');
+    if (editor && editor.options) editor.options.syncSideBySidePreviewScroll = false;
+    cmsForceImmersiveLayout(container, editor);
+    cmsSyncToolbarHeight(container, editor, false);
+    if (editor && editor.codemirror) {
+      window.requestAnimationFrame(function () { editor.codemirror.refresh(); });
+    }
+    
+    // Устанавливаем наблюдатель за изменениями toolbar для предотвращения блокировки кнопок
+    var toolbar = container.querySelector('.editor-toolbar');
+    if (toolbar && !toolbar._cmsButtonUnlocker) {
+      toolbar._cmsButtonUnlocker = setInterval(function() {
+        toolbar.querySelectorAll('button.disabled').forEach(function(btn) {
+          btn.disabled = false;
+          btn.classList.remove('disabled');
+          btn.style.opacity = '1';
+          btn.style.pointerEvents = 'auto';
+          btn.style.cursor = 'pointer';
+        });
+      }, 100);
+    }
+  }
+
+  function cmsLeaveImmersive(container, editor) {
+    document.body.classList.remove('cms-editor-immersive');
+    document.documentElement.classList.remove('cms-editor-immersive');
+    if (editor && editor.codemirror) {
+      if (editor._cmsPrevScrollbarStyle !== undefined) {
+        try { editor.codemirror.setOption('scrollbarStyle', editor._cmsPrevScrollbarStyle); } catch (e) {}
+        editor._cmsPrevScrollbarStyle = undefined;
       }
     }
+    
+    // Очищаем интервал разблокировки кнопок
+    var toolbar = container.querySelector('.editor-toolbar');
+    if (toolbar && toolbar._cmsButtonUnlocker) {
+      clearInterval(toolbar._cmsButtonUnlocker);
+      toolbar._cmsButtonUnlocker = null;
+    }
+    
+    cmsClearImmersiveLayout(container);
   }
 
   function cmsBindToolbarLayout(container, editor) {
@@ -372,17 +911,28 @@ document.addEventListener('DOMContentLoaded', function() {
     try { if (editor.isPreviewActive()) EasyMDE.togglePreview(editor); } catch (e) {}
     var c = editor.codemirror.getWrapperElement().closest('.EasyMDEContainer');
     if (c) {
-      c.classList.remove('fullscreen', 'sided', 'cms-preview-only', 'cms-immersive', 'cms-scroll-linked');
+      c.classList.remove('fullscreen', 'sided', 'cms-preview-only', 'cms-immersive', 'cms-scroll-linked', 'cms-preview-active');
       var tb = c.querySelector('.editor-toolbar');
-      if (tb) tb.classList.remove('fullscreen');
+      if (tb) {
+        tb.classList.remove('fullscreen');
+        // Разблокируем все кнопки при выходе
+        tb.querySelectorAll('button').forEach(function(btn) {
+          btn.disabled = false;
+          btn.classList.remove('disabled');
+          btn.style.opacity = '1';
+          btn.style.pointerEvents = 'auto';
+        });
+      }
       editor.codemirror.getWrapperElement().classList.remove('CodeMirror-fullscreen');
       var prev = c.querySelector('.editor-preview-active');
       if (prev) { prev.classList.remove('editor-preview-active'); prev.style.display = 'none'; }
       var side = c.querySelector('.editor-preview-active-side');
       if (side) side.classList.remove('editor-preview-active-side');
-      cmsLeaveImmersive(c);
+      cmsLeaveImmersive(c, editor);
     } else {
       document.body.classList.remove('cms-editor-immersive');
+      document.documentElement.classList.remove('cms-editor-immersive');
+      cmsClearImmersiveLayout(null);
     }
     editor.codemirror.refresh();
     editor.codemirror.focus();
@@ -413,7 +963,7 @@ document.addEventListener('DOMContentLoaded', function() {
       };
       opts.toolbar = cmsToolbarRow1()
         .concat([cmsToolbarRowBreak()])
-        .concat(cmsToolbarRow2(buildUploadImageToolbar()));
+        .concat(cmsToolbarRow2(buildUploadImageToolbar(), buildImportDocxToolbar()));
       opts.shortcuts = {
         togglePreview: 'Ctrl-Alt-P',
         toggleSideBySide: 'F9',
@@ -439,27 +989,53 @@ document.addEventListener('DOMContentLoaded', function() {
     var container = ed.codemirror.getWrapperElement().closest('.EasyMDEContainer');
     if (cmsMode && container) {
       container.classList.add('cms-rich-toolbar');
-      // Remove overflow: hidden to allow sticky toolbar
       container.style.overflow = 'visible';
       cmsBindToolbarLayout(container, ed);
+
+      function cmsIsImmersiveNow() {
+        try {
+          return !!(ed.isFullscreenActive && ed.isFullscreenActive())
+            || !!(ed.isSideBySideActive && ed.isSideBySideActive())
+            || container.classList.contains('fullscreen')
+            || container.classList.contains('sided')
+            || ed.codemirror.getWrapperElement().classList.contains('CodeMirror-fullscreen');
+        } catch (e) {
+          return container.classList.contains('fullscreen') || container.classList.contains('sided');
+        }
+      }
+
       var lastImmersive = false;
-      var mo = new MutationObserver(function() {
-        var immersive = container.classList.contains('fullscreen') || container.classList.contains('sided');
-        if (immersive === lastImmersive) return;
+      var lastSided = false;
+      function cmsSyncImmersive() {
+        var immersive = cmsIsImmersiveNow();
+        var sided = container.classList.contains('sided');
+        if (immersive === lastImmersive && sided === lastSided) return;
+        var wasImmersive = lastImmersive;
         lastImmersive = immersive;
-        // Always keep overflow visible
-        container.style.overflow = 'visible';
-        if (immersive) cmsEnterImmersive(container, ed);
-        else cmsLeaveImmersive(container);
+        lastSided = sided;
+        if (immersive) {
+          if (wasImmersive) cmsForceImmersiveLayout(container, ed);
+          else cmsEnterImmersive(container, ed);
+          if (ed.codemirror) {
+            window.requestAnimationFrame(function () { ed.codemirror.refresh(); });
+          }
+        } else {
+          cmsLeaveImmersive(container, ed);
+        }
+      }
+
+      var mo = new MutationObserver(function () {
+        window.requestAnimationFrame(cmsSyncImmersive);
       });
       mo.observe(container, { attributes: true, attributeFilter: ['class'] });
-      // Watch for style changes and force overflow: visible
-      var styleMo = new MutationObserver(function() {
-        if (container.style.overflow !== 'visible') {
-          container.style.overflow = 'visible';
-        }
-      });
-      styleMo.observe(container, { attributes: true, attributeFilter: ['style'] });
+      mo.observe(ed.codemirror.getWrapperElement(), { attributes: true, attributeFilter: ['class'] });
+
+      container.addEventListener('click', function (ev) {
+        var btn = ev.target.closest('button');
+        if (!btn) return;
+        if (!btn.classList.contains('fullscreen') && !btn.classList.contains('side-by-side')) return;
+        window.setTimeout(cmsSyncImmersive, 50);
+      }, true);
     }
 
     editors.push(ed);
@@ -479,7 +1055,22 @@ document.addEventListener('DOMContentLoaded', function() {
 
   document.querySelectorAll('form').forEach(function(form) {
     form.addEventListener('submit', function() {
-      editors.forEach(function(ed) { if (ed.codemirror) ed.codemirror.save(); });
+      editors.forEach(function(ed) { 
+        if (ed.codemirror) {
+          ed.codemirror.save();
+          // Преобразовать специальные Unicode-символы в HTML-сущности
+          var textarea = ed.codemirror.getTextArea();
+          if (textarea) {
+            var content = textarea.value;
+            // Неразрывный пробел (U+00A0) → &nbsp;
+            content = content.replace(/\u00A0/g, '&nbsp;');
+            // Можно добавить другие преобразования:
+            // content = content.replace(/</g, '&lt;');
+            // content = content.replace(/>/g, '&gt;');
+            textarea.value = content;
+          }
+        }
+      });
     });
   });
 });

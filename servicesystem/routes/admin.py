@@ -1099,6 +1099,42 @@ def cms_image_serve(filename):
     return send_file(storage.read_path(rel), mimetype=mime)
 
 
+@bp.route("/cms-import-docx", methods=["POST"])
+@login_required
+@content_cms_required
+def cms_import_docx():
+    """Импорт DOCX файла и конвертация в Markdown через Pandoc."""
+    from servicesystem.services.docx_import import convert_docx_file, is_pandoc_available
+    
+    # Проверяем, установлен ли Pandoc
+    if not is_pandoc_available():
+        return jsonify({
+            "error": "Pandoc не установлен. Скачайте с https://github.com/jgm/pandoc/releases/tag/3.13"
+        }), 400
+    
+    f = request.files.get("docx_file")
+    if not f or not f.filename:
+        return jsonify({"error": "Выберите DOCX файл"}), 400
+    
+    if not f.filename.lower().endswith('.docx'):
+        return jsonify({"error": "Разрешены только файлы .docx"}), 400
+    
+    try:
+        markdown_text, result = convert_docx_file(f)
+        
+        if not result.get("success"):
+            return jsonify({"error": result.get("error", "Неизвестная ошибка")}), 400
+        
+        return jsonify({
+            "success": True,
+            "markdown": markdown_text,
+            "images_count": result.get("images_count", 0),
+            "images": result.get("images", []),
+        })
+    except Exception as e:
+        return jsonify({"error": f"Ошибка конвертации: {str(e)}"}), 500
+
+
 @bp.route("/news")
 @login_required
 @content_cms_required
