@@ -1,7 +1,6 @@
 """Markdown → safe HTML for CMS articles (preview and published must match)."""
 from __future__ import annotations
 
-import html as html_lib
 import re
 
 import bleach
@@ -20,7 +19,7 @@ _CMS_ALLOWED_ATTRS = {
     "th": ["rowspan", "colspan", "align"],
     "td": ["rowspan", "colspan", "align"],
     "table": ["class"],
-    "div": ["class"],
+    "div": ["class", "id"],
     "p": ["align"],
     "ul": ["class"],
     "li": ["class"],
@@ -95,7 +94,7 @@ def _align_div(align: str, inner: str) -> str:
 
 
 def _normalize_center_tags(text: str) -> str:
-    t = html_lib.unescape(text or "")
+    t = text or ""
     t = re.sub(r"<\s*center\b", "<center", t, flags=re.I)
     t = re.sub(r"</\s*center\s*>", "</center>", t, flags=re.I)
     t = _deindent_center_blocks(t)
@@ -152,7 +151,7 @@ def normalize_cms_markdown_source(text: str) -> str:
     """Нормализация Markdown перед сохранением в БД (br, center, hard-break spaces)."""
     if not text:
         return ""
-    t = html_lib.unescape(text)
+    t = text
     t = _collapse_br_in_source(t)
     t = _normalize_center_tags(t)
     t = _normalize_align_in_source(t)
@@ -209,7 +208,7 @@ def _postprocess_html(html: str) -> str:
 
 def _fix_center_in_code_html(html: str) -> str:
     def repl_pre(match: re.Match[str]) -> str:
-        raw = html_lib.unescape(match.group(1))
+        raw = match.group(1)
         low = raw.lower()
         if "<center" not in low and "cms-center" not in low and "cms-align" not in low:
             return match.group(0)

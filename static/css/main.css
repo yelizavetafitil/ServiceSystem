@@ -1948,6 +1948,31 @@ a.directory-contact-title:hover {
 .prose .markdown-body p, .prose .markdown-body li { margin-bottom: 8px; line-height: 1.7; }
 .prose .markdown-body code { background: var(--surface-muted); padding: 2px 6px; border-radius: 4px; font-size: 13px; word-break: break-word; }
 .prose .markdown-body ul { padding-left: 20px; }
+.markdown-body ul,
+.markdown-body ol,
+.article-body ul,
+.article-body ol,
+.EasyMDEContainer .editor-preview ul,
+.EasyMDEContainer .editor-preview ol,
+.EasyMDEContainer .editor-preview-side ul,
+.EasyMDEContainer .editor-preview-side ol {
+  margin: 8px 0 12px;
+  padding-left: 15px;
+  list-style-position: outside;
+}
+.markdown-body li,
+.article-body li,
+.EasyMDEContainer .editor-preview li,
+.EasyMDEContainer .editor-preview-side li {
+  margin-bottom: 6px;
+}
+.markdown-body .cms-indent,
+.article-body .cms-indent,
+.EasyMDEContainer .editor-preview .cms-indent,
+.EasyMDEContainer .editor-preview-side .cms-indent {
+  margin-left: 15px;
+  padding-left: 0;
+}
 .markdown-body { overflow-wrap: anywhere; word-break: break-word; line-height: 1.65; max-width: 100%; }
 .prose .card { max-width: 100%; overflow-x: auto; -webkit-overflow-scrolling: touch; }
 .article-body { overflow-x: auto; -webkit-overflow-scrolling: touch; }
@@ -2092,6 +2117,7 @@ a.directory-contact-title:hover {
 .EasyMDEContainer.cms-rich-toolbar .editor-toolbar .cms-tb-lbl-superscript::after { content: 'Верх'; }
 .EasyMDEContainer.cms-rich-toolbar .editor-toolbar .cms-tb-lbl-kbd::after { content: 'Клав'; }
 .EasyMDEContainer.cms-rich-toolbar .editor-toolbar .cms-tb-lbl-code-block::after { content: 'Код'; }
+.EasyMDEContainer.cms-rich-toolbar .editor-toolbar .cms-tb-lbl-indent-block::after { content: 'Отступ'; }
 .EasyMDEContainer.cms-rich-toolbar .editor-toolbar .cms-tb-lbl-line-break::after { content: 'BR'; }
 .EasyMDEContainer.cms-rich-toolbar .editor-toolbar .cms-tb-lbl-align-left::after { content: 'Влево'; }
 .EasyMDEContainer.cms-rich-toolbar .editor-toolbar .cms-tb-lbl-center-block::after { content: 'Центр'; }
@@ -2288,7 +2314,10 @@ a.directory-contact-title:hover {
   z-index: 5;
 }
 .EasyMDEContainer .editor-preview {
-  padding: 16px 20px;
+  padding: 8px 20px 16px;
+}
+.EasyMDEContainer .editor-preview-side {
+  padding: 8px 16px 16px;
 }
 .EasyMDEContainer .editor-preview-active,
 .EasyMDEContainer .editor-preview-active-side {
@@ -2302,6 +2331,14 @@ a.directory-contact-title:hover {
 .EasyMDEContainer .editor-preview-side h3 {
   margin: 1em 0 0.45em;
   color: var(--primary-dark);
+}
+.EasyMDEContainer .editor-preview > :first-child,
+.EasyMDEContainer .editor-preview-side > :first-child,
+.EasyMDEContainer .editor-preview .markdown-body > :first-child,
+.EasyMDEContainer .editor-preview-side .markdown-body > :first-child,
+.EasyMDEContainer .editor-preview .article-body > :first-child,
+.EasyMDEContainer .editor-preview-side .article-body > :first-child {
+  margin-top: 0 !important;
 }
 .EasyMDEContainer .editor-preview img,
 .EasyMDEContainer .editor-preview-side img {
@@ -2323,41 +2360,168 @@ a.directory-contact-title:hover {
 
 .editor-toolbar .exit-modes { color: var(--primary) !important; }
 
-body.cms-editor-immersive .topbar { visibility: hidden; pointer-events: none; }
-.EasyMDEContainer.fullscreen {
+body.cms-editor-immersive .topbar {
+  position: relative;
+  z-index: 2147483000;
+  visibility: visible;
+  pointer-events: auto;
+}
+.EasyMDEContainer.cms-rich-toolbar.fullscreen {
   z-index: 2147482000 !important;
   position: fixed !important;
-  inset: 0 !important;
-  background: #fff;
-}
-.EasyMDEContainer.fullscreen .editor-toolbar.fullscreen,
-.editor-toolbar.fullscreen {
-  z-index: 2147482500 !important;
-  top: 0 !important;
+  top: var(--topbar-h, 64px) !important;
   left: 0 !important;
   right: 0 !important;
+  bottom: 0 !important;
+  display: flex !important;
+  flex-direction: row !important;
+  flex-wrap: wrap !important;
+  align-content: flex-start !important;
   background: #fff !important;
+  overflow: hidden !important;
 }
-.EasyMDEContainer.cms-rich-toolbar.fullscreen .editor-toolbar.fullscreen {
+/* Toolbar on top (in flow) */
+.EasyMDEContainer.cms-rich-toolbar.fullscreen > .editor-toolbar {
+  display: flex !important;
+  visibility: visible !important;
+  opacity: 1 !important;
+  pointer-events: auto !important;
+  position: relative !important;
+  top: auto !important;
+  left: auto !important;
+  right: auto !important;
+  width: 100% !important;
+  flex: 0 0 100% !important;
   height: auto !important;
-  min-height: 50px;
-  flex-direction: column;
-  align-items: stretch;
-  overflow: visible;
+  min-height: 84px !important;
+  max-height: none !important;
+  flex-direction: column !important;
+  overflow: visible !important;
+  margin: 0 !important;
+  padding: 8px 10px 6px !important;
+  border-radius: 0 !important;
+  border: none !important;
+  border-bottom: 1px solid var(--border) !important;
+  background: #f6f8fb !important;
+  box-shadow: 0 2px 8px rgba(15, 23, 42, 0.1);
+  box-sizing: border-box !important;
+  z-index: 5 !important;
+}
+.EasyMDEContainer.cms-rich-toolbar.fullscreen > .editor-toolbar .cms-editor-toolbar-row {
+  display: flex !important;
   background: #f6f8fb !important;
 }
-.EasyMDEContainer.cms-rich-toolbar.fullscreen .editor-toolbar.fullscreen::before,
-.EasyMDEContainer.cms-rich-toolbar.fullscreen .editor-toolbar.fullscreen::after {
+.EasyMDEContainer.cms-rich-toolbar.fullscreen > .editor-toolbar button {
+  background: #fff;
+}
+.EasyMDEContainer.cms-rich-toolbar.fullscreen > .editor-toolbar::before,
+.EasyMDEContainer.cms-rich-toolbar.fullscreen > .editor-toolbar::after {
   display: none !important;
+  content: none !important;
 }
-.EasyMDEContainer.cms-rich-toolbar.fullscreen .CodeMirror-fullscreen {
-  top: var(--cms-toolbar-height, 84px) !important;
+/* Fullscreen editor only (not side-by-side) */
+.EasyMDEContainer.cms-rich-toolbar.fullscreen:not(.sided) .CodeMirror,
+.EasyMDEContainer.cms-rich-toolbar.fullscreen:not(.sided) .CodeMirror-fullscreen {
+  position: relative !important;
+  top: auto !important;
+  left: auto !important;
+  right: auto !important;
+  bottom: auto !important;
+  width: 100% !important;
+  flex: 1 1 100% !important;
+  min-height: 0 !important;
+  height: calc(100vh - var(--topbar-h, 64px) - var(--cms-toolbar-height, 84px)) !important;
+  border-radius: 0 !important;
+  z-index: 1 !important;
 }
-.EasyMDEContainer.cms-rich-toolbar.fullscreen .editor-preview-side {
-  top: var(--cms-toolbar-height, 84px) !important;
+.EasyMDEContainer.cms-rich-toolbar.fullscreen:not(.sided) .CodeMirror-scroll {
+  max-height: none !important;
+  height: 100% !important;
+}
+.EasyMDEContainer.cms-rich-toolbar.fullscreen:not(.sided) .editor-preview-active {
+  position: relative !important;
+  top: auto !important;
+  left: auto !important;
+  right: auto !important;
+  bottom: auto !important;
+  width: 100% !important;
+  flex: 1 1 100% !important;
+  min-height: 0 !important;
+  height: calc(100vh - var(--topbar-h, 64px) - var(--cms-toolbar-height, 84px)) !important;
+  overflow: auto !important;
+  -webkit-overflow-scrolling: touch;
+  padding: 12px 24px 24px !important;
+  background: #fff !important;
+  z-index: 1 !important;
+}
+/* Dual screen: editor | preview, sync scroll via EasyMDE (no custom listeners) */
+.EasyMDEContainer.cms-rich-toolbar.fullscreen.sided .CodeMirror,
+.EasyMDEContainer.cms-rich-toolbar.fullscreen.sided .CodeMirror-fullscreen {
+  position: relative !important;
+  top: auto !important;
+  left: auto !important;
+  right: auto !important;
+  bottom: auto !important;
+  width: 50% !important;
+  flex: 1 1 50% !important;
+  min-height: 0 !important;
+  height: calc(100vh - var(--topbar-h, 64px) - var(--cms-toolbar-height, 84px)) !important;
+  max-height: none !important;
+  border-radius: 0 !important;
+  overflow: hidden !important;
+  z-index: 1 !important;
+}
+.EasyMDEContainer.cms-rich-toolbar.fullscreen.sided .CodeMirror-scroll {
+  max-height: none !important;
+  height: 100% !important;
+}
+.EasyMDEContainer.cms-rich-toolbar.fullscreen.sided .editor-preview-side,
+.EasyMDEContainer.cms-rich-toolbar.fullscreen.sided .editor-preview-active-side {
+  display: block !important;
+  position: relative !important;
+  top: auto !important;
+  left: auto !important;
+  right: auto !important;
+  bottom: auto !important;
+  width: 50% !important;
+  flex: 1 1 50% !important;
+  min-height: 0 !important;
+  height: calc(100vh - var(--topbar-h, 64px) - var(--cms-toolbar-height, 84px)) !important;
+  max-height: none !important;
+  overflow: auto !important;
+  -webkit-overflow-scrolling: touch;
+  overscroll-behavior: contain;
+  padding: 8px 16px 16px !important;
+  background: #fff !important;
+  border-left: 1px solid var(--border);
+  box-sizing: border-box !important;
+  z-index: 1 !important;
+}
+
+/* For sided mode when NOT fullscreen */
+.EasyMDEContainer.cms-rich-toolbar.sided:not(.fullscreen) .CodeMirror,
+.EasyMDEContainer.cms-rich-toolbar.sided:not(.fullscreen) .CodeMirror-fullscreen {
+  width: 50% !important;
+  flex: 1 1 50% !important;
+  max-height: calc(100vh - var(--cms-toolbar-height, 96px)) !important;
+}
+.EasyMDEContainer.cms-rich-toolbar.sided:not(.fullscreen) .CodeMirror-scroll {
+  max-height: calc(100vh - var(--cms-toolbar-height, 96px)) !important;
+}
+.EasyMDEContainer.cms-rich-toolbar.sided:not(.fullscreen) .editor-preview-side,
+.EasyMDEContainer.cms-rich-toolbar.sided:not(.fullscreen) .editor-preview-active-side {
+  display: block !important;
+  width: 50% !important;
+  flex: 1 1 50% !important;
+  max-height: calc(100vh - var(--cms-toolbar-height, 96px)) !important;
+  overflow: auto !important;
+  padding: 8px 16px 16px !important;
+  background: #fff !important;
+  border-left: 1px solid var(--border);
+  box-sizing: border-box !important;
 }
 .CodeMirror-fullscreen {
-  z-index: 2147482100 !important;
+  z-index: 1 !important;
 }
 
 .cms-page .cms-meta-grid-full { grid-column: 1 / -1; }
