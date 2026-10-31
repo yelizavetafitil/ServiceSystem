@@ -2231,7 +2231,11 @@ a.directory-contact-title:hover {
   background: #fafbfd;
 }
 
-.EasyMDEContainer { max-width: 100%; }
+.EasyMDEContainer { 
+  max-width: 100%; 
+  overflow: visible !important;
+  position: relative !important;
+}
 .EasyMDEContainer .CodeMirror {
   max-width: 100%;
   border-radius: 0 0 10px 10px;
@@ -2243,20 +2247,20 @@ a.directory-contact-title:hover {
 
 /* CMS Markdown: две строки панели + подписи к кнопкам */
 .EasyMDEContainer.cms-rich-toolbar .editor-toolbar {
-  display: flex;
-  flex-direction: column;
-  align-items: stretch;
-  gap: 0;
+  display: flex !important;
+  flex-direction: column !important;
+  align-items: stretch !important;
+  gap: 0 !important;
   height: auto !important;
   max-height: none !important;
-  overflow: visible;
-  padding: 8px 8px 6px;
-  border-bottom: 1px solid var(--border);
-  background: #f6f8fb;
-  position: sticky;
-  top: var(--topbar-h, 64px);
-  z-index: 90;
-  box-sizing: border-box;
+  overflow: visible !important;
+  padding: 8px 8px 6px !important;
+  border-bottom: 1px solid var(--border) !important;
+  background: #f6f8fb !important;
+  position: sticky !important;
+  top: var(--topbar-h, 64px) !important;
+  z-index: 90 !important;
+  box-sizing: border-box !important;
 }
 .EasyMDEContainer.cms-rich-toolbar .cms-editor-toolbar-row {
   display: flex;
