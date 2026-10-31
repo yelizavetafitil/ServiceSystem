@@ -2253,8 +2253,9 @@ a.directory-contact-title:hover {
   padding: 8px 8px 6px;
   border-bottom: 1px solid var(--border);
   background: #f6f8fb;
-  position: relative;
-  z-index: 3;
+  position: sticky;
+  top: var(--topbar-h, 64px);
+  z-index: 90;
   box-sizing: border-box;
 }
 .EasyMDEContainer.cms-rich-toolbar .cms-editor-toolbar-row {

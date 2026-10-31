@@ -337,6 +337,7 @@ document.addEventListener('DOMContentLoaded', function() {
       container.classList.remove('cms-preview-only');
       var tb = container.querySelector('.editor-toolbar');
       if (tb) {
+        tb.classList.remove('fullscreen');
         tb.style.display = '';
         tb.style.visibility = '';
         tb.style.opacity = '';
@@ -397,6 +398,7 @@ document.addEventListener('DOMContentLoaded', function() {
       autofocus: false,
       minHeight: '{{ min_height }}px',
       promptURLs: false,
+      toolbarSticky: false,
     };
 
     if (cmsMode) {
