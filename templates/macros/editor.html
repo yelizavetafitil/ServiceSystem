@@ -439,16 +439,27 @@ document.addEventListener('DOMContentLoaded', function() {
     var container = ed.codemirror.getWrapperElement().closest('.EasyMDEContainer');
     if (cmsMode && container) {
       container.classList.add('cms-rich-toolbar');
+      // Remove overflow: hidden to allow sticky toolbar
+      container.style.overflow = 'visible';
       cmsBindToolbarLayout(container, ed);
       var lastImmersive = false;
       var mo = new MutationObserver(function() {
         var immersive = container.classList.contains('fullscreen') || container.classList.contains('sided');
         if (immersive === lastImmersive) return;
         lastImmersive = immersive;
+        // Always keep overflow visible
+        container.style.overflow = 'visible';
         if (immersive) cmsEnterImmersive(container, ed);
         else cmsLeaveImmersive(container);
       });
       mo.observe(container, { attributes: true, attributeFilter: ['class'] });
+      // Watch for style changes and force overflow: visible
+      var styleMo = new MutationObserver(function() {
+        if (container.style.overflow !== 'visible') {
+          container.style.overflow = 'visible';
+        }
+      });
+      styleMo.observe(container, { attributes: true, attributeFilter: ['style'] });
     }
 
     editors.push(ed);
