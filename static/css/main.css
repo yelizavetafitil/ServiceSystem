@@ -2236,6 +2236,13 @@ a.directory-contact-title:hover {
   overflow: visible !important;
   position: relative !important;
 }
+.EasyMDEContainer.cms-rich-toolbar {
+  overflow: visible !important;
+}
+.EasyMDEContainer.cms-rich-toolbar.sided,
+.EasyMDEContainer.cms-rich-toolbar.fullscreen {
+  overflow: visible !important;
+}
 .EasyMDEContainer .CodeMirror {
   max-width: 100%;
   border-radius: 0 0 10px 10px;
