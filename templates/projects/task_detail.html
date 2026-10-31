@@ -5,7 +5,7 @@
 {% block title %}{{ task.title }}{% endblock %}
 
 {% block head %}
-<link rel="stylesheet" href="{{ url_for('static', filename='css/projects.css') }}?v=105">
+<link rel="stylesheet" href="{{ url_for('static', filename='css/projects.css') }}?v=118">
 <script src="{{ url_for('static', filename='js/task-date-duration.js') }}?v=1"></script>
 {% if can_plan_task is defined and can_plan_task %}
 <script src="{{ url_for('static', filename='js/task-project-tree-nav.js') }}?v=4"></script>
@@ -54,7 +54,9 @@
     </aside>
     {% endif %}
 
-    <div class="projects-task-detail-main projects-task-one-screen{% if not can_plan %} projects-task-one-screen--executor{% endif %}">
+    <div class="projects-task-detail-main projects-task-card-layout">
+
+  {% if current_user.is_staff %}<div class="projects-task-split"><div class="projects-task-split-main">{% endif %}
 
   <div class="card projects-task-main-card">
 
@@ -249,51 +251,117 @@
   </div>
 
   {% if current_user.is_staff %}
-  <div class="projects-task-panels">
-  <section id="task-checklist" class="card projects-task-section projects-task-panel"
-           data-checklist
-           data-url="{{ url_for('projects.task_update', tid=task.id) }}"
-           data-csrf="{{ csrf_token() }}"
-           data-editable="{{ '1' if (can_edit_task if can_edit_task is defined else current_user.is_staff) else '0' }}">
-    <h2 class="projects-task-section-title">Чек-лист</h2>
-    {% set checklist_ok = can_edit_task if can_edit_task is defined else current_user.is_staff %}
-    <ul class="projects-task-checklist" data-checklist-list>
-      {% for item in checklist_items|default([]) %}
-      <li class="projects-task-checklist-item{% if item.is_done %} is-done{% endif %}" data-item-id="{{ item.id }}">
-        {% if checklist_ok %}
-        <form method="post" action="{{ url_for('projects.task_update', tid=task.id) }}" class="projects-task-checklist-toggle" data-checklist-action="toggle">
-          {{ csrf_field() }}
-          <input type="hidden" name="action" value="checklist_toggle">
-          <input type="hidden" name="item_id" value="{{ item.id }}">
-          <button type="submit" class="projects-task-checklist-check" title="{% if item.is_done %}Снять отметку{% else %}Выполнено{% endif %}" aria-label="{% if item.is_done %}Снять отметку{% else %}Выполнено{% endif %}">{% if item.is_done %}✓{% else %}○{% endif %}</button>
-        </form>
-        {% else %}
-        <span class="projects-task-checklist-check" aria-hidden="true">{% if item.is_done %}✓{% else %}○{% endif %}</span>
-        {% endif %}
-        <span class="projects-task-checklist-title">{{ item.title }}</span>
-        {% if checklist_ok %}
-        <form method="post" action="{{ url_for('projects.task_update', tid=task.id) }}" class="inline-form" data-checklist-action="delete">
-          {{ csrf_field() }}
-          <input type="hidden" name="action" value="checklist_delete">
-          <input type="hidden" name="item_id" value="{{ item.id }}">
-          <button type="submit" class="btn btn-outline btn-icon-xs" title="Удалить пункт" aria-label="Удалить пункт">×</button>
-        </form>
-        {% endif %}
-      </li>
-      {% else %}
-      <li class="muted" data-checklist-empty>Пока нет пунктов.</li>
-      {% endfor %}
-    </ul>
-    {% if checklist_ok %}
-    <form method="post" action="{{ url_for('projects.task_update', tid=task.id) }}" class="projects-checklist-add projects-checklist-add--compact" data-checklist-action="add">
-      {{ csrf_field() }}
-      <input type="hidden" name="action" value="checklist_add">
-      <input id="checklist-title-input" name="checklist_title" class="form-control form-control--compact" placeholder="Новый пункт…" required maxlength="512" autocomplete="off">
-      <button type="submit" class="btn btn-outline btn-sm">＋</button>
+  <div class="projects-task-split-footer">
+  <section id="task-comments" class="card projects-task-section projects-task-panel projects-task-panel--footer">
+
+    <h2 class="projects-task-section-title">Комментарии</h2>
+
+    <ul class="projects-task-comments">{% for c in task.comments %}<li><strong>{{ c.user.full_name }}</strong> <span class="muted">{{ c.created_at.strftime('%d.%m.%Y %H:%M') }}</span> — {{ c.body }}</li>{% else %}<li class="muted">Пока нет</li>{% endfor %}</ul>
+
+    <form method="post" action="{{ url_for('projects.task_update', tid=task.id) }}" class="projects-task-comment-form">
+
+      {{ csrf_field() }}<input type="hidden" name="action" value="comment">
+
+      <textarea name="body" class="form-control form-control--compact" rows="2" required placeholder="Комментарий…"></textarea>
+
+      <button type="submit" class="btn btn-outline btn-sm">Отправить</button>
+
     </form>
-    {% endif %}
+
   </section>
 
+  <section id="task-custom" class="card projects-task-section projects-task-panel projects-task-panel--footer">
+
+    <h2 class="projects-task-section-title">Дополнительные поля</h2>
+
+    <form method="post" action="{{ url_for('projects.task_update', tid=task.id) }}">
+
+      {{ csrf_field() }}<input type="hidden" name="action" value="custom_save">
+
+      {% for field in custom_fields %}
+
+      {% set val = task.custom_values.filter_by(field_id=field.id).first() %}
+
+      <div class="form-group"><label>{{ field.name }}</label>
+
+        <input name="cf_{{ field.id }}" class="form-control" value="{{ val.value_text if val else '' }}">
+
+      </div>
+
+      {% else %}<p class="muted">Поля задаются в карточке проекта (раздел «Управление»).</p>{% endfor %}
+
+      {% if custom_fields %}<button type="submit" class="btn btn-primary btn-sm">Сохранить</button>{% endif %}
+
+    </form>
+
+  </section>
+
+  {% if can_plan %}
+  <section id="task-links" class="card projects-task-section projects-task-panel projects-task-panel--footer projects-task-panel--footer-wide projects-task-links-panel">
+
+    <h2 class="projects-task-section-title">Связи задач</h2>
+
+    <h3 class="projects-cms-subheading">Эта задача предшествует</h3>
+    <ul class="projects-link-list">{% for l in link_rows %}
+      <li>
+        <span>{{ project_link_labels.get(l.link_type, l.link_type) }} →
+          <a href="{{ url_for('projects.task_detail', tid=l.to_task_id) }}">{% if l.to_task %}{{ l.to_task.title }}{% else %}№{{ l.to_task_id }}{% endif %}</a>
+        </span>
+        <form method="post" action="{{ url_for('projects.task_update', tid=task.id) }}" class="inline-form">
+          {{ csrf_field() }}<input type="hidden" name="action" value="link_remove"><input type="hidden" name="link_id" value="{{ l.id }}">
+          <button type="submit" class="btn btn-outline btn-icon-xs" title="Удалить связь" aria-label="Удалить связь">×</button>
+        </form>
+      </li>
+    {% else %}<li class="muted">Нет</li>{% endfor %}</ul>
+
+    <h3 class="projects-cms-subheading">Выполнить после (предшествующие задачи)</h3>
+    <ul class="projects-link-list">{% for l in link_rows_in %}
+      <li>
+        <span>
+          <a href="{{ url_for('projects.task_detail', tid=l.from_task_id) }}">{% if l.from_task %}{{ l.from_task.title }}{% else %}№{{ l.from_task_id }}{% endif %}</a>
+          → {{ project_link_labels.get(l.link_type, l.link_type) }}
+        </span>
+        <form method="post" action="{{ url_for('projects.task_update', tid=task.id) }}" class="inline-form">
+          {{ csrf_field() }}<input type="hidden" name="action" value="link_remove"><input type="hidden" name="link_id" value="{{ l.id }}">
+          <button type="submit" class="btn btn-outline btn-icon-xs" title="Удалить связь" aria-label="Удалить связь">×</button>
+        </form>
+      </li>
+    {% else %}<li class="muted">Нет</li>{% endfor %}</ul>
+
+    <form method="post" action="{{ url_for('projects.task_update', tid=task.id) }}" class="form-row form-row--align-end projects-cms-inline-form">
+
+      {{ csrf_field() }}<input type="hidden" name="action" value="link_add">
+
+      <div class="form-group">
+        <label>Задача</label>
+        <select name="other_task_id" class="form-control form-control--compact" required>
+          <option value="">— выберите —</option>
+          {% for ot in sibling_tasks %}
+          <option value="{{ ot.id }}">{{ ot.title }}</option>
+          {% endfor %}
+        </select>
+      </div>
+
+      <div class="form-group">
+        <label>Тип</label>
+        <select name="link_type" class="form-control form-control--compact">{% for key, lbl in link_type_choices %}<option value="{{ key }}">{{ lbl }}</option>{% endfor %}</select>
+      </div>
+
+      <div class="form-group form-group--shrink">
+        <label class="projects-cms-action-label" aria-hidden="true">Добавить</label>
+        <button type="submit" class="btn btn-outline btn-sm">Добавить</button>
+      </div>
+
+    </form>
+
+  </section>
+  {% endif %}
+
+  </div>
+
+  </div>
+  <aside class="projects-task-split-side" aria-label="Файлы, чек-лист и время">
+  <div class="projects-task-side-stack">
   <section id="task-files" class="card projects-task-section projects-task-panel projects-files-block">
     <h2 class="projects-task-section-title">Файлы (до 100 Мб){% if task_files %} · {{ task_files|length }}{% endif %}</h2>
     {% if current_user.is_staff %}
@@ -347,180 +415,84 @@
     </ul>
   </section>
 
-  <section id="task-comments" class="card projects-task-section projects-task-panel projects-task-panel--wide">
-
-    <h2 class="projects-task-section-title">Комментарии</h2>
-
-    <ul class="projects-task-comments">{% for c in task.comments %}<li><strong>{{ c.user.full_name }}</strong> <span class="muted">{{ c.created_at.strftime('%d.%m.%Y %H:%M') }}</span> — {{ c.body }}</li>{% else %}<li class="muted">Пока нет</li>{% endfor %}</ul>
-
-    <form method="post" action="{{ url_for('projects.task_update', tid=task.id) }}" class="projects-task-comment-form">
-
-      {{ csrf_field() }}<input type="hidden" name="action" value="comment">
-
-      <textarea name="body" class="form-control form-control--compact" rows="2" required placeholder="Комментарий…"></textarea>
-
-      <button type="submit" class="btn btn-outline btn-sm">Отправить</button>
-
-    </form>
-
-  </section>
-  </div>
-
-  <div class="projects-task-panels-secondary">
-  <details id="task-links" class="projects-task-extra projects-task-extra--compact">
-
-    <summary>Связи задач</summary>
-
-    <div class="projects-task-extra-body">
-    {% set links_ok = can_manage_task_links if can_manage_task_links is defined else (can_edit_task if can_edit_task is defined else current_user.is_staff) %}
-
-    <h3 class="projects-cms-subheading">Эта задача предшествует</h3>
-    <ul class="projects-link-list">{% for l in link_rows %}
-      <li>
-        <span>{{ project_link_labels.get(l.link_type, l.link_type) }} →
-          <a href="{{ url_for('projects.task_detail', tid=l.to_task_id) }}">{% if l.to_task %}{{ l.to_task.title }}{% else %}№{{ l.to_task_id }}{% endif %}</a>
-        </span>
-        {% if links_ok %}
-        <form method="post" action="{{ url_for('projects.task_update', tid=task.id) }}" class="inline-form">
-          {{ csrf_field() }}<input type="hidden" name="action" value="link_remove"><input type="hidden" name="link_id" value="{{ l.id }}">
-          <button type="submit" class="btn btn-outline btn-icon-xs" title="Удалить связь" aria-label="Удалить связь">×</button>
+  <section id="task-checklist" class="card projects-task-section projects-task-panel"
+           data-checklist
+           data-url="{{ url_for('projects.task_update', tid=task.id) }}"
+           data-csrf="{{ csrf_token() }}"
+           data-editable="{{ '1' if (can_edit_task if can_edit_task is defined else current_user.is_staff) else '0' }}">
+    <h2 class="projects-task-section-title">Чек-лист</h2>
+    {% set checklist_ok = can_edit_task if can_edit_task is defined else current_user.is_staff %}
+    <ul class="projects-task-checklist" data-checklist-list>
+      {% for item in checklist_items|default([]) %}
+      <li class="projects-task-checklist-item{% if item.is_done %} is-done{% endif %}" data-item-id="{{ item.id }}">
+        {% if checklist_ok %}
+        <form method="post" action="{{ url_for('projects.task_update', tid=task.id) }}" class="projects-task-checklist-toggle" data-checklist-action="toggle">
+          {{ csrf_field() }}
+          <input type="hidden" name="action" value="checklist_toggle">
+          <input type="hidden" name="item_id" value="{{ item.id }}">
+          <button type="submit" class="projects-task-checklist-check" title="{% if item.is_done %}Снять отметку{% else %}Выполнено{% endif %}" aria-label="{% if item.is_done %}Снять отметку{% else %}Выполнено{% endif %}">{% if item.is_done %}✓{% else %}○{% endif %}</button>
+        </form>
+        {% else %}
+        <span class="projects-task-checklist-check" aria-hidden="true">{% if item.is_done %}✓{% else %}○{% endif %}</span>
+        {% endif %}
+        <span class="projects-task-checklist-title">{{ item.title }}</span>
+        {% if checklist_ok %}
+        <form method="post" action="{{ url_for('projects.task_update', tid=task.id) }}" class="inline-form" data-checklist-action="delete">
+          {{ csrf_field() }}
+          <input type="hidden" name="action" value="checklist_delete">
+          <input type="hidden" name="item_id" value="{{ item.id }}">
+          <button type="submit" class="btn btn-outline btn-icon-xs" title="Удалить пункт" aria-label="Удалить пункт">×</button>
         </form>
         {% endif %}
       </li>
-    {% else %}<li class="muted">Нет</li>{% endfor %}</ul>
-
-    <h3 class="projects-cms-subheading">Выполнить после (предшествующие задачи)</h3>
-    <ul class="projects-link-list">{% for l in link_rows_in %}
-      <li>
-        <span>
-          <a href="{{ url_for('projects.task_detail', tid=l.from_task_id) }}">{% if l.from_task %}{{ l.from_task.title }}{% else %}№{{ l.from_task_id }}{% endif %}</a>
-          → {{ project_link_labels.get(l.link_type, l.link_type) }}
-        </span>
-        {% if links_ok %}
-        <form method="post" action="{{ url_for('projects.task_update', tid=task.id) }}" class="inline-form">
-          {{ csrf_field() }}<input type="hidden" name="action" value="link_remove"><input type="hidden" name="link_id" value="{{ l.id }}">
-          <button type="submit" class="btn btn-outline btn-icon-xs" title="Удалить связь" aria-label="Удалить связь">×</button>
-        </form>
-        {% endif %}
-      </li>
-    {% else %}<li class="muted">Нет</li>{% endfor %}</ul>
-
-    {% if links_ok %}
-
-    <form method="post" action="{{ url_for('projects.task_update', tid=task.id) }}" class="form-row form-row--align-end projects-cms-inline-form">
-
-      {{ csrf_field() }}<input type="hidden" name="action" value="link_add">
-
-      <div class="form-group">
-        <label>Задача</label>
-        <select name="other_task_id" class="form-control" required>
-          <option value="">— выберите —</option>
-          {% for ot in sibling_tasks %}
-          <option value="{{ ot.id }}">{{ ot.title }}</option>
-          {% endfor %}
-        </select>
-      </div>
-
-      <div class="form-group">
-        <label>Тип</label>
-        <select name="link_type" class="form-control">{% for key, lbl in link_type_choices %}<option value="{{ key }}">{{ lbl }}</option>{% endfor %}</select>
-      </div>
-
-      <div class="form-group form-group--shrink">
-        <label class="projects-cms-action-label" aria-hidden="true">Добавить</label>
-        <button type="submit" class="btn btn-outline btn-sm">Добавить</button>
-      </div>
-
+      {% else %}
+      <li class="muted" data-checklist-empty>Пока нет пунктов.</li>
+      {% endfor %}
+    </ul>
+    {% if checklist_ok %}
+    <form method="post" action="{{ url_for('projects.task_update', tid=task.id) }}" class="projects-checklist-add projects-checklist-add--compact" data-checklist-action="add">
+      {{ csrf_field() }}
+      <input type="hidden" name="action" value="checklist_add">
+      <input id="checklist-title-input" name="checklist_title" class="form-control form-control--compact" placeholder="Новый пункт…" required maxlength="512" autocomplete="off">
+      <button type="submit" class="btn btn-outline btn-sm">＋</button>
     </form>
-
-    {% else %}
-    <p class="muted projects-cms-hint">Добавлять связи может исполнитель или соисполнитель этой задачи.</p>
     {% endif %}
+  </section>
 
-    </div>
+  <section id="task-time" class="card projects-task-section projects-task-panel projects-task-panel--side">
 
-  </details>
-
-  <details id="task-custom" class="projects-task-extra projects-task-extra--compact"{% if custom_fields %} open{% endif %}>
-
-    <summary>Дополнительные поля</summary>
-
-    <div class="projects-task-extra-body">
-
-    <form method="post" action="{{ url_for('projects.task_update', tid=task.id) }}">
-
-      {{ csrf_field() }}<input type="hidden" name="action" value="custom_save">
-
-      {% for field in custom_fields %}
-
-      {% set val = task.custom_values.filter_by(field_id=field.id).first() %}
-
-      <div class="form-group"><label>{{ field.name }}</label>
-
-        <input name="cf_{{ field.id }}" class="form-control" value="{{ val.value_text if val else '' }}">
-
-      </div>
-
-      {% else %}<p class="muted">Поля задаются в карточке проекта (раздел «Управление»).</p>{% endfor %}
-
-      {% if custom_fields %}<button type="submit" class="btn btn-primary btn-sm">Сохранить</button>{% endif %}
-
-    </form>
-
-    </div>
-
-  </details>
-
-  <details id="task-time" class="projects-task-extra projects-task-extra--compact">
-
-    <summary>Учёт времени</summary>
-
-    <div class="projects-task-extra-body projects-task-time">
+    <h2 class="projects-task-section-title">Учёт времени</h2>
 
     <p class="projects-time-total">Всего: {{ (task.time_spent_seconds or 0) // 3600 }} ч {{ ((task.time_spent_seconds or 0) % 3600) // 60 }} мин
       {% if task.timer_running_since %}<span class="projects-timer-live" data-since="{{ task.timer_running_since.isoformat() }}"> · таймер идёт</span>{% endif %}
     </p>
 
     {% if current_user.is_staff %}
-
     <form method="post" action="{{ url_for('projects.task_update', tid=task.id) }}" class="projects-time-timer">
-
       {{ csrf_field() }}
-
       {% if task.timer_running_since %}
-
-      <input type="hidden" name="action" value="timer_stop"><button type="submit" class="btn btn-outline">Стоп</button>
-
+      <input type="hidden" name="action" value="timer_stop"><button type="submit" class="btn btn-outline btn-sm">Стоп</button>
       {% else %}
-
-      <input type="hidden" name="action" value="timer_start"><button type="submit" class="btn btn-primary">Старт таймера</button>
-
+      <input type="hidden" name="action" value="timer_start"><button type="submit" class="btn btn-primary btn-sm">Старт таймера</button>
       {% endif %}
-
     </form>
-
-    <form method="post" action="{{ url_for('projects.task_update', tid=task.id) }}" class="projects-cms-inline-form form-row form-row--align-end projects-time-manual">
-
+    <form method="post" action="{{ url_for('projects.task_update', tid=task.id) }}" class="projects-time-manual projects-time-manual--side">
       {{ csrf_field() }}<input type="hidden" name="action" value="time_manual">
-
-      <div class="form-group"><label>Часы</label><input name="hours" type="number" step="0.25" min="0.25" class="form-control" placeholder="0,5" required></div>
-
-      <div class="form-group"><label>Комментарий</label><input name="note" class="form-control" placeholder="Необязательно"></div>
-
-      <div class="form-group form-group--shrink"><label class="projects-cms-action-label" aria-hidden="true">Добавить</label><button type="submit" class="btn btn-outline btn-sm">Добавить вручную</button></div>
-
+      <div class="form-group"><label>Часы</label><input name="hours" type="number" step="0.25" min="0.25" class="form-control form-control--compact" placeholder="0,5" required></div>
+      <div class="form-group"><label>Коммент.</label><input name="note" class="form-control form-control--compact" placeholder="Необяз."></div>
+      <button type="submit" class="btn btn-outline btn-sm projects-time-manual-submit">Добавить</button>
     </form>
-
     {% endif %}
 
     {% if not can_view_others_time %}
-    <p class="muted projects-cms-hint">Показаны только ваши записи времени.</p>
+    <p class="muted projects-cms-hint">Только ваши записи.</p>
     {% endif %}
     <ul class="projects-time-log">{% for log in time_logs %}<li>{{ log.seconds // 60 }} мин — {{ log.user.full_name }} {{ log.created_at.strftime('%d.%m.%Y') }}{% if log.note %} · {{ log.note }}{% endif %}</li>{% else %}<li class="muted">Записей пока нет</li>{% endfor %}</ul>
 
-    </div>
+  </section>
 
-  </details>
+  </div>
+  </aside>
   </div>
   {% endif %}
 

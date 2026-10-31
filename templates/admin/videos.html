@@ -52,7 +52,7 @@
       </div>
       <div class="form-group">
         <label>Или загрузить видеофайл</label>
-        <input type="file" name="video_file" class="form-control" accept="video/*">
+        <input type="file" name="video_file" class="form-control js-video-upload" accept="video/*" data-max-mb="{{ VIDEO_MAX_UPLOAD_MB }}">
       </div>
       <div class="form-group">
         <label>Описание</label>
@@ -69,4 +69,7 @@
     </form>
   </div>
 </div>
+{% endblock %}
+{% block scripts %}
+<script src="{{ url_for('static', filename='js/admin-video-upload.js') }}?v=1"></script>
 {% endblock %}

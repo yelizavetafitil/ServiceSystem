@@ -1,0 +1,32 @@
+{% extends "base.html" %}
+{% from "macros/forms.html" import csrf_field %}
+{% block title %}Раздел — {{ section.title }}{% endblock %}
+{% block head %}{% from "macros/editor.html" import cms_editor_assets %}{{ cms_editor_assets() }}{% endblock %}
+{% block content %}
+<div class="container cms-page">
+  <a href="{{ url_for('admin.tutorial_edit', tid=tutorial.id) }}#tutorial-structure" class="back-link">← Структура: {{ tutorial.title }}</a>
+  <div class="card cms-editor-card">
+    <p class="hint">Текст этой страницы открывается в ЛК по клику на заголовок раздела (подразделы не обязательны).</p>
+    <h1 class="section-title">Раздел: {{ section.title }}</h1>
+    <form method="post">
+      {{ csrf_field() }}
+      <div class="form-group">
+        <label>Заголовок раздела *</label>
+        <input name="title" class="form-control" value="{{ section.title }}" required maxlength="512">
+      </div>
+      <div class="form-group cms-editor-wrap">
+        <label>Текст раздела</label>
+        <textarea name="content_md" class="form-control cms-editor-field" rows="14">{{ section.content_md or '' }}</textarea>
+      </div>
+      <div class="form-actions">
+        <button class="btn btn-primary">Сохранить</button>
+        <a class="btn btn-secondary" href="{{ url_for('admin.tutorial_edit', tid=tutorial.id) }}#tutorial-structure">К структуре</a>
+        {% if preview_slug %}
+        <a class="btn btn-outline" href="{{ url_for('cabinet.tutorial_detail', slug=preview_slug, lesson_slug=section_page_slug) }}" target="_blank" rel="noopener">Предпросмотр в ЛК</a>
+        {% endif %}
+      </div>
+    </form>
+  </div>
+</div>
+{% endblock %}
+{% block scripts %}{% from "macros/editor.html" import init_cms_editor %}{{ init_cms_editor('.cms-editor-field', 560) }}{% endblock %}

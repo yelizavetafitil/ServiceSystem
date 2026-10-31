@@ -26,19 +26,29 @@
     {% if ticket.project_task and ticket.project_task.project %}
     <span>Проект: <a href="{{ url_for('cabinet.customer_projects') }}#project-{{ ticket.project_task.project_id }}">{{ ticket.project_task.project.name }}</a></span>
     {% if ticket.project_task.stage %}<span>Этап: {{ ticket.project_task.stage.title }}</span>{% endif %}
-    {% if ticket.project_task.project.contract_id %}
-    <span>Договор: <a href="{{ url_for('cabinet.contract') }}">{{ ticket.contract.number }}</a></span>
-    {% endif %}
+    {% if ticket.project_task.project.contract_id and ticket.project_task.project.contract %}
+    <span>Договор проекта: <a href="{{ url_for('cabinet.contract') }}">{{ ticket.project_task.project.contract.number }}</a></span>
     {% else %}
-    <span>Договор: <a href="{{ url_for('cabinet.contract') }}">{{ ticket.contract.number }}</a></span>
+    <span class="muted">Договор проекта: —</span>
+    {% endif %}
+    {% endif %}
+    {% if ticket.contract_id and ticket.contract %}
+    <span>Заявка по договору: <a href="{{ url_for('cabinet.contract') }}">{{ ticket.contract.number }}</a></span>
     {% endif %}
     {% else %}
     <span class="badge status-{{ ticket.status }}">{{ TICKET_STATUSES.get(ticket.status, ticket.status) }}</span>
     {% if ticket.project_task and ticket.project_task.project %}
     <span>Проект: <a href="{{ url_for('projects.manage_edit', pid=ticket.project_task.project_id) }}">{{ ticket.project_task.project.name }}</a></span>
     {% if ticket.project_task.stage %}<span>Этап: {{ ticket.project_task.stage.title }}</span>{% endif %}
+    {% if ticket.project_task.project.contract_id and ticket.project_task.project.contract %}
+    <span>Договор проекта: <a href="{{ url_for('admin.contract_edit', cid=ticket.project_task.project.contract_id) }}">{{ ticket.project_task.project.contract.number }}</a></span>
+    {% else %}
+    <span class="muted">Договор проекта: —</span>
     {% endif %}
-    <span>Договор: <a href="{{ url_for('admin.contract_edit', cid=ticket.contract_id) }}">{{ ticket.contract.number }}</a></span>
+    {% endif %}
+    {% if ticket.contract_id and ticket.contract %}
+    <span>Заявка по договору: <a href="{{ url_for('admin.contract_edit', cid=ticket.contract_id) }}">{{ ticket.contract.number }}</a></span>
+    {% endif %}
     {% if ticket.executor %}<span>Исполнитель: {{ ticket.executor.full_name }}</span>{% endif %}
     {% endif %}
   </div>

@@ -19,8 +19,8 @@
       </div>
       <div class="form-group">
         <label>Или загрузить видеофайл</label>
-        <input type="file" name="video_file" class="form-control" accept="video/*">
-        <p class="hint">До {{ VIDEO_MAX_UPLOAD_MB }} МБ на файл. После смены лимита перезапустите контейнер web.</p>
+        <input type="file" name="video_file" class="form-control js-video-upload" accept="video/*" data-max-mb="{{ VIDEO_MAX_UPLOAD_MB }}">
+        <p class="hint">До {{ VIDEO_MAX_UPLOAD_MB }} МБ на файл. Если загрузка обрывается без сообщения — увеличьте лимит в nginx/IIS перед приложением и <code>VIDEO_MAX_UPLOAD_MB</code>, затем перезапустите web.</p>
         {% if video.video_file %}<p class="hint">Текущий файл: {{ video.video_file }}</p>{% endif %}
       </div>
       <div class="form-group"><label>Описание</label><textarea name="description" class="form-control" rows="2">{{ video.description or '' }}</textarea></div>
@@ -37,4 +37,7 @@
     </form>
   </div>
 </div>
+{% endblock %}
+{% block scripts %}
+<script src="{{ url_for('static', filename='js/admin-video-upload.js') }}?v=1"></script>
 {% endblock %}

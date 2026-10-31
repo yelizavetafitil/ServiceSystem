@@ -372,11 +372,9 @@ class Tutorial(db.Model):
 
     def ordered_lessons(self) -> list:
         """Плоский список уроков в порядке разделов (для prev/next)."""
-        out = []
-        for sec in self.sections.order_by(TutorialSection.sort_order, TutorialSection.id):
-            for les in sec.lessons.order_by(TutorialLesson.sort_order, TutorialLesson.id):
-                out.append(les)
-        return out
+        from servicesystem.services.tutorial_structure import flatten_sections_lessons
+
+        return flatten_sections_lessons(self)
 
 
 class TutorialSection(db.Model):
@@ -387,6 +385,7 @@ class TutorialSection(db.Model):
     id = db.Column(db.Integer, primary_key=True)
     tutorial_id = db.Column(db.Integer, db.ForeignKey("tutorials.id", ondelete="CASCADE"), nullable=False, index=True)
     title = db.Column(db.String(512), nullable=False)
+    content_md = db.Column(db.Text, nullable=False, default="")
     sort_order = db.Column(db.Integer, default=0)
     created_at = db.Column(db.DateTime(timezone=True), default=utcnow)
 
@@ -407,6 +406,12 @@ class TutorialLesson(db.Model):
 
     id = db.Column(db.Integer, primary_key=True)
     section_id = db.Column(db.Integer, db.ForeignKey("tutorial_sections.id", ondelete="CASCADE"), nullable=False, index=True)
+    parent_id = db.Column(
+        db.Integer,
+        db.ForeignKey("tutorial_lessons.id", ondelete="CASCADE"),
+        nullable=True,
+        index=True,
+    )
     title = db.Column(db.String(512), nullable=False)
     slug = db.Column(db.String(128), nullable=False)
     content_md = db.Column(db.Text, nullable=False, default="")
@@ -415,6 +420,11 @@ class TutorialLesson(db.Model):
     updated_at = db.Column(db.DateTime(timezone=True), default=utcnow, onupdate=utcnow)
 
     section = db.relationship("TutorialSection", back_populates="lessons")
+    parent = db.relationship(
+        "TutorialLesson",
+        remote_side=[id],
+        backref=db.backref("children", lazy="dynamic", order_by="TutorialLesson.sort_order, TutorialLesson.id"),
+    )
 
     __table_args__ = (
         db.UniqueConstraint("section_id", "slug", name="uq_tutorial_lesson_section_slug"),

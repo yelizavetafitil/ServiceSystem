@@ -1,8 +1,11 @@
 {% extends "base.html" %}
-{% block title %}{{ tutorial.title }}{% if current_lesson %} — {{ current_lesson.title }}{% endif %}{% endblock %}
+{% block title %}{{ tutorial.title }}{% if current_lesson %} — {{ current_lesson.title }}{% elif current_section %} — {{ current_section.title }}{% endif %}{% endblock %}
 {% block content %}
 <div class="container {% if has_structure %}tutorial-layout-wrap{% else %}prose{% endif %}">
   <a href="{{ url_for('cabinet.tutorials') }}" class="back-link">← К базе знаний</a>
+  {% if tutorial_preview_unpublished %}
+  <p class="hint tutorial-preview-banner">Черновик: материал не опубликован — его видят только сотрудники.</p>
+  {% endif %}
 
   {% if has_structure %}
   <div class="tutorial-layout">
@@ -11,17 +14,24 @@
         Содержание
       </button>
       <div class="tutorial-nav__body" id="tutorial-nav-body">
+        {% if nav_first_href %}
+        <a href="{{ nav_first_href }}" class="tutorial-nav__title tutorial-nav__title--link">{{ tutorial.title }}</a>
+        {% else %}
         <div class="tutorial-nav__title">{{ tutorial.title }}</div>
+        {% endif %}
         {% if tutorial.category %}<span class="kb-cat">{{ tutorial.category }}</span>{% endif %}
         <nav class="tutorial-nav__list" aria-label="Разделы туториала">
           {% for sec in section_nav %}
           <div class="tutorial-nav__section">
-            <div class="tutorial-nav__section-title">{{ sec.num }}. {{ sec.title }}</div>
+            <a href="{{ url_for('cabinet.tutorial_detail', slug=tutorial.slug, lesson_slug=sec.section_slug) }}"
+               class="tutorial-nav__section-title tutorial-nav__section-title--link{% if sec.section_active %} is-active{% endif %}">
+              {{ sec.num }}. {{ sec.title }}
+            </a>
             <ul>
               {% for item in sec.lessons %}
               <li>
                 <a href="{{ url_for('cabinet.tutorial_detail', slug=tutorial.slug, lesson_slug=item.lesson.slug) }}"
-                   class="tutorial-nav__link{% if item.active %} is-active{% endif %}">
+                   class="tutorial-nav__link tutorial-nav__link--depth-{{ item.depth|default(0) }}{% if item.active %} is-active{% endif %}">
                   <span class="tutorial-nav__num">{{ item.num }}</span>
                   {{ item.lesson.title }}
                 </a>
@@ -37,23 +47,25 @@
     <main class="tutorial-main card">
       {% if current_lesson %}
       <h1 class="tutorial-main__title">{{ current_lesson.title }}</h1>
+      {% elif current_section %}
+      <h1 class="tutorial-main__title">{{ current_section.title }}</h1>
       {% else %}
       <h1 class="tutorial-main__title">{{ tutorial.title }}</h1>
       {% endif %}
       <div class="markdown-body article-body">{{ content_html|safe }}</div>
-      {% if current_lesson %}
+      {% if prev_href or next_href %}
       <div class="tutorial-pager">
-        {% if prev_lesson %}
-        <a class="btn btn-outline" href="{{ url_for('cabinet.tutorial_detail', slug=tutorial.slug, lesson_slug=prev_lesson.slug) }}">← Назад</a>
+        {% if prev_href %}
+        <a class="btn btn-outline" href="{{ prev_href }}">← Назад</a>
         {% else %}
         <span></span>
         {% endif %}
-        {% if next_lesson %}
-        <a class="btn btn-primary" href="{{ url_for('cabinet.tutorial_detail', slug=tutorial.slug, lesson_slug=next_lesson.slug) }}">Далее →</a>
+        {% if next_href %}
+        <a class="btn btn-primary" href="{{ next_href }}">Далее →</a>
         {% endif %}
       </div>
-      {% elif section_nav %}
-      <p class="hint">Добавьте подразделы в админке, чтобы открывать материал по пунктам меню.</p>
+      {% elif current_section and not (current_section.content_md or '').strip() %}
+      <p class="hint">Текст раздела пока пуст — его можно добавить в админке («Текст раздела»).</p>
       {% endif %}
     </main>
   </div>

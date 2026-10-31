@@ -151,9 +151,9 @@ def _tutorial_access_or_abort(t):
 def tutorial_detail(slug, lesson_slug=None):
     from servicesystem.models import TutorialSection
     from servicesystem.services.cms_html import render_cms_markdown
-    from servicesystem.services.tutorial_structure import find_lesson_in_tutorial
-
-    t = Tutorial.query.filter_by(slug=slug, is_published=True).first_or_404()
+    t = Tutorial.query.filter_by(slug=slug).first_or_404()
+    if not t.is_published and not current_user.is_staff:
+        abort(404)
     _tutorial_access_or_abort(t)
 
     sections = (
@@ -163,62 +163,81 @@ def tutorial_detail(slug, lesson_slug=None):
     )
     has_structure = bool(sections)
     current_lesson = None
-    prev_lesson = None
-    next_lesson = None
     content_html = ""
     section_nav = []
 
+    current_section = None
+    prev_href = None
+    next_href = None
+    nav_first_href = None
+
     if has_structure:
-        from servicesystem.models import TutorialLesson
+        from servicesystem.services.tutorial_structure import (
+            find_lesson_in_tutorial,
+            parse_section_page_slug,
+            section_nav_lessons,
+            section_page_slug,
+            tutorial_reading_sequence,
+        )
 
-        lessons = t.ordered_lessons()
+        sequence = tutorial_reading_sequence(t)
 
-        def _section_nav_entry(si, sec, current_id=None):
-            les_list = (
-                TutorialLesson.query.filter_by(section_id=sec.id)
-                .order_by(TutorialLesson.sort_order, TutorialLesson.id)
-                .all()
+        def _page_href(kind: str, obj) -> str:
+            if kind == "section":
+                return url_for(
+                    "cabinet.tutorial_detail",
+                    slug=t.slug,
+                    lesson_slug=section_page_slug(obj),
+                )
+            return url_for(
+                "cabinet.tutorial_detail",
+                slug=t.slug,
+                lesson_slug=obj.slug,
             )
-            return {
-                "num": si,
-                "title": sec.title,
-                "lessons": [
-                    {
-                        "num": f"{si}.{li}",
-                        "lesson": les,
-                        "active": current_id is not None and les.id == current_id,
-                    }
-                    for li, les in enumerate(les_list, start=1)
-                ],
-            }
 
-        if not lessons:
-            if lesson_slug:
-                abort(404)
-            content_html = render_cms_markdown(t.content_md or "")
-            for si, sec in enumerate(sections, start=1):
-                section_nav.append(_section_nav_entry(si, sec))
-        else:
-            if lesson_slug:
+        if sequence:
+            nav_first_href = _page_href(sequence[0][0], sequence[0][1])
+
+        if lesson_slug:
+            section_id = parse_section_page_slug(lesson_slug)
+            if section_id is not None:
+                current_section = (
+                    TutorialSection.query.filter_by(id=section_id, tutorial_id=t.id).first_or_404()
+                )
+                content_html = render_cms_markdown(current_section.content_md or "")
+            else:
                 current_lesson = find_lesson_in_tutorial(t, lesson_slug)
                 if not current_lesson:
                     abort(404)
-            else:
-                current_lesson = lessons[0]
-                return redirect(
-                    url_for(
-                        "cabinet.tutorial_detail",
-                        slug=t.slug,
-                        lesson_slug=current_lesson.slug,
-                    )
-                )
-            idx = next((i for i, L in enumerate(lessons) if L.id == current_lesson.id), 0)
-            prev_lesson = lessons[idx - 1] if idx > 0 else None
-            next_lesson = lessons[idx + 1] if idx + 1 < len(lessons) else None
-            content_html = render_cms_markdown(current_lesson.content_md or "")
-            cur_id = current_lesson.id
-            for si, sec in enumerate(sections, start=1):
-                section_nav.append(_section_nav_entry(si, sec, cur_id))
+                content_html = render_cms_markdown(current_lesson.content_md or "")
+        elif sequence:
+            return redirect(_page_href(sequence[0][0], sequence[0][1]))
+        else:
+            content_html = render_cms_markdown(t.content_md or "")
+
+        cur_lesson_id = current_lesson.id if current_lesson else None
+        cur_section_id = current_section.id if current_section else None
+        for si, sec in enumerate(sections, start=1):
+            section_nav.append(
+                section_nav_lessons(si, sec, cur_lesson_id, cur_section_id)
+            )
+
+        if sequence and (current_lesson or current_section):
+            idx = -1
+            for i, (kind, obj) in enumerate(sequence):
+                if kind == "section" and current_section and obj.id == current_section.id:
+                    idx = i
+                    break
+                if kind == "lesson" and current_lesson and obj.id == current_lesson.id:
+                    idx = i
+                    break
+            if idx >= 0:
+                if idx > 0:
+                    pk, po = sequence[idx - 1]
+                    prev_href = _page_href(pk, po)
+                if idx + 1 < len(sequence):
+                    nk, no = sequence[idx + 1]
+                    next_href = _page_href(nk, no)
     else:
         content_html = render_cms_markdown(t.content_md or "")
 
@@ -231,8 +250,11 @@ def tutorial_detail(slug, lesson_slug=None):
         has_structure=has_structure,
         section_nav=section_nav,
         current_lesson=current_lesson,
-        prev_lesson=prev_lesson,
-        next_lesson=next_lesson,
+        current_section=current_section,
+        nav_first_href=nav_first_href,
+        prev_href=prev_href,
+        next_href=next_href,
+        tutorial_preview_unpublished=not t.is_published and current_user.is_staff,
     )
 
 
@@ -326,6 +348,14 @@ def video_detail(slug):
         if v.id not in allowed:
             abort(403)
     chapters = v.chapters.all()
+    chapters_json = [
+        {
+            "start_sec": c.start_sec,
+            "title": c.title,
+            "description": (c.description or ""),
+        }
+        for c in chapters
+    ]
     log_audit(current_user.id, "view", "video", v.id)
     db.session.commit()
     is_local_stream = bool(v.video_file) or (v.video_url or "").startswith("/cabinet/media/")
@@ -333,6 +363,7 @@ def video_detail(slug):
         "cabinet/video_detail.html",
         video=v,
         chapters=chapters,
+        chapters_json=chapters_json,
         is_local_stream=is_local_stream,
     )
 
@@ -392,12 +423,46 @@ def _stage_remark_priority(acceptance_status: str) -> int:
     return 1 if acceptance_status == "accepted_remarks" else 4
 
 
-def _contract_for_stage_remark(stage):
-    """Договор для SLA заявки: сначала договор проекта, не личный договор куратора."""
+def _redirect_curator_projects_top():
+    """После POST — чистый GET списка проектов (flash сверху)."""
+    return redirect(url_for("cabinet.customer_projects"))
+
+
+def _project_contract(stage):
+    """Договор, привязанный к проекту (только project.contract_id)."""
     project = stage.project if stage else None
-    if project and project.contract_id:
+    if project and project.contract_id and project.contract:
         return project.contract
-    return current_user.contract
+    return None
+
+
+def _sla_contract_for_stage_remark(stage):
+    """Договор для SLA-заявки: проект → профиль куратора → любой договор его проектов. Проект не меняем."""
+    contract = _project_contract(stage)
+    if contract:
+        return contract
+    if not current_user.is_authenticated:
+        return None
+    if current_user.is_customer_curator:
+        from servicesystem.project_management.services import ensure_customer_curator_contract_access
+
+        ensure_customer_curator_contract_access(current_user)
+    if current_user.contract_id and current_user.contract:
+        return current_user.contract
+    from servicesystem.project_management.models import Project
+
+    curator_id = current_user.id
+    if stage and stage.project and stage.project.customer_curator_id:
+        curator_id = stage.project.customer_curator_id
+    row = (
+        Project.query.filter_by(customer_curator_id=curator_id, is_active=True, is_template=False)
+        .filter(Project.contract_id.isnot(None))
+        .order_by(Project.id)
+        .first()
+    )
+    if row and row.contract:
+        return row.contract
+    return None
 
 
 def _create_stage_remark_ticket(stage, subject: str, description: str, priority: int = 1):
@@ -416,7 +481,7 @@ def _create_stage_remark_ticket(stage, subject: str, description: str, priority:
 
     if not stage.project:
         raise ValueError("no_project")
-    contract = _contract_for_stage_remark(stage)
+    contract = _sla_contract_for_stage_remark(stage)
     if not contract:
         raise ValueError("no_contract")
     obj = ObjectCategory.query.filter_by(is_active=True).order_by(ObjectCategory.sort_order).first()
@@ -525,7 +590,7 @@ def curator_stage_test_release(sid):
     stage = _curator_stage_or_403(sid)
     if stage.released_at:
         flash("Этап уже выпущен.", "info")
-        return redirect(url_for("cabinet.customer_projects") + f"#project-{stage.project_id}")
+        return _redirect_curator_projects_top()
     stage.release_notes = (request.form.get("release_notes") or "").strip() or None
     stage.released_at = datetime.now(timezone.utc)
     for f in request.files.getlist("stage_files"):
@@ -535,7 +600,7 @@ def curator_stage_test_release(sid):
                 db.session.add(att)
             except ValueError:
                 flash("Файл этапа превышает 100 Мб.", "danger")
-                return redirect(url_for("cabinet.customer_projects") + f"#project-{stage.project_id}")
+                return _redirect_curator_projects_top()
     db.session.commit()
     log_audit(
         current_user.id,
@@ -548,7 +613,7 @@ def curator_stage_test_release(sid):
         "Этап выпущен (режим тестирования). Выберите статус приёмки и проверьте замечания.",
         "success",
     )
-    return redirect(url_for("cabinet.customer_projects") + f"#project-{stage.project_id}")
+    return _redirect_curator_projects_top()
 
 
 @bp.route("/projects/stages/<int:sid>/accept", methods=["POST"])
@@ -566,17 +631,17 @@ def curator_stage_accept(sid):
     stage = _curator_stage_or_403(sid)
     if not stage.released_at:
         flash("Этап ещё не выпущен ГИП — приёмка недоступна.", "warning")
-        return redirect(url_for("cabinet.customer_projects") + f"#project-{stage.project_id}")
+        return _redirect_curator_projects_top()
     status = (request.form.get("status") or "").strip()
     try:
         set_stage_acceptance(stage, status, current_user)
     except ValueError:
         flash("Некорректный статус приёмки.", "danger")
-        return redirect(url_for("cabinet.customer_projects") + f"#project-{stage.project_id}")
+        return _redirect_curator_projects_top()
     db.session.commit()
     notify_auditor_stage_acceptance(stage, stage.acceptance_label, current_user.full_name)
     flash(f"Этап «{stage.title}»: {stage.acceptance_label}.", "success")
-    return redirect(url_for("cabinet.customer_projects") + f"#project-{stage.project_id}")
+    return _redirect_curator_projects_top()
 
 
 @bp.route("/projects/stages/<int:sid>/act", methods=["POST"])
@@ -591,24 +656,24 @@ def curator_stage_act_upload(sid):
     stage = _curator_stage_or_403(sid)
     if stage.acceptance_status not in ("accepted", "accepted_remarks"):
         flash("Скан акта доступен после статусов «Принято» / «Принято с замечаниями».", "warning")
-        return redirect(url_for("cabinet.customer_projects") + f"#project-{stage.project_id}")
+        return _redirect_curator_projects_top()
     f = request.files.get("act_file")
     if not f or not f.filename:
         flash("Выберите файл акта (PDF, JPG, PNG).", "warning")
-        return redirect(url_for("cabinet.customer_projects") + f"#project-{stage.project_id}")
+        return _redirect_curator_projects_top()
     ext = (f.filename.rsplit(".", 1)[-1] or "").lower()
     if ext not in ("pdf", "jpg", "jpeg", "png"):
         flash("Допустимы только PDF, JPG, PNG.", "danger")
-        return redirect(url_for("cabinet.customer_projects") + f"#project-{stage.project_id}")
+        return _redirect_curator_projects_top()
     try:
         att = save_stage_attachment(stage, f, current_user.id, kind="act")
         db.session.add(att)
         db.session.commit()
     except ValueError:
         flash("Файл слишком большой.", "danger")
-        return redirect(url_for("cabinet.customer_projects") + f"#project-{stage.project_id}")
+        return _redirect_curator_projects_top()
     flash("Акт выполненных работ загружен.", "success")
-    return redirect(url_for("cabinet.customer_projects") + f"#project-{stage.project_id}")
+    return _redirect_curator_projects_top()
 
 
 @bp.route("/projects/stages/<int:sid>/remark", methods=["GET", "POST"])
@@ -622,16 +687,12 @@ def curator_stage_remark(sid):
     stage = _curator_stage_or_403(sid)
     if stage.acceptance_status not in ("accepted_remarks", "rework"):
         flash("Сначала выберите статус «Принято с замечаниями» или «На доработку».", "warning")
-        return redirect(url_for("cabinet.customer_projects") + f"#project-{stage.project_id}")
+        return _redirect_curator_projects_top()
 
     project = stage.project
-    contract = _contract_for_stage_remark(stage)
-    if not contract:
-        flash(
-            "Нет договора для оформления заявки: привяжите договор к проекту или к учётной записи куратора.",
-            "danger",
-        )
-        return redirect(url_for("cabinet.customer_projects") + f"#project-{stage.project_id}")
+    project_contract = _project_contract(stage)
+    sla_contract = _sla_contract_for_stage_remark(stage)
+    remark_via_ticket = sla_contract is not None
 
     default_priority = _stage_remark_priority(stage.acceptance_status)
     pref_subject = f"Замечание по этапу «{stage.title}»"
@@ -657,34 +718,57 @@ def curator_stage_remark(sid):
                 "cabinet/stage_remark_ticket.html",
                 stage=stage,
                 project=project,
-                contract=contract,
+                project_contract=project_contract,
+                sla_contract=sla_contract,
+                remark_via_ticket=remark_via_ticket,
                 default_priority=priority,
                 pref_subject=subject or pref_subject,
                 pref_description=description or pref_description,
             )
         try:
-            ticket = _create_stage_remark_ticket(stage, subject, description, priority=priority)
-            db.session.commit()
+            if remark_via_ticket:
+                ticket = _create_stage_remark_ticket(stage, subject, description, priority=priority)
+                db.session.commit()
+                if project_contract:
+                    flash(
+                        f"Замечание оформлено заявкой {ticket.number}. Смотрите раздел «Заявки».",
+                        "success",
+                    )
+                else:
+                    flash(
+                        f"Замечание оформлено заявкой {ticket.number}. "
+                        f"Договор проекта: —. Заявка в разделе «Заявки».",
+                        "success",
+                    )
+                return _redirect_curator_projects_top()
+            db.session.rollback()
         except ValueError as e:
             db.session.rollback()
-            flash(f"Не удалось создать тикет ({e}).", "danger")
+            flash(f"Не удалось сохранить замечание ({e}).", "danger")
             return render_template(
                 "cabinet/stage_remark_ticket.html",
                 stage=stage,
                 project=project,
-                contract=contract,
+                project_contract=project_contract,
+                sla_contract=sla_contract,
+                remark_via_ticket=remark_via_ticket,
                 default_priority=priority,
                 pref_subject=subject,
                 pref_description=description,
             )
-        flash(f"Замечание оформлено заявкой №{ticket.number}.", "success")
-        return redirect(url_for("tickets.detail", tid=ticket.id))
+        flash(
+            f"Не удалось оформить заявку по этапу «{stage.title}» — нет договора у проекта и в вашем профиле.",
+            "danger",
+        )
+        return _redirect_curator_projects_top()
 
     return render_template(
         "cabinet/stage_remark_ticket.html",
         stage=stage,
         project=project,
-        contract=contract,
+        project_contract=project_contract,
+        sla_contract=sla_contract,
+        remark_via_ticket=remark_via_ticket,
         default_priority=default_priority,
         pref_subject=pref_subject,
         pref_description=pref_description,

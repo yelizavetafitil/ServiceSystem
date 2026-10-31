@@ -1,0 +1,49 @@
+{# Рекурсивный список подразделов (до 4 уровней вложенности) #}
+{% from "macros/forms.html" import csrf_field %}
+{% macro render_lesson_tree(nodes, sec_num, prefix, depth) %}
+  {% for les, children in nodes %}
+  {% set num = (prefix ~ '.' ~ loop.index) if prefix else (sec_num|string ~ '.' ~ loop.index) %}
+  <li class="tutorial-admin-lesson tutorial-admin-lesson--depth-{{ depth }}" data-lesson-id="{{ les.id }}" style="--lesson-depth: {{ depth }}">
+    <div class="tutorial-admin-lesson__row">
+      <span class="tutorial-admin-lesson__num">{{ num }}<span class="tutorial-admin-lesson__level">{% if depth == 0 %}Подраздел{% else %}Подпункт{% endif %}</span></span>
+      <input form="tutorial-structure-save" name="lesson_title_{{ les.id }}" class="form-control tutorial-admin-lesson__title"
+             value="{{ les.title }}" maxlength="512" aria-label="Название {{ num }}">
+      <a href="{{ url_for('admin.tutorial_lesson_edit', lid=les.id) }}" class="btn btn-sm btn-outline tutorial-admin-lesson__edit"
+         title="Текст страницы · /{{ les.slug }}">Текст</a>
+      <div class="tutorial-admin-lesson__tools">
+        <form method="post" action="{{ url_for('admin.tutorial_lesson_move', lid=les.id) }}" data-structure-ajax>
+          {{ csrf_field() }}
+          <input type="hidden" name="dir" value="up">
+          <button type="submit" class="btn btn-sm btn-outline" title="Выше">↑</button>
+        </form>
+        <form method="post" action="{{ url_for('admin.tutorial_lesson_move', lid=les.id) }}" data-structure-ajax>
+          {{ csrf_field() }}
+          <input type="hidden" name="dir" value="down">
+          <button type="submit" class="btn btn-sm btn-outline" title="Ниже">↓</button>
+        </form>
+        <form method="post" action="{{ url_for('admin.tutorial_lesson_delete', lid=les.id) }}" data-structure-ajax
+              data-confirm="Удалить этот подраздел?"
+              data-confirm-title="Удаление подраздела"
+              data-confirm-ok="Удалить"
+              data-confirm-danger>
+          {{ csrf_field() }}
+          <button type="submit" class="btn btn-sm btn-danger-text" title="Удалить">×</button>
+        </form>
+      </div>
+    </div>
+    {% if depth < 3 %}
+    <form method="post" action="{{ url_for('admin.tutorial_lesson_add_child', lid=les.id) }}" class="tutorial-admin-add-lesson tutorial-admin-add-lesson--nested" data-structure-ajax>
+      {{ csrf_field() }}
+      <p class="tutorial-admin-add-lesson__hint">Вложенный пункт {{ num }}.1 … (уровень {{ depth + 2 }})</p>
+      <input name="lesson_title" class="form-control form-control--compact" placeholder="Название" autocomplete="off">
+      <button class="btn btn-sm btn-outline" type="submit">+ Вложить</button>
+    </form>
+    {% endif %}
+    {% if children %}
+    <ul class="tutorial-admin-lessons tutorial-admin-lessons--nested">
+      {{ render_lesson_tree(children, sec_num, num, depth + 1) }}
+    </ul>
+    {% endif %}
+  </li>
+  {% endfor %}
+{% endmacro %}

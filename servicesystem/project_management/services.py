@@ -100,6 +100,28 @@ def on_ticket_created_hook(ticket: Ticket) -> None:
     return
 
 
+def _stage_remark_only_subject(title: str | None) -> str:
+    t = (title or "").strip()
+    if t.startswith("Замечание:"):
+        return t[len("Замечание:") :].strip()
+    return t
+
+
+def _drop_redundant_stage_remark_only_tasks(stage_id: int, subject: str) -> None:
+    """Убрать задачу «только проект», если по этапу уже есть заявка с той же темой."""
+    subj = (subject or "").strip()[:120]
+    if not subj:
+        return
+    rows = ProjectTask.query.filter(
+        ProjectTask.stage_id == stage_id,
+        ProjectTask.ticket_id.is_(None),
+        ProjectTask.title.like("Замечание:%"),
+    ).all()
+    for task in rows:
+        if _stage_remark_only_subject(task.title) == subj:
+            db.session.delete(task)
+
+
 def create_stage_remark_project_task(stage: ProjectStage, ticket: Ticket) -> ProjectTask:
     """Заявка-замечание по этапу — задача в проекте этапа, не в «техподдержке» договора куратора."""
     if not stage or not stage.project_id:
@@ -110,6 +132,7 @@ def create_stage_remark_project_task(stage: ProjectStage, ticket: Ticket) -> Pro
             existing.project_id = stage.project_id
         if stage.id and existing.stage_id != stage.id:
             existing.stage_id = stage.id
+        _drop_redundant_stage_remark_only_tasks(stage.id, ticket.subject or "")
         return existing
     priority = ticket.priority
     if priority >= 3:
@@ -129,7 +152,87 @@ def create_stage_remark_project_task(stage: ProjectStage, ticket: Ticket) -> Pro
     )
     db.session.add(task)
     db.session.flush()
+    _drop_redundant_stage_remark_only_tasks(stage.id, ticket.subject or "")
     return task
+
+
+def create_stage_remark_project_task_only(
+    stage: ProjectStage,
+    subject: str,
+    description: str,
+    *,
+    priority: int,
+    author_id: int,
+) -> ProjectTask:
+    """Замечание по этапу без договора проекта — задача в проекте, без заявки SLA."""
+    if not stage or not stage.project_id:
+        raise ValueError("no_project")
+    subj = (subject or "").strip()[:120] or "Замечание по этапу"
+    body = (description or "").strip()
+    pr = max(1, min(4, int(priority or 1)))
+    if pr >= 3:
+        pr = max(pr, 3)
+    assignee_id = None
+    if stage.project and stage.project.curator_auditor_id:
+        assignee_id = stage.project.curator_auditor_id
+    task = ProjectTask(
+        project_id=stage.project_id,
+        stage_id=stage.id,
+        ticket_id=None,
+        title=f"Замечание: {subj}",
+        description=body,
+        priority=pr,
+        kanban_status="todo",
+        gantt_sort=next_gantt_sort(stage.project_id),
+        assignee_id=assignee_id,
+        created_by_id=author_id,
+    )
+    db.session.add(task)
+    db.session.flush()
+    note = subj if len(subj) <= 200 else subj[:197] + "…"
+    if not stage.remarks_note or stage.remarks_note == "Замечания отсутствуют":
+        stage.remarks_note = note
+    return task
+
+
+def stage_remark_tasks_by_stage(stage_ids: list[int]) -> dict[int, list]:
+    """Задачи-замечания по этапам (заявка или только проект)."""
+    if not stage_ids:
+        return {}
+    from sqlalchemy import or_
+
+    rows = (
+        ProjectTask.query.filter(
+            ProjectTask.stage_id.in_(stage_ids),
+            or_(
+                ProjectTask.ticket_id.isnot(None),
+                ProjectTask.title.like("Замечание:%"),
+            ),
+        )
+        .order_by(ProjectTask.id)
+        .all()
+    )
+    by_stage: dict[int, list] = {}
+    for t in rows:
+        by_stage.setdefault(t.stage_id, []).append(t)
+    out: dict[int, list] = {}
+    for sid, tasks in by_stage.items():
+        ticket_subjects = {
+            (t.ticket.subject or "").strip()[:120]
+            for t in tasks
+            if t.ticket_id and getattr(t, "ticket", None)
+        }
+        filtered: list = []
+        for t in tasks:
+            if t.ticket_id:
+                filtered.append(t)
+                continue
+            subj = _stage_remark_only_subject(t.title)
+            if subj and subj in ticket_subjects:
+                continue
+            filtered.append(t)
+        out[sid] = filtered
+    return out
 
 
 def on_ticket_assign_hook(ticket: Ticket) -> None:
@@ -1645,14 +1748,25 @@ def user_can_edit_task(user: User, task: ProjectTask) -> bool:
 def user_can_edit_task_plan(user: User, task: ProjectTask | None = None) -> bool:
     """Планирование задачи (сроки, этап, исполнитель, иерархия) — только ГИП/админ.
 
-    Исполнитель правит контент: статус, чек-лист, файлы, комментарии, время, соисполнители, связи FS.
+    Исполнитель правит контент: статус, чек-лист, файлы, комментарии, время, соисполнители.
     """
     return bool(user and (user.is_admin or user.is_auditor))
 
 
-def user_can_manage_task_links(user: User, task: ProjectTask) -> bool:
-    """Связи между задачами проекта — исполнитель/соисполнитель своей карточки и ГИП."""
-    return user_can_edit_task(user, task)
+def user_can_manage_task_links(user: User, task: ProjectTask | None = None) -> bool:
+    """Связи между задачами — только ГИП/админ (не исполнители)."""
+    return user_can_edit_task_plan(user, task)
+
+
+def user_can_link_project_tasks(
+    user: User, from_task: ProjectTask | None, to_task: ProjectTask | None
+) -> bool:
+    """Связь FS/related на Ганте — только ГИП/админ."""
+    if not user or not from_task or not to_task:
+        return False
+    if from_task.project_id != to_task.project_id or not from_task.project_id:
+        return False
+    return user_can_edit_task_plan(user)
 
 
 def user_can_delete_task(user: User, task: ProjectTask | None = None) -> bool:

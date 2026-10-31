@@ -267,6 +267,7 @@ def _apply_schema_patches():
         )
         """,
         "CREATE INDEX IF NOT EXISTS ix_tutorial_sections_tutorial_id ON tutorial_sections (tutorial_id)",
+        "ALTER TABLE tutorial_sections ADD COLUMN IF NOT EXISTS content_md TEXT NOT NULL DEFAULT ''",
         """
         CREATE TABLE IF NOT EXISTS tutorial_lessons (
           id SERIAL PRIMARY KEY,
@@ -281,6 +282,8 @@ def _apply_schema_patches():
         )
         """,
         "CREATE INDEX IF NOT EXISTS ix_tutorial_lessons_section_id ON tutorial_lessons (section_id)",
+        "ALTER TABLE tutorial_lessons ADD COLUMN IF NOT EXISTS parent_id INTEGER REFERENCES tutorial_lessons(id) ON DELETE CASCADE",
+        "CREATE INDEX IF NOT EXISTS ix_tutorial_lessons_parent_id ON tutorial_lessons (parent_id)",
     ]
     for sql in patches:
         try:

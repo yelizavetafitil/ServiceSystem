@@ -56,6 +56,7 @@ from servicesystem.project_management.services import (
     user_can_create_task,
     user_can_edit_task,
     user_can_edit_task_plan,
+    user_can_link_project_tasks,
     user_can_manage_task_links,
     user_can_manage_collaborators,
     user_can_manage_project,
@@ -1566,14 +1567,7 @@ def gantt_link_add():
         return jsonify({"error": "same"}), 400
     from_task = db.session.get(ProjectTask, from_id) or abort(404)
     to_task = db.session.get(ProjectTask, to_id) or abort(404)
-    if not (
-        current_user.is_admin
-        or current_user.is_auditor
-        or (
-            user_can_manage_task_links(current_user, from_task)
-            and user_can_manage_task_links(current_user, to_task)
-        )
-    ):
+    if not user_can_link_project_tasks(current_user, from_task, to_task):
         abort(403)
     if from_task.project_id != to_task.project_id:
         return jsonify({"error": "different_project"}), 400
@@ -1622,16 +1616,7 @@ def gantt_link_remove(lid):
         return jsonify({"error": "not_found"}), 404
     from_task = db.session.get(ProjectTask, link.from_task_id)
     to_task = db.session.get(ProjectTask, link.to_task_id)
-    if not (
-        current_user.is_admin
-        or current_user.is_auditor
-        or (
-            from_task
-            and to_task
-            and user_can_manage_task_links(current_user, from_task)
-            and user_can_manage_task_links(current_user, to_task)
-        )
-    ):
+    if not user_can_link_project_tasks(current_user, from_task, to_task):
         abort(403)
     db.session.delete(link)
     db.session.commit()

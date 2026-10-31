@@ -66,7 +66,15 @@
           return;
         }
         if (res.j.html) replaceStructure(res.j.html);
-        if (res.j.message) showToast(res.j.message, res.j.ok !== false);
+        if (res.j.message) {
+          showToast(res.j.message, res.j.ok !== false);
+          var saveBar = document.querySelector('.tutorial-admin-save-bar');
+          if (saveBar) {
+            saveBar.scrollIntoView({ block: 'start', behavior: 'smooth' });
+          } else {
+            root.scrollIntoView({ block: 'start', behavior: 'smooth' });
+          }
+        }
         if (form.classList.contains('tutorial-admin-add-section')) {
           var inp = form.querySelector('input[name=section_title]');
           if (inp) inp.value = '';

@@ -7,6 +7,8 @@
 {% block head %}{% from "macros/editor.html" import cms_editor_assets %}{{ cms_editor_assets() }}{% endblock %}
 
 {% block content %}
+{% set lesson_trees_by_section = lesson_trees_by_section|default({}) %}
+{% set sections = sections|default([]) %}
 
 <div class="container cms-page">
 
@@ -57,8 +59,8 @@
       </div>
 
       {% set has_lessons = namespace(value=false) %}
-      {% for sec_lessons in lessons_by_section.values() %}
-        {% if sec_lessons %}{% set has_lessons.value = true %}{% endif %}
+      {% for sec_tree in lesson_trees_by_section.values() %}
+        {% if sec_tree %}{% set has_lessons.value = true %}{% endif %}
       {% endfor %}
 
       {% if has_lessons.value %}
@@ -104,7 +106,12 @@
 
     <h2 class="section-title">Структура (разделы и подразделы)</h2>
 
-    <p class="hint">Названия разделов сохраняются и <strong>без подразделов</strong>. Добавление, порядок и «Сохранить названия» — без перезагрузки. Текст — «Редактировать» у подраздела.</p>
+    <div class="tutorial-admin-structure-legend">
+      <span><strong>1</strong> — раздел</span>
+      <span><strong>1.1</strong> — подраздел</span>
+      <span><strong>1.1.1</strong> — вложенный пункт (до 4 уровней)</span>
+      <span>Названия — «Сохранить»; содержание — кнопка «Текст»</span>
+    </div>
 
 
 
@@ -130,7 +137,7 @@
 
     <form method="post" action="{{ url_for('admin.tutorial_split_md', tid=tutorial.id) }}" class="tutorial-admin-split" data-structure-ajax
 
-          data-confirm="Разбить «Содержание» по заголовкам # / ##? Существующие разделы не удаляются."
+          data-confirm="Разбить «Содержание» по заголовкам # / ## / ###? Существующие разделы не удаляются."
 
           data-confirm-title="Разбиение Markdown"
 
@@ -138,7 +145,7 @@
 
       {{ csrf_field() }}
 
-      <button class="btn btn-outline" type="submit">Разбить Markdown по # / ##</button>
+      <button class="btn btn-outline" type="submit">Разбить Markdown по # / ## / ###</button>
 
     </form>
 
@@ -162,7 +169,7 @@
 
 {% from "macros/editor.html" import init_cms_editor %}{{ init_cms_editor('.cms-editor-field', 560) }}
 
-<script src="{{ url_for('static', filename='js/tutorial-structure-admin.js') }}?v=2"></script>
+<script src="{{ url_for('static', filename='js/tutorial-structure-admin.js') }}?v=3"></script>
 
 {% endblock %}
 

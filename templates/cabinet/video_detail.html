@@ -1,55 +1,69 @@
 {% extends "base.html" %}
 {% block title %}{{ video.title }}{% endblock %}
+{% block head %}
+<link rel="stylesheet" href="{{ url_for('static', filename='css/video-player.css') }}?v=1">
+{% endblock %}
 {% block content %}
-<div class="container">
+<div class="container video-page-container">
   <a href="{{ url_for('cabinet.videos') }}" class="back-link">← К видео</a>
-  <div class="grid-2 video-page">
-    <div class="card video-player-wrap">
-      {% if is_local_stream %}
-      <video controls controlsList="nodownload" disablePictureInPicture oncontextmenu="return false" playsinline class="video-stream">
-        <source src="{{ video.video_url }}" type="video/mp4">
-        Ваш браузер не поддерживает потоковое воспроизведение.
-      </video>
-      {% else %}
-      <iframe src="{{ video.video_url }}" allowfullscreen referrerpolicy="no-referrer"></iframe>
-      {% endif %}
+  <div class="video-page">
+    <div class="card video-player-shell"
+         id="video-player"
+         data-chapters='{{ chapters_json|default([])|tojson }}'>
+      <div class="video-player-stage">
+        <div class="video-player-wrap">
+          {% if is_local_stream %}
+          <video controls controlsList="nodownload nofullscreen noremoteplayback" disablePictureInPicture oncontextmenu="return false" playsinline class="video-stream">
+            <source src="{{ video.video_url }}" type="video/mp4">
+            Ваш браузер не поддерживает потоковое воспроизведение.
+          </video>
+          {% else %}
+          {% set embed_src = video.video_url %}
+          {% if embed_src and ('youtube.com/embed' in embed_src or 'youtube-nocookie.com/embed' in embed_src) %}
+          {% set yt_sep = '&' if '?' in embed_src else '?' %}
+          {% set yt_origin = request.url_root.rstrip('/') %}
+          {% set embed_src = embed_src ~ yt_sep ~ 'enablejsapi=1&fs=0&modestbranding=1&rel=0&origin=' ~ (yt_origin|urlencode) %}
+          {% endif %}
+          <iframe src="{{ embed_src }}" allow="autoplay; encrypted-media; picture-in-picture" referrerpolicy="no-referrer" title="{{ video.title }}"></iframe>
+          {% endif %}
+        </div>
+
+        <div class="video-player-overlay-controls" aria-label="Управление плеером">
+          {% if chapters %}
+          <button type="button" class="video-player-chapters-toggle btn-video-overlay" aria-expanded="false" title="Оглавление и тайм-коды">
+            <span class="video-player-icon" aria-hidden="true">☰</span>
+            <span class="video-player-btn-label">Тайм-коды</span>
+          </button>
+          {% endif %}
+          <button type="button" class="video-player-fs btn-video-overlay" aria-pressed="false" title="На весь экран">
+            <span class="video-player-icon" aria-hidden="true">⛶</span>
+            <span class="video-player-btn-label">На весь экран</span>
+          </button>
+        </div>
+
+        {% if chapters %}
+        <aside class="video-player-chapters" aria-hidden="true" aria-label="Оглавление">
+          <div class="video-player-chapters__head">
+            <strong>Оглавление</strong>
+            <button type="button" class="video-player-chapters__close" title="Закрыть">×</button>
+          </div>
+          <ul class="video-player-chapters__list"></ul>
+        </aside>
+        {% endif %}
+      </div>
     </div>
-    <div class="card">
-      <h2>{{ video.title }}</h2>
-      <p>{{ video.description }}</p>
+
+    <div class="card video-page-meta">
+      <h1 class="video-page-meta__title">{{ video.title }}</h1>
+      {% if video.description %}<p class="video-page-meta__desc">{{ video.description }}</p>{% endif %}
       <p class="hint">Потоковый просмотр — скачивание файла недоступно.</p>
       {% if chapters %}
-      <h3>Оглавление</h3>
-      <ul class="chapter-list">
-        {% for c in chapters %}
-        <li>
-          <button type="button" class="chapter-btn" data-seek="{{ c.start_sec }}">
-            {{ '%d:%02d'|format(c.start_sec // 60, c.start_sec % 60) }} — {{ c.title }}
-          </button>
-          {% if c.description %}<p class="muted chapter-desc">{{ c.description }}</p>{% endif %}
-        </li>
-        {% endfor %}
-      </ul>
+      <p class="hint video-page-meta__chapters-hint">Переход по разделам — кнопка «Тайм-коды» на плеере (в том числе в полноэкранном режиме).</p>
       {% endif %}
     </div>
   </div>
 </div>
 {% endblock %}
 {% block scripts %}
-<script>
-document.querySelectorAll('.chapter-btn').forEach(btn => {
-  btn.addEventListener('click', () => {
-    const video = document.querySelector('.video-stream');
-    const iframe = document.querySelector('.video-player-wrap iframe');
-    if (video) {
-      video.currentTime = parseInt(btn.dataset.seek, 10);
-      video.play();
-    } else if (iframe) {
-      const url = new URL(iframe.src.split('?')[0]);
-      url.searchParams.set('start', btn.dataset.seek);
-      iframe.src = url.toString();
-    }
-  });
-});
-</script>
+<script src="{{ url_for('static', filename='js/video-player.js') }}?v=1"></script>
 {% endblock %}

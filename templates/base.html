@@ -8,7 +8,7 @@
   <link rel="icon" href="{{ url_for('static', filename='img/belnipi-logo.png') }}?v=19" type="image/png">
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="{{ url_for('static', filename='css/main.css') }}?v=61">
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/main.css') }}?v=62">
   {% block head %}{% endblock %}
 </head>
 <body class="{% if not current_user.is_authenticated %}auth-body{% endif %}">
@@ -69,9 +69,10 @@
   {% endif %}
 
   <main class="main-content">
+    <span id="page-top" class="page-top-anchor" tabindex="-1"></span>
     {% with messages = get_flashed_messages(with_categories=true) %}
       {% if messages %}
-      <div class="container flash-messages">
+      <div class="container flash-messages" id="ss-flash-messages">
         {% for cat, msg in messages %}
         <div class="alert alert-{{ cat }}">{{ msg }}</div>
         {% endfor %}

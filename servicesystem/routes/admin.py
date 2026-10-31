@@ -38,6 +38,33 @@ from servicesystem.services.phone_format import split_work_phone
 
 def _form_cms_md(key: str = "content_md") -> str:
     return normalize_cms_markdown_source(request.form.get(key) or "")
+
+
+def _save_uploaded_video(file_storage):
+    """Сохранить MP4/видео в storage. Возвращает (имя файла, url потока) или None."""
+    if not file_storage or not file_storage.filename:
+        return None
+    max_video = current_app.config.get("VIDEO_MAX_UPLOAD_MB", 1024) * 1024 * 1024
+    file_storage.seek(0, 2)
+    fsize = file_storage.tell()
+    file_storage.seek(0)
+    if fsize <= 0:
+        raise ValueError("Файл видео пустой или не был передан (проверьте лимит прокси/nginx и размер).")
+    if fsize > max_video:
+        raise ValueError(
+            f"Видео больше {current_app.config.get('VIDEO_MAX_UPLOAD_MB', 1024)} МБ."
+        )
+    stored = unique_filename(file_storage.filename)
+    storage = get_storage()
+    storage.ensure_dir("videos")
+    try:
+        storage.save_file(f"videos/{stored}", file_storage)
+    except OSError as exc:
+        raise ValueError(f"Не удалось сохранить видео на диск: {exc}") from exc
+    stream_url = url_for("cabinet.stream_video", filename=stored, _external=False)
+    return stored, stream_url
+
+
 from servicesystem.services.vcard import (
     build_vcard,
     parse_vcf_text,
@@ -530,25 +557,28 @@ def _tutorial_structure_bundle(tutorial: Tutorial):
         .order_by(TutorialSection.sort_order, TutorialSection.id)
         .all()
     )
-    lessons_by_section: dict[int, list] = {}
+    from servicesystem.services.tutorial_structure import build_lesson_tree
+
+    lesson_trees_by_section: dict[int, list] = {}
     for sec in sections:
-        lessons_by_section[sec.id] = (
+        rows = (
             TutorialLesson.query.filter_by(section_id=sec.id)
             .order_by(TutorialLesson.sort_order, TutorialLesson.id)
             .all()
         )
-    return sections, lessons_by_section
+        lesson_trees_by_section[sec.id] = build_lesson_tree(rows)
+    return sections, lesson_trees_by_section
 
 
 def _structure_response(tutorial_id: int, message: str, category: str = "success", **extra):
     t = db.session.get(Tutorial, tutorial_id) or abort(404)
     if _wants_structure_ajax():
-        sections, lessons_by_section = _tutorial_structure_bundle(t)
+        sections, lesson_trees_by_section = _tutorial_structure_bundle(t)
         html = render_template(
             "admin/tutorial_structure_body.html",
             tutorial=t,
             sections=sections,
-            lessons_by_section=lessons_by_section,
+            lesson_trees_by_section=lesson_trees_by_section,
         )
         payload = {"ok": category != "danger", "message": message, "html": html}
         payload.update(extra)
@@ -575,12 +605,12 @@ def tutorial_edit(tid):
         db.session.commit()
         flash("Туториал обновлён.", "success")
         return redirect(url_for("admin.tutorial_edit", tid=tid))
-    sections, lessons_by_section = _tutorial_structure_bundle(t)
+    sections, lesson_trees_by_section = _tutorial_structure_bundle(t)
     return render_template(
         "admin/tutorial_edit.html",
         tutorial=t,
         sections=sections,
-        lessons_by_section=lessons_by_section,
+        lesson_trees_by_section=lesson_trees_by_section,
     )
 
 
@@ -647,6 +677,29 @@ def tutorial_structure_save(tid):
         db.session.commit()
         return _structure_response(tid, "Названия разделов и подразделов сохранены.", "success")
     return _structure_response(tid, "Изменений нет или не заполнены названия.", "warning")
+
+
+@bp.route("/tutorials/sections/<int:sid>/edit", methods=["GET", "POST"])
+@login_required
+@content_cms_required
+def tutorial_section_edit(sid):
+    from servicesystem.services.tutorial_structure import section_page_slug
+
+    sec = db.session.get(TutorialSection, sid) or abort(404)
+    tutorial = sec.tutorial
+    if request.method == "POST":
+        sec.title = (request.form.get("title") or sec.title).strip()[:512]
+        sec.content_md = _form_cms_md("content_md")
+        db.session.commit()
+        flash("Раздел сохранён.", "success")
+        return redirect(url_for("admin.tutorial_section_edit", sid=sid))
+    return render_template(
+        "admin/tutorial_section_edit.html",
+        section=sec,
+        tutorial=tutorial,
+        preview_slug=tutorial.slug,
+        section_page_slug=section_page_slug(sec),
+    )
 
 
 @bp.route("/tutorials/sections/<int:sid>/rename", methods=["POST"])
@@ -718,6 +771,46 @@ def tutorial_lesson_add(sid):
             edit_url=edit_url,
         )
     flash("Урок создан — заполните содержание.", "success")
+    return redirect(edit_url)
+
+
+@bp.route("/tutorials/lessons/<int:lid>/children", methods=["POST"])
+@login_required
+@content_cms_required
+def tutorial_lesson_add_child(lid):
+    from servicesystem.services.tutorial_structure import next_lesson_sort, unique_lesson_slug
+
+    parent = db.session.get(TutorialLesson, lid) or abort(404)
+    sec = parent.section
+    depth = 0
+    cur = parent
+    while cur.parent_id:
+        depth += 1
+        cur = db.session.get(TutorialLesson, cur.parent_id) or cur
+        if depth > 8:
+            break
+    if depth >= 3:
+        return _structure_response(sec.tutorial_id, "Не более 4 уровней вложенности.", "warning")
+    title = (request.form.get("lesson_title") or "").strip() or "Новый подпункт"
+    les = TutorialLesson(
+        section_id=sec.id,
+        parent_id=parent.id,
+        title=title[:512],
+        slug=unique_lesson_slug(sec, title),
+        content_md="",
+        sort_order=next_lesson_sort(sec, parent.id),
+    )
+    db.session.add(les)
+    db.session.commit()
+    edit_url = url_for("admin.tutorial_lesson_edit", lid=les.id)
+    if _wants_structure_ajax():
+        return _structure_response(
+            sec.tutorial_id,
+            "Подпункт добавлен. Нажмите «Редактировать» для текста.",
+            "success",
+            edit_url=edit_url,
+        )
+    flash("Подпункт создан — заполните содержание.", "success")
     return redirect(edit_url)
 
 
@@ -806,26 +899,17 @@ def video_edit(vid):
         v.is_published = request.form.get("is_published") == "1"
         f = request.files.get("video_file")
         if f and f.filename:
-            max_video = current_app.config.get("VIDEO_MAX_UPLOAD_MB", 1024) * 1024 * 1024
-            f.seek(0, 2)
-            fsize = f.tell()
-            f.seek(0)
-            if fsize > max_video:
-                flash(
-                    f"Видео больше {current_app.config.get('VIDEO_MAX_UPLOAD_MB', 1024)} МБ.",
-                    "danger",
-                )
+            try:
+                stored, stream_url = _save_uploaded_video(f)
+            except ValueError as err:
+                flash(str(err), "danger")
                 chapters = "\n".join(
                     f"{c.start_sec}|{c.title}" + (f";{c.description}" if c.description else "")
                     for c in v.chapters.all()
                 )
                 return render_template("admin/video_edit.html", video=v, chapters=chapters)
-            stored = unique_filename(f.filename)
-            storage = get_storage()
-            storage.ensure_dir("videos")
-            size = storage.save_file(f"videos/{stored}", f)
             v.video_file = stored
-            v.video_url = url_for("cabinet.stream_video", filename=stored, _external=False)
+            v.video_url = stream_url
         VideoChapter.query.filter_by(video_id=v.id).delete()
         for i, line in enumerate(request.form.get("chapters", "").strip().split("\n")):
             if "|" in line:
@@ -1650,22 +1734,11 @@ def video_create():
     video_file = None
     f = request.files.get("video_file")
     if f and f.filename:
-        max_video = current_app.config.get("VIDEO_MAX_UPLOAD_MB", 1024) * 1024 * 1024
-        f.seek(0, 2)
-        fsize = f.tell()
-        f.seek(0)
-        if fsize > max_video:
-            flash(
-                f"Видео больше {current_app.config.get('VIDEO_MAX_UPLOAD_MB', 1024)} МБ.",
-                "danger",
-            )
+        try:
+            video_file, video_url = _save_uploaded_video(f)
+        except ValueError as err:
+            flash(str(err), "danger")
             return redirect(url_for("admin.videos"))
-        stored = unique_filename(f.filename)
-        storage = get_storage()
-        storage.ensure_dir("videos")
-        storage.save_file(f"videos/{stored}", f)
-        video_file = stored
-        video_url = url_for("cabinet.stream_video", filename=stored, _external=False)
     if not video_url:
         flash("Укажите URL видео или загрузите файл.", "danger")
         return redirect(url_for("admin.videos"))

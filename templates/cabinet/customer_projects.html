@@ -1,7 +1,7 @@
 {% extends "base.html" %}
 {% from "macros/forms.html" import csrf_field %}
 {% block title %}Текущие проекты{% endblock %}
-{% block head %}<link rel="stylesheet" href="{{ url_for('static', filename='css/projects.css') }}?v=108">{% endblock %}
+{% block head %}<link rel="stylesheet" href="{{ url_for('static', filename='css/projects.css') }}?v=116">{% endblock %}
 {% block content %}
 <div class="container container-wide cms-page">
   <h1>Текущие проекты</h1>
@@ -21,7 +21,7 @@
       Срок выполнения договора — {{ p.contract.service_end_date.strftime('%d.%m.%Y') }}.
       {% endif %}
       {% else %}
-      Договор не привязан.
+      Договор проекта: —
       {% endif %}
       {% if p.planned_start or p.deadline %}
       · Окно проекта:
@@ -79,7 +79,7 @@
               <div class="projects-curator-status-label">{{ s.acceptance_label }}</div>
               {% endif %}
               {% if s.released_at %}
-              <form method="post" action="{{ url_for('cabinet.curator_stage_accept', sid=s.id) }}" class="projects-curator-status-form">
+              <form method="post" action="{{ url_for('cabinet.curator_stage_accept', sid=s.id) }}" class="projects-curator-status-form projects-curator-reload-form">
                 {{ csrf_field() }}
                 <select name="status" class="form-control form-control--compact" required>
                   <option value="">— выбрать —</option>
@@ -91,7 +91,7 @@
               </form>
               {% else %}
               {% if curator_acceptance_test %}
-              <form method="post" action="{{ url_for('cabinet.curator_stage_test_release', sid=s.id) }}" enctype="multipart/form-data" class="projects-curator-test-release">
+              <form method="post" action="{{ url_for('cabinet.curator_stage_test_release', sid=s.id) }}" enctype="multipart/form-data" class="projects-curator-test-release projects-curator-reload-form">
                 {{ csrf_field() }}
                 <p class="muted projects-curator-test-label">Тест: выпуск этапа</p>
                 <textarea name="release_notes" class="form-control form-control--compact" rows="2" placeholder="Комментарий к материалам (необяз.)"></textarea>
@@ -103,18 +103,11 @@
               {% endif %}
               {% endif %}
             </td>
-            <td>
-              {% if s.acceptance_status == 'accepted' %}
-              <span class="muted">Замечания отсутствуют</span>
-              {% elif s.acceptance_status in ('accepted_remarks', 'rework') %}
-              <a href="{{ url_for('cabinet.curator_stage_remark', sid=s.id) }}" class="btn btn-primary btn-xs projects-curator-remark-btn">＋ Замечание</a>
-              <p class="muted projects-curator-remark-hint">
-                {% if s.acceptance_status == 'accepted_remarks' %}
-                Критичность: низшая
-                {% else %}
-                Критичность: высшая
-                {% endif %}
-              </p>
+            <td class="projects-curator-remarks-cell">
+              {% if s.acceptance_status in ('accepted_remarks', 'rework') %}
+              <a href="{{ url_for('cabinet.curator_stage_remark', sid=s.id) }}" class="btn btn-primary btn-xs projects-curator-remark-btn">Замечание</a>
+              {% elif s.acceptance_status == 'accepted' %}
+              <span class="muted">—</span>
               {% else %}
               <span class="muted">—</span>
               {% endif %}
@@ -128,7 +121,7 @@
               </ul>
               {% endif %}
               {% if s.acceptance_status in ('accepted', 'accepted_remarks') %}
-              <form method="post" action="{{ url_for('cabinet.curator_stage_act_upload', sid=s.id) }}" enctype="multipart/form-data" class="projects-curator-act-form">
+              <form method="post" action="{{ url_for('cabinet.curator_stage_act_upload', sid=s.id) }}" enctype="multipart/form-data" class="projects-curator-act-form projects-curator-reload-form">
                 {{ csrf_field() }}
                 <input type="file" name="act_file" accept=".pdf,.jpg,.jpeg,.png,application/pdf,image/*" required class="form-control form-control--compact">
                 <button type="submit" class="btn btn-outline btn-xs">Загрузить акт (PDF/JPG/PNG)</button>
@@ -149,4 +142,32 @@
   <p class="muted">Нет назначенных проектов.</p>
   {% endfor %}
 </div>
+{% endblock %}
+{% block scripts %}
+<script>
+(function () {
+  var KEY = 'cabinetProjectsScrollTop';
+  document.querySelectorAll('.projects-curator-reload-form').forEach(function (form) {
+    form.addEventListener('submit', function () {
+      try { sessionStorage.setItem(KEY, '1'); } catch (e) {}
+    });
+  });
+  var needTop = document.getElementById('ss-flash-messages');
+  try {
+    if (sessionStorage.getItem(KEY) === '1') {
+      needTop = needTop || true;
+      sessionStorage.removeItem(KEY);
+    }
+  } catch (e) {}
+  if (!needTop) return;
+  if ('scrollRestoration' in history) history.scrollRestoration = 'manual';
+  function scrollTop() {
+    window.scrollTo(0, 0);
+    document.documentElement.scrollTop = 0;
+    document.body.scrollTop = 0;
+  }
+  scrollTop();
+  window.addEventListener('load', scrollTop);
+})();
+</script>
 {% endblock %}

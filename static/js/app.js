@@ -37,17 +37,6 @@ document.querySelectorAll('.tabs').forEach(tabsEl => {
   if (best) best.classList.add('active');
 })();
 
-document.querySelectorAll('.chapter-btn').forEach(btn => {
-  btn.addEventListener('click', () => {
-    const iframe = document.querySelector('.video-player-wrap iframe');
-    if (iframe) {
-      const url = new URL(iframe.src.split('?')[0]);
-      url.searchParams.set('start', btn.dataset.seek);
-      iframe.src = url.toString();
-    }
-  });
-});
-
 let idleTimer;
 function resetIdle() {
   clearTimeout(idleTimer);

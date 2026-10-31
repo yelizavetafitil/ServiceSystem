@@ -3,7 +3,7 @@
 {% block title %}Замечание по этапу — заявка{% endblock %}
 {% block content %}
 <div class="container container-narrow">
-  <a href="{{ url_for('cabinet.customer_projects') }}#project-{{ stage.project_id }}" class="back-link">← К проектам</a>
+  <a href="{{ url_for('cabinet.customer_projects') }}" class="back-link">← К проектам</a>
   <div class="page-header">
     <h1>Новая заявка</h1>
     <p class="hint">Замечание к этапу «{{ stage.title }}» ({{ stage.acceptance_label }}). Категории объекта и инцидента скрыты по ТЗ — подставляются автоматически.</p>
@@ -15,18 +15,22 @@
       <p class="contract-ref"><strong>{{ project.name }}</strong></p>
       <p class="hint">Этап: {{ stage.title }}</p>
     </div>
-    {% if project.contract_id and project.contract %}
-    {% set doc_url = project.contract.document_url or url_for('cabinet.contract') %}
     <div class="form-group">
       <label>Договор проекта</label>
-      <p class="contract-ref">Договор <a href="{{ doc_url }}" target="_blank"><strong>№{{ project.contract.number }}</strong></a>
-        от {{ project.contract.signed_at.strftime('%d.%m.%Y') if project.contract.signed_at else '—' }}</p>
+      {% if project_contract %}
+      {% set doc_url = project_contract.document_url or url_for('cabinet.contract') %}
+      <p class="contract-ref">Договор <a href="{{ doc_url }}" target="_blank"><strong>№{{ project_contract.number }}</strong></a>
+        от {{ project_contract.signed_at.strftime('%d.%m.%Y') if project_contract.signed_at else '—' }}</p>
+      {% else %}
+      <p class="contract-ref muted">—</p>
+      {% endif %}
     </div>
-    {% elif contract %}
-    <div class="form-group">
-      <label>Договор для SLA</label>
-      <p class="hint muted">К проекту договор не привязан. Заявка оформляется по договору вашей организации <strong>№{{ contract.number }}</strong>.</p>
-    </div>
+    {% if remark_via_ticket and sla_contract and not project_contract %}
+    <p class="hint">Сценарий тот же, что при привязанном договоре: заявка SLA в «Мои заявки»
+      {% if sla_contract.number %}(ваш договор №{{ sla_contract.number }}){% endif %}.
+      К проекту договор не привязывается.</p>
+    {% elif remark_via_ticket is defined and not remark_via_ticket %}
+    <p class="hint muted">Нет договора у проекта и в профиле — заявку создать нельзя.</p>
     {% endif %}
 
     <form method="post" id="ticket-form">
