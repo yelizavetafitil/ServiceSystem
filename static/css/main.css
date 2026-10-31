@@ -2367,6 +2367,14 @@ body.cms-editor-immersive .topbar {
   visibility: visible;
   pointer-events: auto;
 }
+.EasyMDEContainer.cms-rich-toolbar.sided {
+  position: relative !important;
+  display: flex !important;
+  flex-direction: row !important;
+  flex-wrap: wrap !important;
+  align-content: flex-start !important;
+  background: #fff !important;
+}
 .EasyMDEContainer.cms-rich-toolbar.fullscreen {
   z-index: 2147482000 !important;
   position: relative !important;
@@ -2377,7 +2385,8 @@ body.cms-editor-immersive .topbar {
   background: #fff !important;
 }
 /* Toolbar on top (in flow) */
-.EasyMDEContainer.cms-rich-toolbar.fullscreen > .editor-toolbar {
+.EasyMDEContainer.cms-rich-toolbar.fullscreen > .editor-toolbar,
+.EasyMDEContainer.cms-rich-toolbar.sided > .editor-toolbar {
   display: flex !important;
   visibility: visible !important;
   opacity: 1 !important;
@@ -2451,8 +2460,8 @@ body.cms-editor-immersive .topbar {
   z-index: 1 !important;
 }
 /* Dual screen: editor | preview, sync scroll via EasyMDE (no custom listeners) */
-.EasyMDEContainer.cms-rich-toolbar.fullscreen.sided .CodeMirror,
-.EasyMDEContainer.cms-rich-toolbar.fullscreen.sided .CodeMirror-fullscreen {
+.EasyMDEContainer.cms-rich-toolbar.sided .CodeMirror,
+.EasyMDEContainer.cms-rich-toolbar.sided .CodeMirror-fullscreen {
   position: relative !important;
   top: auto !important;
   left: auto !important;
@@ -2467,13 +2476,13 @@ body.cms-editor-immersive .topbar {
   overflow: visible !important;
   z-index: 1 !important;
 }
-.EasyMDEContainer.cms-rich-toolbar.fullscreen.sided .CodeMirror-scroll {
+.EasyMDEContainer.cms-rich-toolbar.sided .CodeMirror-scroll {
   max-height: none !important;
   height: auto !important;
   overflow: visible !important;
 }
-.EasyMDEContainer.cms-rich-toolbar.fullscreen.sided .editor-preview-side,
-.EasyMDEContainer.cms-rich-toolbar.fullscreen.sided .editor-preview-active-side {
+.EasyMDEContainer.cms-rich-toolbar.sided .editor-preview-side,
+.EasyMDEContainer.cms-rich-toolbar.sided .editor-preview-active-side {
   display: block !important;
   position: relative !important;
   top: auto !important;
@@ -2493,28 +2502,6 @@ body.cms-editor-immersive .topbar {
   z-index: 1 !important;
 }
 
-/* For sided mode when NOT fullscreen */
-.EasyMDEContainer.cms-rich-toolbar.sided:not(.fullscreen) .CodeMirror,
-.EasyMDEContainer.cms-rich-toolbar.sided:not(.fullscreen) .CodeMirror-fullscreen {
-  width: 50% !important;
-  flex: 1 1 50% !important;
-  max-height: calc(100vh - var(--cms-toolbar-height, 96px)) !important;
-}
-.EasyMDEContainer.cms-rich-toolbar.sided:not(.fullscreen) .CodeMirror-scroll {
-  max-height: calc(100vh - var(--cms-toolbar-height, 96px)) !important;
-}
-.EasyMDEContainer.cms-rich-toolbar.sided:not(.fullscreen) .editor-preview-side,
-.EasyMDEContainer.cms-rich-toolbar.sided:not(.fullscreen) .editor-preview-active-side {
-  display: block !important;
-  width: 50% !important;
-  flex: 1 1 50% !important;
-  max-height: calc(100vh - var(--cms-toolbar-height, 96px)) !important;
-  overflow: auto !important;
-  padding: 8px 16px 16px !important;
-  background: #fff !important;
-  border-left: 1px solid var(--border);
-  box-sizing: border-box !important;
-}
 .CodeMirror-fullscreen {
   z-index: 1 !important;
 }
