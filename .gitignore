@@ -10,3 +10,46 @@ data/
 .idea/
 .vscode/
 docker/wheels/*.whl
+
+# Временные файлы тестирования
+test_html_entities.py
+test_align*.py
+test_norm*.py
+_*_test.py
+_cms_*_test.py
+
+# Временные файлы проверок (можно удалить после проверки)
+_*_doc.txt
+_*_extract.txt
+_*_errors.txt
+_pandoc_doc.txt
+_errors_doc.txt
+
+# Временные HTML для проверки верстки
+_recovered_*.html
+_editor_*.html
+_*.html
+_reg.html
+_l.html
+_ml.html
+_c.html
+
+# Временные cookies/headers
+cookies*.txt
+cur*.txt
+ip*.txt
+wifi*.txt
+h_*.txt
+c_*.txt
+m.txt
+mh.txt
+
+# Временные файлы проектов
+proj.html
+cab*.html
+login.html
+cur_*.html
+wifi_*.html
+
+# Временная папка с распакованными документами
+_postgar_check/
