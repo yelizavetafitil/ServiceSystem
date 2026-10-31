@@ -320,7 +320,7 @@ document.addEventListener('DOMContentLoaded', function() {
 
   function cmsEnterImmersive(container, editor) {
     document.body.classList.add('cms-editor-immersive');
-    if (editor && editor.options) editor.options.syncSideBySidePreviewScroll = true;
+    if (editor && editor.options) editor.options.syncSideBySidePreviewScroll = false;
     var tb = container.querySelector('.editor-toolbar');
     if (tb) {
       tb.classList.add('fullscreen');
@@ -406,7 +406,7 @@ document.addEventListener('DOMContentLoaded', function() {
       opts.status = ['lines', 'words', 'cursor'];
       opts.lineWrapping = true;
       opts.lineNumbers = false;
-      opts.syncSideBySidePreviewScroll = true;
+      opts.syncSideBySidePreviewScroll = false;
       opts.renderingConfig = {
         singleLineBreaks: false,
         codeSyntaxHighlighting: true,
