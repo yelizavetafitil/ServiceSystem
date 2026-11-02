@@ -58,7 +58,24 @@ class LocalStorageBackend(StorageBackend):
     def save_file(self, rel_path: str, file_obj) -> int:
         path = self._full(rel_path)
         os.makedirs(os.path.dirname(path), exist_ok=True)
-        file_obj.save(path)
+        if hasattr(file_obj, "save"):
+            file_obj.save(path)
+        else:
+            # file-like / BufferedReader без .save()
+            if hasattr(file_obj, "seek"):
+                try:
+                    file_obj.seek(0)
+                except OSError:
+                    pass
+            with open(path, "wb") as out:
+                if hasattr(file_obj, "read"):
+                    while True:
+                        chunk = file_obj.read(1024 * 1024)
+                        if not chunk:
+                            break
+                        out.write(chunk)
+                else:
+                    out.write(file_obj)
         return os.path.getsize(path)
 
     def size(self, rel_path: str) -> int:

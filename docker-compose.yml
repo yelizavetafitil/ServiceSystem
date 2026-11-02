@@ -33,7 +33,8 @@ services:
       FORCE_HTTPS: ${FORCE_HTTPS:-0}
       MAIL_ENABLED: ${MAIL_ENABLED:-0}
       STORAGE_BACKEND: ${STORAGE_BACKEND:-local}
-      TEMPLATES_AUTO_RELOAD: "1"
+      # В проде держать 0: иначе на каждом запросе Jinja трогает mtime шаблонов (тормоза на bind-mount).
+      TEMPLATES_AUTO_RELOAD: "${TEMPLATES_AUTO_RELOAD:-0}"
       PUBLIC_BASE_URL: ${PUBLIC_BASE_URL:-http://192.168.1.4:8095}
       MAX_UPLOAD_MB: ${MAX_UPLOAD_MB:-100}
       VIDEO_MAX_UPLOAD_MB: ${VIDEO_MAX_UPLOAD_MB:-1024}

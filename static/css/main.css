@@ -22,7 +22,7 @@ body { overflow-x: hidden; }
   --shadow: 0 8px 22px rgba(21, 45, 84, 0.1);
   --shadow-lg: 0 16px 40px rgba(8, 26, 72, 0.18);
   --radius: 14px;
-  --f: 'Inter', system-ui, sans-serif;
+  --f: system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
   --belnipi-cyan: #2a65c0;
   --brand-mark: #1c4f9c;
   --brand-mark-auth: #163a78;
