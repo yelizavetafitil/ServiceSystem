@@ -42,6 +42,9 @@ from servicesystem.project_management.services import (
     user_can_view_task,
     user_can_view_custom_field,
     sync_calendar_events_for_task,
+    move_task_kanban,
+    is_project_member,
+    cascade_fs_from_task,
 )
 from servicesystem.services.storage import get_storage
 
@@ -73,17 +76,119 @@ def task_update(tid):
         if project_id:
             return redirect(url_for("projects.arm", view="gantt", project=project_id))
         return redirect(url_for("projects.arm"))
-    if action == "complete":
-        if task_is_completion_blocked(task):
-            flash("Задача заблокирована связями — сначала завершите блокирующие.", "danger")
-            return redirect(url_for("projects.task_detail", tid=tid))
-        task.kanban_status = "done"
-        from datetime import datetime, timezone
+    if action in ("complete", "verify", "rework", "reject", "reopen_review", "uncomplete"):
+        report = (request.form.get("completion_report") or "").strip()
+        if "completion_report" in request.form:
+            task.completion_report = report or None
+        force_empty = request.form.get("force_empty_report") == "1"
+        can_plan = user_can_edit_task_plan(current_user, task)
 
-        task.completed_at = datetime.now(timezone.utc)
-        db.session.commit()
-        flash("Задача выполнена.", "success")
-        return redirect(url_for("projects.task_detail", tid=tid))
+        if action == "complete":
+            if task_is_completion_blocked(task):
+                flash("Задача заблокирована связями — сначала завершите блокирующие.", "danger")
+                return redirect(url_for("projects.task_detail", tid=tid))
+            if not (task.completion_report or "").strip() and not force_empty:
+                flash(
+                    "Отчёт о выполнении пуст. Подтвердите выполнение без отчёта или заполните поле.",
+                    "warning",
+                )
+                return redirect(url_for("projects.task_detail", tid=tid, highlight="report") + "#task-report")
+            move_task_kanban(
+                task,
+                "review",
+                task.kanban_sort or 0,
+                user_id=current_user.id,
+                note="Отправлено на верификацию",
+            )
+            db.session.commit()
+            flash("Задача отправлена на верификацию.", "success")
+            return redirect(url_for("projects.task_detail", tid=tid))
+
+        if action == "uncomplete":
+            # Исполнитель: снять с верификации → снова в работе
+            if task.kanban_status != "review":
+                flash("Снять с верификации можно только из статуса «На верификации».", "warning")
+                return redirect(url_for("projects.task_detail", tid=tid))
+            move_task_kanban(
+                task,
+                "in_progress",
+                task.kanban_sort or 0,
+                user_id=current_user.id,
+                note="Отменено выполнение / принято в работу",
+            )
+            db.session.commit()
+            flash("Задача снова в работе.", "success")
+            return redirect(url_for("projects.task_detail", tid=tid))
+
+        if action == "verify":
+            if not can_plan:
+                abort(403)
+            move_task_kanban(
+                task,
+                "done",
+                task.kanban_sort or 0,
+                user_id=current_user.id,
+                note="Проверено",
+            )
+            db.session.commit()
+            flash("Задача принята (выполнено).", "success")
+            return redirect(url_for("projects.task_detail", tid=tid))
+
+        if action == "reopen_review":
+            if not can_plan:
+                abort(403)
+            move_task_kanban(
+                task,
+                "review",
+                task.kanban_sort or 0,
+                user_id=current_user.id,
+                note="Возвращено на проверку",
+            )
+            db.session.commit()
+            flash("Задача возвращена на проверку.", "success")
+            return redirect(url_for("projects.task_detail", tid=tid))
+
+        if action == "rework":
+            if not can_plan:
+                abort(403)
+            comment = (request.form.get("rework_comment") or "").strip()
+            if not comment:
+                flash("Укажите комментарий для доработки.", "warning")
+                return redirect(url_for("projects.task_detail", tid=tid, highlight="report") + "#task-report")
+            task.priority = 4  # самый высший / срочная (красная)
+            move_task_kanban(
+                task,
+                "in_progress",
+                task.kanban_sort or 0,
+                user_id=current_user.id,
+                note=f"На доработку: {comment[:400]}",
+            )
+            db.session.add(
+                ProjectTaskComment(task_id=task.id, user_id=current_user.id, body=f"[На доработку] {comment}")
+            )
+            db.session.commit()
+            flash("Задача возвращена в работу как срочная.", "warning")
+            return redirect(url_for("projects.task_detail", tid=tid))
+
+        if action == "reject":
+            if not can_plan:
+                abort(403)
+            if not (task.completion_report or "").strip() and not force_empty:
+                flash(
+                    "Поле отчёта/причины пусто. Подтвердите отклонение без объяснения или заполните поле.",
+                    "warning",
+                )
+                return redirect(url_for("projects.task_detail", tid=tid, highlight="report") + "#task-report")
+            move_task_kanban(
+                task,
+                "rejected",
+                task.kanban_sort or 0,
+                user_id=current_user.id,
+                note="Отклонено (не потребовалось)",
+            )
+            db.session.commit()
+            flash("Задача отклонена.", "success")
+            return redirect(url_for("projects.task_detail", tid=tid))
     if action == "timer_start":
         timer_start(task, current_user.id)
         db.session.commit()
@@ -280,16 +385,32 @@ def task_update(tid):
         return redirect(url_for("projects.task_detail", tid=tid) + "#task-checklist")
 
     from servicesystem.project_management.models import TASK_KANBAN_COLUMNS
-    from servicesystem.project_management.services import is_project_member
 
     # Контент карточки — исполнитель и ГИП
     task.title = request.form["title"].strip()
-    task.description = (request.form.get("description") or "").strip() or None
-    new_status = request.form.get("kanban_status") or task.kanban_status
-    if new_status in TASK_KANBAN_COLUMNS:
-        task.kanban_status = new_status
-
     can_plan = user_can_edit_task_plan(current_user, task)
+    # Описание — только ГИП; исполнитель пишет отчёт о выполнении
+    if can_plan and "description" in request.form:
+        task.description = (request.form.get("description") or "").strip() or None
+    if "completion_report" in request.form:
+        task.completion_report = (request.form.get("completion_report") or "").strip() or None
+
+    new_status = request.form.get("kanban_status") or task.kanban_status
+    if can_plan and new_status in TASK_KANBAN_COLUMNS and new_status != task.kanban_status:
+        try:
+            move_task_kanban(
+                task,
+                new_status,
+                task.kanban_sort or 0,
+                user_id=current_user.id,
+                note="Смена статуса вручную",
+            )
+        except ValueError as exc:
+            if str(exc) == "blocked":
+                flash("Нельзя завершить: задача заблокирована связями.", "danger")
+                return redirect(url_for("projects.task_detail", tid=tid))
+            raise
+
     if can_plan:
         task.priority = int(request.form.get("priority") or 2)
         assignee_id = request.form.get("assignee_id", type=int) or None
@@ -353,8 +474,6 @@ def task_update(tid):
                 db.session.add(ProjectTaskCollaborator(task_id=task.id, user_id=uid_i))
     sync_calendar_events_for_task(task)
     if can_plan:
-        from servicesystem.project_management.services import cascade_fs_from_task
-
         cascade_fs_from_task(task)
     db.session.commit()
     from servicesystem.project_management.caldav_sync import try_push_task_to_caldav
@@ -475,8 +594,6 @@ def api_task_dates(tid):
         task.start_date = parse_optional_date(data["start_date"])
     if data.get("due_date"):
         task.due_date = parse_optional_date(data["due_date"])
-    from servicesystem.project_management.services import cascade_fs_from_task
-
     cascade_fs_from_task(task)
     sync_calendar_events_for_task(task)
     db.session.commit()

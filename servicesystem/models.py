@@ -69,16 +69,30 @@ class Contract(db.Model):
 
     @property
     def is_access_disabled(self) -> bool:
-        """Вход сотрудников закрыт: договор истёк/расторгнут или истёк мастер-ключ."""
+        """Мастер-вход/регистрация по ЭТОМУ договору закрыты: истёк/расторгнут или мастер-ключ."""
         return self.is_blocked or self.is_master_key_expired
 
     @property
+    def grants_portal_coverage(self) -> bool:
+        """Договор держит портальный доступ сотрудников организации (перекрывающий).
+
+        Учитывается срок обслуживания / расторжение. Мастер-ключ сюда не входит:
+        он ограничивает только master-login и регистрацию по конкретному договору,
+        а не доступ по перекрывающему договору разработки.
+        """
+        if self.status == "terminated":
+            return False
+        if self.is_expired:
+            return False
+        return True
+
+    @property
     def access_disabled_at(self):
-        """Дата отключения (мастер-ключ приоритетнее, иначе срок обслуживания)."""
-        if self.is_master_key_expired and self.master_key_expires_at:
-            return self.master_key_expires_at
+        """Дата отключения портала по этому договору (срок обслуживания; иначе мастер-ключ)."""
         if self.is_blocked and self.service_end_date:
             return self.service_end_date
+        if self.is_master_key_expired and self.master_key_expires_at:
+            return self.master_key_expires_at
         return None
 
     @property
@@ -94,6 +108,28 @@ class Contract(db.Model):
         if not self.service_end_date:
             return None
         return (self.service_end_date - datetime.now().date()).days
+
+    @staticmethod
+    def covering_for_organization(organization_id: int | None):
+        """Перекрывающий договор org: любой с действующим сроком обслуживания.
+
+        У организации может быть несколько договоров (обслуживание + разработка).
+        Доступ заказчиков сохраняется, пока действует хотя бы один.
+        Предпочтение — с наибольшим service_end_date.
+        """
+        if not organization_id:
+            return None
+        contracts = (
+            Contract.query.filter_by(organization_id=organization_id)
+            .order_by(Contract.service_end_date.desc().nullslast(), Contract.id.desc())
+            .all()
+        )
+        active = [c for c in contracts if c.grants_portal_coverage]
+        return active[0] if active else None
+
+    @staticmethod
+    def organization_grants_portal_access(organization_id: int | None) -> bool:
+        return Contract.covering_for_organization(organization_id) is not None
 
 
 class User(UserMixin, db.Model):
@@ -124,28 +160,59 @@ class User(UserMixin, db.Model):
     def check_password(self, password: str) -> bool:
         return check_password_hash(self.password_hash, password)
 
+    def portal_organization_id(self) -> int | None:
+        if self.organization_id:
+            return self.organization_id
+        if self.contract and self.contract.organization_id:
+            return self.contract.organization_id
+        return None
+
+    def covering_portal_contract(self):
+        """Договор, который сейчас держит доступ: свой или перекрывающий по организации."""
+        if self.contract and self.contract.grants_portal_coverage:
+            return self.contract
+        return Contract.covering_for_organization(self.portal_organization_id())
+
     @property
     def portal_access_on(self) -> bool:
-        """Доступ заказчика/куратора — по сроку договора (+ мастер-ключ не истёк)."""
+        """Доступ заказчика/куратора — свой договор или любой действующий договор организации."""
         if self.is_customer:
-            if not self.contract:
-                return False
-            if self.contract.is_access_disabled:
-                return False
-            # Флаг is_active должен совпадать с договором; при расхождении ориентир — договор
-            return True
+            return self.covering_portal_contract() is not None
         return bool(self.is_active)
 
     @property
     def portal_disabled_at(self):
-        if self.is_customer and self.contract and self.contract.is_access_disabled:
+        if not self.is_customer:
+            return None
+        if self.covering_portal_contract() is not None:
+            return None
+        # Нет перекрывающего — дата отключения по привязанному договору (или max по org)
+        if self.contract and self.contract.access_disabled_at:
             return self.contract.access_disabled_at
-        return None
+        org_id = self.portal_organization_id()
+        if not org_id:
+            return None
+        dates = [
+            c.access_disabled_at
+            for c in Contract.query.filter_by(organization_id=org_id).all()
+            if c.access_disabled_at
+        ]
+        return max(dates) if dates else None
 
     def contract_access_hint(self) -> str:
         """Подсказка при наведении на символ мастер-ключа / договора."""
         c = self.contract
         if not c:
+            cover = self.covering_portal_contract()
+            if cover:
+                return (
+                    f"Нет личного договора · доступ по перекрывающему №{cover.number}"
+                    + (
+                        f" до {cover.service_end_date.strftime('%d.%m.%Y')}"
+                        if cover.service_end_date
+                        else ""
+                    )
+                )
             return "Нет привязанного договора"
         parts = [f"Договор №{c.number}"]
         if c.service_end_date:
@@ -154,10 +221,23 @@ class User(UserMixin, db.Model):
             parts.append("срок обслуживания не задан")
         if c.master_key_expires_at:
             parts.append(f"мастер-ключ до {c.master_key_expires_at.strftime('%d.%m.%Y')}")
-        if c.is_access_disabled:
-            when = c.access_disabled_at
-            if when:
-                parts.append(f"отключён с {when.strftime('%d.%m.%Y')}")
+        if not c.grants_portal_coverage:
+            cover = Contract.covering_for_organization(c.organization_id)
+            if cover and cover.id != c.id:
+                parts.append(
+                    f"перекрыт договором №{cover.number}"
+                    + (
+                        f" до {cover.service_end_date.strftime('%d.%m.%Y')}"
+                        if cover.service_end_date
+                        else ""
+                    )
+                )
+            else:
+                when = c.access_disabled_at
+                if when:
+                    parts.append(f"отключён с {when.strftime('%d.%m.%Y')}")
+        elif c.is_master_key_expired:
+            parts.append("мастер-ключ истёк (портал по сроку обслуживания открыт)")
         return " · ".join(parts)
 
     @property

@@ -8,13 +8,9 @@
       {% from 'macros/logo.html' import belnipi_logo %}
       {{ belnipi_logo('auth-brand-mark brand-logo-mark') }}
       <div class="auth-brand-text">
-        <span class="auth-brand-line">{{ ORG_LEGAL_FORM }}</span>
-        <div class="auth-org">{{ ORG_NAME }}</div>
+        {% if ORG_NAME %}<span class="auth-brand-line">{{ ORG_NAME }}</span>{% endif %}
+        <span class="auth-brand-name">{{ APP_NAME }}</span>
       </div>
-    </div>
-
-    <div class="auth-intro auth-intro--service">
-      <p>Гарантийное и постгарантийное обслуживание электронных моделей систем теплоснабжения производственного назначения</p>
     </div>
 
     <div class="tabs auth-tabs">

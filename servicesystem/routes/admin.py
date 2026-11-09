@@ -79,10 +79,10 @@ bp = Blueprint("admin", __name__)
 
 
 def sync_contract_personal_access(contract: Contract) -> int:
-    """Истёк мастер-ключ или договор закрыт → персональные УЗ «Отключён».
+    """Синхронизация «Подключён» для УЗ договора с учётом перекрывающих договоров org.
 
-    При продлении мастер-ключа / срока обслуживания снова «Подключён».
-    Возвращает число затронутых учёток.
+    Доступ сохраняется, если у организации есть любой действующий договор
+    (обслуживание или разработка), даже если привязанный к УЗ истёк.
     """
     q = User.query.filter(
         User.contract_id == contract.id,
@@ -91,9 +91,11 @@ def sync_contract_personal_access(contract: Contract) -> int:
     users = q.all()
     if not users:
         return 0
-    want_active = not contract.is_access_disabled
+    # Перекрывающий по организации: свой активный ИЛИ любой другой активный договор org
+    org_grants = Contract.organization_grants_portal_access(contract.organization_id)
     changed = 0
     for u in users:
+        want_active = bool(u.covering_portal_contract()) if u.portal_organization_id() else org_grants
         if u.is_active != want_active:
             u.is_active = want_active
             changed += 1
@@ -101,14 +103,10 @@ def sync_contract_personal_access(contract: Contract) -> int:
 
 
 def sync_expired_master_key_access() -> int:
-    """Ленивая синхронизация: все договоры с истёкшим мастер-ключом / блоком."""
+    """Ленивая синхронизация: все договоры (истёкшие и действующие) → флаги УЗ."""
     total = 0
     for c in Contract.query.all():
-        if c.is_access_disabled:
-            total += sync_contract_personal_access(c)
-        else:
-            # Продлили ключ — вернуть доступ, если УЗ были отключены только из‑за срока
-            total += sync_contract_personal_access(c)
+        total += sync_contract_personal_access(c)
     return total
 
 
@@ -216,7 +214,8 @@ def contract_edit(cid):
         contract.status = request.form["status"]
         contract.notes = request.form.get("notes", "")
         contract.document_url = request.form.get("document_url", "").strip() or contract.document_url
-        synced = sync_contract_personal_access(contract)
+        # Синхронизируем УЗ по всей org (перекрывающие договоры разработки/обслуживания)
+        synced = sync_expired_master_key_access()
         users_count = User.query.filter(
             User.contract_id == cid,
             User.role.in_(("customer", "customer_curator")),
@@ -228,18 +227,27 @@ def contract_edit(cid):
             details += "; master_key_expired=1"
         log_audit(current_user.id, "contract_update", "contract", cid, details)
         db.session.commit()
-        if contract.is_access_disabled:
+        org_cover = Contract.covering_for_organization(contract.organization_id)
+        if not org_cover:
             when = contract.access_disabled_at
             when_txt = when.strftime("%d.%m.%Y") if when else "—"
-            reason = (
-                "истёк мастер-ключ"
-                if contract.is_master_key_expired
-                else "закрыт срок обслуживания / договор"
-            )
             flash(
-                f"Договор обновлён. Персональные УЗ отключены ({reason}, дата {when_txt}). "
-                f"Затронуто: {synced or users_count}.",
+                f"Договор обновлён. У организации нет действующего договора — "
+                f"портальный доступ закрыт (с {when_txt}). "
+                f"Изменено УЗ: {synced}.",
                 "warning",
+            )
+        elif not contract.grants_portal_coverage and org_cover.id != contract.id:
+            flash(
+                f"Договор обновлён. Доступ сотрудников сохранён по перекрывающему "
+                f"договору №{org_cover.number}"
+                + (
+                    f" до {org_cover.service_end_date.strftime('%d.%m.%Y')}"
+                    if org_cover.service_end_date
+                    else ""
+                )
+                + f". Изменено УЗ: {synced}.",
+                "success",
             )
         elif contract.service_end_date != old_end and users_count:
             flash(

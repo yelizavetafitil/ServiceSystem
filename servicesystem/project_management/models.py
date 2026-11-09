@@ -136,6 +136,8 @@ class ProjectTask(db.Model):
     created_at = db.Column(db.DateTime(timezone=True), default=_utcnow)
     updated_at = db.Column(db.DateTime(timezone=True), default=_utcnow, onupdate=_utcnow)
     completed_at = db.Column(db.DateTime(timezone=True))
+    # Отчёт исполнителя / объяснение при отклонении (замечания по проектам)
+    completion_report = db.Column(db.Text)
 
     project = db.relationship("Project", back_populates="tasks")
     stage = db.relationship("ProjectStage", back_populates="tasks")
@@ -148,6 +150,13 @@ class ProjectTask(db.Model):
         back_populates="task",
         lazy="dynamic",
         cascade="all, delete-orphan",
+    )
+    status_events = db.relationship(
+        "ProjectTaskStatusEvent",
+        back_populates="task",
+        lazy="dynamic",
+        cascade="all, delete-orphan",
+        order_by="ProjectTaskStatusEvent.created_at",
     )
     links_out = db.relationship(
         "ProjectTaskLink",
@@ -299,6 +308,25 @@ class ProjectTimeLog(db.Model):
     created_at = db.Column(db.DateTime(timezone=True), default=_utcnow)
 
     task = db.relationship("ProjectTask", back_populates="time_logs")
+    user = db.relationship("User")
+
+
+class ProjectTaskStatusEvent(db.Model):
+    """Журнал смен статуса / учёта времени на переход (только статусы, не правки полей)."""
+
+    __tablename__ = "project_task_status_events"
+
+    id = db.Column(db.Integer, primary_key=True)
+    task_id = db.Column(db.Integer, db.ForeignKey("project_tasks.id"), nullable=False, index=True)
+    user_id = db.Column(db.Integer, db.ForeignKey("users.id"))
+    from_status = db.Column(db.String(32))
+    to_status = db.Column(db.String(32), nullable=False)
+    note = db.Column(db.String(512))
+    # Накопленное time_spent_seconds задачи на момент перехода (для подбития)
+    time_spent_snapshot = db.Column(db.Integer, default=0)
+    created_at = db.Column(db.DateTime(timezone=True), default=_utcnow)
+
+    task = db.relationship("ProjectTask", back_populates="status_events")
     user = db.relationship("User")
 
 

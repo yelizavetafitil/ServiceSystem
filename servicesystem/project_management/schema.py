@@ -53,6 +53,7 @@ PROJECT_SCHEMA_PATCHES: tuple[str, ...] = (
     "ALTER TABLE project_calendar_feeds ADD COLUMN IF NOT EXISTS last_sync_message VARCHAR(512)",
     "ALTER TABLE project_calendar_feeds ADD COLUMN IF NOT EXISTS last_sync_at TIMESTAMPTZ",
     "ALTER TABLE project_calendar_feeds ADD COLUMN IF NOT EXISTS sync_enabled BOOLEAN DEFAULT FALSE",
+    "ALTER TABLE project_tasks ADD COLUMN IF NOT EXISTS completion_report TEXT",
 )
 
 
@@ -69,6 +70,19 @@ PROJECT_SCHEMA_DDL: tuple[str, ...] = (
     )
     """,
     "CREATE INDEX IF NOT EXISTS ix_project_task_checklist_items_task_id ON project_task_checklist_items (task_id)",
+    """
+    CREATE TABLE IF NOT EXISTS project_task_status_events (
+      id SERIAL PRIMARY KEY,
+      task_id INTEGER NOT NULL REFERENCES project_tasks(id) ON DELETE CASCADE,
+      user_id INTEGER REFERENCES users(id),
+      from_status VARCHAR(32),
+      to_status VARCHAR(32) NOT NULL,
+      note VARCHAR(512),
+      time_spent_snapshot INTEGER DEFAULT 0,
+      created_at TIMESTAMPTZ DEFAULT NOW()
+    )
+    """,
+    "CREATE INDEX IF NOT EXISTS ix_project_task_status_events_task_id ON project_task_status_events (task_id)",
 )
 
 

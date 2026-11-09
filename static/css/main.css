@@ -163,7 +163,16 @@ body.auth-body .auth-page {
 .topbar-nav a:hover,
 .topbar-nav a.active { background: var(--surface-muted); color: var(--primary); }
 .nav-short { display: none; }
-.brand-tag { display: none; }
+.brand-tag {
+  display: block;
+  font-size: 11px;
+  color: var(--muted);
+  line-height: 1.25;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  max-width: min(240px, 22vw);
+}
 
 .brand { display: flex; align-items: center; gap: 12px; text-decoration: none; color: inherit; min-width: 0; }
 .brand-text { min-width: 0; }
@@ -172,28 +181,28 @@ body.auth-body .auth-page {
   flex-shrink: 0;
   display: block;
   background-color: var(--brand-mark);
-  mask-image: url('../img/belnipi-logo.png');
+  mask-image: url('../img/progress-mark.svg');
   mask-size: contain;
   mask-repeat: no-repeat;
   mask-position: center;
-  -webkit-mask-image: url('../img/belnipi-logo.png');
+  -webkit-mask-image: url('../img/progress-mark.svg');
   -webkit-mask-size: contain;
   -webkit-mask-repeat: no-repeat;
   -webkit-mask-position: center;
 }
 .brand-logo-mark {
-  width: 48px;
-  height: 48px;
+  width: 40px;
+  height: 40px;
 }
 .auth-brand-mark {
-  width: 58px;
-  height: 58px;
+  width: 56px;
+  height: 56px;
   background-color: var(--brand-mark-auth);
 }
 .brand-logo, .auth-logo-img {
-  width: 48px;
-  height: 48px;
-  max-width: 48px;
+  width: 40px;
+  height: 40px;
+  max-width: 40px;
   display: block;
   flex-shrink: 0;
   object-fit: contain;
@@ -208,7 +217,6 @@ body.auth-body .auth-page {
   margin-bottom: 2px;
 }
 .brand-name { font-size: 14px; font-weight: 800; letter-spacing: -.01em; display: block; color: var(--brand-mark-auth); line-height: 1.2; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; text-transform: uppercase; }
-.brand-tag { font-size: 11px; color: var(--muted); display: block; line-height: 1.25; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .customer-ticket-dates { margin: 0; display: grid; gap: 0; }
 .customer-ticket-dates-row {
   display: grid;
@@ -2796,7 +2804,7 @@ body.cms-editor-immersive .EasyMDEContainer.cms-rich-toolbar.sided {
   }
   .nav-long { display: none; }
   .nav-short { display: inline; }
-  .brand-logo-mark { width: 40px; height: 40px; }
+  .brand-logo-mark { width: 36px; height: 36px; }
   .brand-name { font-size: 11px; max-width: 100%; }
   .user-pill {
     max-width: 96px;

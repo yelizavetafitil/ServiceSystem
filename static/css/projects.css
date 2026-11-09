@@ -1,5 +1,5 @@
 .container-wide { max-width: 1280px; }
-.projects-gantt-page.container-wide { max-width: 1440px; }
+.projects-gantt-page.container-wide { max-width: none; }
 .projects-gantt-intro { margin: 0 0 14px; font-size: 13px; line-height: 1.55; max-width: 960px; }
 .projects-arm-header { flex-wrap: wrap; gap: 12px; }
 .projects-arm-icon-btn {
@@ -32,7 +32,7 @@
 .projects-filter-form select { min-width: 200px; }
 .projects-filters {
   position: relative;
-  z-index: 20;
+  z-index: 120;
 }
 .projects-filters-toggle {
   max-width: min(420px, 70vw);
@@ -59,10 +59,19 @@
   background: #fff;
   border: 1px solid var(--border);
   border-radius: 12px;
-  box-shadow: 0 10px 28px rgba(15, 23, 42, 0.12);
+  box-shadow: 0 12px 32px rgba(15, 23, 42, 0.18);
   display: none;
   flex-direction: column;
   gap: 12px;
+  z-index: 130;
+  isolation: isolate;
+  /* непрозрачный фон — шкала Ганта/календарь не просвечивают */
+  background-color: #ffffff;
+  -webkit-backdrop-filter: none;
+  backdrop-filter: none;
+}
+.projects-filters.is-open {
+  z-index: 200;
 }
 .projects-filters.is-open .projects-filters-panel {
   display: flex;
@@ -89,10 +98,151 @@
   gap: 8px;
   margin-top: 4px;
 }
+.projects-kanban-toolbar {
+  position: relative;
+  z-index: 2;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px 12px;
+  margin: 0 0 14px;
+  align-items: center;
+}
+.projects-kanban-toggle {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--muted);
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  cursor: pointer;
+  text-decoration: none;
+  padding: 6px 12px;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  background: #fff;
+  line-height: 1.2;
+  user-select: none;
+}
+.projects-kanban-toggle:hover {
+  border-color: #b8d4f5;
+  color: var(--primary-dark);
+}
+.projects-kanban-toggle.is-on {
+  background: var(--primary-muted);
+  color: var(--primary-dark);
+  border-color: #b8d4f5;
+}
+.projects-kanban-toggle-box {
+  width: 14px;
+  height: 14px;
+  border-radius: 4px;
+  border: 1.5px solid #94a3b8;
+  background: #fff;
+  flex-shrink: 0;
+  box-sizing: border-box;
+}
+.projects-kanban-toggle.is-on .projects-kanban-toggle-box {
+  background: var(--primary);
+  border-color: var(--primary);
+  box-shadow: inset 0 0 0 2px #fff;
+}
+.projects-arm-header,
+.projects-arm-header.page-header {
+  position: relative;
+  z-index: 100;
+  isolation: isolate;
+  background: transparent;
+}
+.projects-arm-header .page-header-actions {
+  position: relative;
+  z-index: 110;
+}
+.projects-view-tabs {
+  position: relative;
+  z-index: 1;
+}
 .projects-kanban { display: grid; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); gap: 12px; align-items: start; }
 .projects-kanban-col { background: #f4f7fb; border: 1px solid var(--border); border-radius: var(--radius); padding: 10px; min-height: 320px; }
+.projects-kanban-col--waiting { background: #f8fafc; border-style: dashed; }
+.projects-kanban-col--waiting .projects-kanban-col-title { color: #64748b; }
 .projects-kanban-col-title { margin: 0 0 10px; font-size: 13px; font-weight: 700; color: var(--primary-dark); }
+.projects-kanban-col-hint {
+  margin: -4px 0 10px;
+  font-size: 11px;
+  line-height: 1.35;
+  color: var(--muted);
+}
 .projects-kanban-drop { display: flex; flex-direction: column; gap: 8px; min-height: 200px; }
+.projects-kanban-archive-hint {
+  margin: 0 0 12px;
+  padding: 10px 14px;
+  border: 1px solid #b8d4f5;
+  border-radius: 10px;
+  background: #eef5ff;
+  font-size: 13px;
+  color: var(--primary-dark);
+}
+.projects-kanban-archive-hint a {
+  font-weight: 700;
+  color: var(--primary);
+  margin-left: 6px;
+}
+.projects-kanban-card-top {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  margin-bottom: 6px;
+}
+.projects-kanban-wbs {
+  display: inline-block;
+  font-size: 10px;
+  font-weight: 800;
+  font-variant-numeric: tabular-nums;
+  color: var(--primary);
+  background: #e8f0fe;
+  border-radius: 4px;
+  padding: 1px 5px;
+}
+.projects-kanban-kind {
+  display: inline-block;
+  font-size: 10px;
+  font-weight: 700;
+  text-transform: lowercase;
+  color: #64748b;
+  background: #f1f5f9;
+  border-radius: 4px;
+  padding: 1px 6px;
+}
+.projects-kanban-kind--task {
+  color: var(--primary-dark);
+  background: #e8f0fe;
+}
+.projects-kanban-parent-tag {
+  display: inline-flex;
+  max-width: 100%;
+  margin: 6px 0 0;
+  padding: 3px 8px;
+  border-radius: 6px;
+  border: 1px solid #c7d7f0;
+  background: #f5f9ff;
+  color: var(--primary);
+  font-size: 11px;
+  font-weight: 600;
+  line-height: 1.3;
+  text-decoration: none;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.projects-kanban-parent-tag:hover {
+  border-color: var(--primary);
+  background: #e8f0fe;
+}
+.projects-kanban-parent { margin: 4px 0 0; font-size: 11px; color: var(--muted); }
+.projects-kanban-parent a { color: var(--primary); text-decoration: none; font-weight: 600; }
+.projects-kanban-parent a:hover { text-decoration: underline; }
+.projects-kanban-card.is-dragging { opacity: 0.55; }
 .projects-kanban-card {
   background: #fff;
   border: 1px solid var(--border);
@@ -100,6 +250,9 @@
   padding: 10px 12px;
   box-shadow: 0 1px 4px rgba(21,45,84,.06);
   cursor: grab;
+}
+.projects-kanban-card--locked {
+  cursor: default;
 }
 .projects-kanban-card--high { border-left: 3px solid #d97706; }
 .projects-kanban-card--critical { border-left: 3px solid #dc2626; animation: projects-pulse 1.5s ease-in-out infinite; }
@@ -136,7 +289,202 @@
 .projects-calendar-event.is-span-start { border-radius: 4px 0 0 4px; }
 .projects-calendar-event.is-span-mid { border-radius: 0; }
 .projects-calendar-event.is-span-end { border-radius: 0 4px 4px 0; }
+/* Только Гант: компактная шапка + вписать в окно без скролла браузера */
+.projects-gantt-page.projects-arm-page {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  width: 100%;
+  max-width: none;
+}
+.projects-gantt-page .projects-arm-header.page-header {
+  flex-shrink: 0;
+  margin: 0 0 10px;
+  gap: 8px;
+  align-items: center;
+}
+.projects-gantt-page .projects-arm-header h1 {
+  font-size: 20px;
+  margin: 0;
+  line-height: 1.2;
+}
+.projects-gantt-page .projects-view-tabs { margin-top: 4px; }
+.projects-gantt-page .projects-view-tab { padding: 4px 10px; font-size: 12px; }
+.projects-gantt-page .projects-gantt-toolbar,
+.projects-gantt-page .projects-gantt-add-bar {
+  flex-shrink: 0;
+  margin-bottom: 8px;
+}
+.projects-gantt-page .projects-gantt-add-hint { display: none; }
+.projects-gantt-page .projects-gantt-legend--inline {
+  display: inline-flex;
+  flex-wrap: nowrap;
+  gap: 6px 10px;
+  margin: 0 8px 0 0;
+  font-size: 11px;
+  align-items: center;
+  flex-shrink: 1;
+  min-width: 0;
+  overflow-x: auto;
+  scrollbar-width: none;
+}
+.projects-gantt-page .projects-gantt-legend--inline::-webkit-scrollbar { display: none; }
+.projects-gantt-page .projects-gantt-chart {
+  flex: 1 1 auto;
+  min-height: 220px;
+  display: flex;
+  flex-direction: column;
+  margin: 0;
+}
+.projects-gantt-toolbar-period {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+}
+/* Страница /projects/archive */
+.projects-archive-lead {
+  margin: 6px 0 0;
+  font-size: 13px;
+  max-width: 640px;
+}
+.projects-archive-filter {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 12px;
+  margin: 0 0 16px;
+}
+.projects-archive-filter label {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--primary-dark);
+}
+.projects-archive-filter .form-control {
+  min-width: 220px;
+  max-width: 360px;
+}
+.projects-archive-section {
+  margin-bottom: 16px;
+}
+.projects-archive-row-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  justify-content: flex-end;
+  white-space: nowrap;
+}
+
+/* Гант, большой экран: без вертикального скролла браузера */
+@media (min-width: 900px) and (min-height: 640px) {
+  html:has(body.projects-gantt-lock),
+  body.projects-gantt-lock {
+    height: 100%;
+    max-height: 100dvh;
+    overflow: hidden;
+  }
+  body.projects-gantt-lock .shell {
+    height: 100dvh;
+    max-height: 100dvh;
+    min-height: 0;
+    overflow: hidden;
+  }
+  body.projects-gantt-lock .main-content {
+    flex: 1 1 auto;
+    min-height: 0;
+    display: flex;
+    flex-direction: column;
+    padding: 8px 14px 10px;
+    overflow: hidden;
+  }
+  body.projects-gantt-lock .main-content > .flash-messages,
+  body.projects-gantt-lock .main-content > .alert {
+    flex-shrink: 0;
+    margin-bottom: 6px;
+  }
+  body.projects-gantt-lock .projects-gantt-page {
+    flex: 1 1 auto;
+    min-height: 0;
+    height: 100%;
+    overflow: hidden;
+    margin: 0;
+  }
+}
+
+/* Гант на узком/низком экране: обычный скролл страницы */
+@media (max-width: 899px), (max-height: 639px) {
+  body.projects-gantt-lock {
+    overflow: auto;
+    height: auto;
+    max-height: none;
+  }
+  body.projects-gantt-lock .shell {
+    height: auto;
+    max-height: none;
+    overflow: visible;
+  }
+  body.projects-gantt-lock .main-content {
+    display: block;
+    overflow: visible;
+    padding: 14px 12px 24px;
+  }
+  .projects-gantt-page .projects-gantt-hscroll {
+    max-height: min(65dvh, 640px);
+  }
+  .projects-gantt-page .projects-gantt-hscroll::-webkit-scrollbar {
+    height: 10px;
+  }
+  .projects-gantt-toolbar--oneline {
+    flex-wrap: wrap;
+  }
+  .projects-gantt-page .projects-gantt-legend--inline {
+    display: none;
+  }
+}
+
+@media (max-width: 720px) {
+  .projects-gantt-page .projects-arm-header.page-header {
+    flex-direction: column;
+    align-items: stretch;
+  }
+  .projects-gantt-page .page-header-actions {
+    width: 100%;
+  }
+  .projects-filters-toggle {
+    max-width: 100%;
+  }
+  .projects-kanban {
+    grid-template-columns: 1fr;
+  }
+  .projects-gantt-page {
+    --gantt-side-w: min(220px, 42vw);
+  }
+}
 .projects-gantt-toolbar { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 12px; align-items: center; }
+.projects-gantt-toolbar--oneline {
+  flex-wrap: nowrap;
+  overflow-x: auto;
+  overflow-y: hidden;
+  -webkit-overflow-scrolling: touch;
+  scrollbar-width: thin;
+  padding-bottom: 2px;
+}
+.projects-gantt-zoom { display: inline-flex; gap: 4px; flex-shrink: 0; }
+.projects-gantt-toolbar-period { margin-left: auto; white-space: nowrap; font-size: 12px; }
+.projects-gantt-hscroll-top {
+  overflow-x: auto;
+  overflow-y: hidden;
+  height: 14px;
+  flex-shrink: 0;
+  border-bottom: 1px solid var(--border);
+  background: #f8fafc;
+}
+.projects-gantt-hscroll-top-inner { height: 1px; }
+.projects-gantt-hscroll-top::-webkit-scrollbar { height: 12px; }
+.projects-gantt-hscroll-top::-webkit-scrollbar-thumb {
+  background: #94a3b8;
+  border-radius: 6px;
+}
 .projects-calendar-toolbar { row-gap: 8px; }
 .projects-calendar-assignee-filter {
   display: flex;
@@ -293,6 +641,9 @@
 .projects-view-tab--sm { font-size: 12px; padding: 5px 12px; }
 
 .projects-gantt-chart {
+  position: relative;
+  z-index: 1;
+  isolation: isolate; /* sticky-шкала не перекрывает выпадающие панели шапки */
   background: #fff;
   border: 1px solid var(--border);
   border-radius: 12px;
@@ -300,11 +651,125 @@
   box-shadow: var(--shadow);
 }
 .projects-gantt-hscroll {
-  /* Горизонталь: весь срок проекта; вертикаль: список задач */
+  /* Горизонталь управляется верхним треком; вертикаль — при переполнении */
   overflow-x: auto;
   overflow-y: auto;
-  max-height: calc(100dvh - 220px);
-  scrollbar-gutter: stable;
+  flex: 1 1 auto;
+  min-height: 0;
+  max-height: none;
+  scrollbar-width: thin;
+}
+.projects-gantt-page .projects-gantt-hscroll {
+  overflow-x: auto;
+  overflow-y: auto;
+  /* нижний горизонтальный скроллбар скрыт — пользуется верхний трек */
+  scrollbar-width: thin;
+}
+.projects-gantt-page .projects-gantt-hscroll::-webkit-scrollbar {
+  width: 10px;
+  height: 0;
+}
+.projects-gantt-page .projects-gantt-hscroll::-webkit-scrollbar:vertical {
+  width: 10px;
+}
+.projects-task-actions-bar {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  margin: 16px 0 0;
+  padding: 14px 0 0;
+  border-top: 1px solid var(--border, #e2e8f0);
+}
+.projects-task-actions-bar__primary,
+.projects-task-actions-bar--secondary {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px;
+  row-gap: 10px;
+}
+.projects-task-actions-bar--secondary {
+  /* отступ между «Вложенность» и «Дублировать» */
+  margin-top: 18px;
+  padding-top: 14px;
+  border-top: 1px solid var(--border, #e2e8f0);
+  flex-direction: column;
+  align-items: flex-start;
+  justify-content: flex-start;
+}
+.projects-task-actions-bar--secondary .btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 9rem;
+  padding-left: 16px;
+  padding-right: 16px;
+  box-sizing: border-box;
+  text-align: center;
+}
+.projects-task-actions-bar__form {
+  display: inline-flex;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  vertical-align: middle;
+}
+.projects-task-actions-bar .btn,
+.projects-task-actions-bar__primary .btn,
+.projects-task-actions-bar--secondary .btn {
+  margin: 0;
+  flex: 0 0 auto;
+}
+.projects-task-collab-readonly {
+  margin: 8px 0 0;
+  font-size: 13px;
+  line-height: 1.4;
+  color: var(--text);
+}
+.projects-task-collab-readonly .projects-task-desc-label {
+  display: block;
+  margin-bottom: 2px;
+}
+.projects-task-title-input.is-urgent {
+  color: #b91c1c;
+  border-color: #fecaca;
+}
+.projects-task-main-card:has(.is-urgent) {
+  box-shadow: inset 3px 0 0 #dc2626;
+}
+.projects-status-journal {
+  padding: 10px 12px;
+}
+.projects-status-journal-summary {
+  cursor: pointer;
+  list-style: none;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 0;
+  font-size: 14px;
+}
+.projects-status-journal-summary::-webkit-details-marker { display: none; }
+.projects-status-journal-summary::before {
+  content: "▸";
+  color: #94a3b8;
+  font-size: 12px;
+}
+.projects-status-journal[open] > .projects-status-journal-summary::before { content: "▾"; }
+.projects-status-journal-count {
+  font-size: 12px;
+  font-weight: 600;
+}
+.projects-status-journal-list {
+  margin-top: 8px;
+  max-height: 220px;
+  overflow: auto;
+  scrollbar-width: thin;
+}
+#task-completion-report.is-invalid {
+  border-color: #dc2626 !important;
+  box-shadow: 0 0 0 3px rgba(220, 38, 38, 0.15);
+  background: #fef2f2;
 }
 /* Ширина шкалы = число колонок × фиксированная ширина колонки (прокрутка по сроку проекта) */
 .projects-gantt-scroll-sizer {
@@ -345,7 +810,7 @@
   width: var(--gantt-side-w, 320px);
   position: sticky;
   left: 0;
-  /* Выше SVG: стрелки рисуются под панелью и там «обрезаются» */
+  /* Выше SVG внутри диаграммы; ниже шапки АРМ (z-index 100+) */
   z-index: 8;
   background: #fff;
   box-shadow: 4px 0 8px rgba(21, 45, 84, 0.06);
@@ -1109,7 +1574,7 @@ button.projects-task-checklist-check:hover {
   padding: 8px 18px;
 }
 .projects-task-more {
-  margin: 0;
+  margin: 12px 0 0;
   border: 1px solid var(--border, #e2e8f0);
   border-radius: 8px;
   padding: 0 10px 8px;
@@ -1133,13 +1598,14 @@ button.projects-task-checklist-check:hover {
 .projects-task-brief-actions {
   display: flex;
   flex-wrap: wrap;
-  gap: 8px;
+  gap: 10px;
+  row-gap: 10px;
   align-items: center;
   margin: 2px 0 0;
   padding-top: 8px;
   border-top: 1px solid var(--border, #e2e8f0);
 }
-.projects-task-brief-actions--secondary {
+.projects-task-brief-actions--secondary:not(.projects-task-brief-actions--footer) {
   margin-top: 0;
   padding-top: 0;
   border-top: 0;
@@ -2275,7 +2741,7 @@ button.projects-task-checklist-check:hover {
   width: min(360px, calc(100vw - 32px));
   max-height: calc(100vh - 96px);
   overflow: auto;
-  z-index: 40;
+  z-index: 220;
   background: #fff;
   border: 1px solid var(--border);
   border-radius: 12px;
@@ -2305,7 +2771,7 @@ button.projects-task-checklist-check:hover {
 .projects-gantt-bar.is-link-source { outline: 2px solid var(--primary); outline-offset: 2px; }
 .projects-gantt-ctx-menu {
   position: fixed;
-  z-index: 50;
+  z-index: 230;
   min-width: 240px;
   padding: 6px;
   background: #fff;

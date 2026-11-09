@@ -2,11 +2,13 @@
 
 {% block title %}Проекты — диаграмма Ганта{% endblock %}
 
+{% block body_class %} projects-gantt-lock{% endblock %}
+
 {% block head %}
 
-<link rel="stylesheet" href="{{ url_for('static', filename='css/projects.css') }}?v=99">
+<link rel="stylesheet" href="{{ url_for('static', filename='css/projects.css') }}?v=131">
 
-<script defer src="{{ url_for('static', filename='js/projects-gantt.js') }}?v=67"></script>
+<script defer src="{{ url_for('static', filename='js/projects-gantt.js') }}?v=72"></script>
 
 {% endblock %}
 
@@ -16,22 +18,41 @@
 {% set gantt_px = gantt_col_px|default(56) %}
 {% set gantt_grid = 'repeat(' ~ gantt_n ~ ', ' ~ gantt_px ~ 'px)' %}
 
-<div class="container container-wide cms-page projects-page projects-gantt-page">
+<div class="container container-wide cms-page projects-page projects-arm-page projects-gantt-page">
 
   {% include "projects/_arm_header.html" %}
 
-  <div class="projects-gantt-toolbar">
+  <div class="projects-gantt-toolbar projects-gantt-toolbar--oneline">
     <div class="projects-gantt-pan" role="group" aria-label="Прокрутка шкалы">
-      <button type="button" class="btn btn-outline btn-sm" id="gantt-pan-left" title="Прокрутить к началу проекта">←</button>
+      <button type="button" class="btn btn-outline btn-sm" id="gantt-pan-left" title="Назад на 1 шаг зума">←</button>
       <button type="button" class="btn btn-outline btn-sm" id="gantt-pan-today" title="Показать сегодня">Сегодня</button>
-      <button type="button" class="btn btn-outline btn-sm" id="gantt-pan-right" title="Прокрутить к дедлайну проекта">→</button>
+      <button type="button" class="btn btn-outline btn-sm" id="gantt-pan-right" title="Вперёд на 1 шаг зума">→</button>
     </div>
-
+    <span class="projects-gantt-toolbar-sep"></span>
+    <div class="projects-gantt-zoom" role="group" aria-label="Зум шкалы">
+      {% set zoom_base = url_for('projects.arm', view='gantt', project=filter_project) if filter_project else url_for('projects.arm', view='gantt') %}
+      {% for z, zl in [('day','День'),('week','Нед'),('month','Мес'),('quarter','Кварт')] %}
+      <a class="btn btn-sm {% if gantt_scale == z %}btn-primary{% else %}btn-outline{% endif %}"
+         href="{{ zoom_base }}{% if '?' in zoom_base %}&{% else %}?{% endif %}scale={{ z }}&group={{ gantt_group|default('project') }}&subtasks={{ 1 if gantt_show_subtasks|default(true) else 0 }}">{{ zl }}</a>
+      {% endfor %}
+    </div>
     {% if gantt_can_edit %}
     <span class="projects-gantt-toolbar-sep"></span>
     <button type="button" class="btn btn-outline btn-sm" id="gantt-link-mode-btn" data-gantt-link-toggle>Выполнить после…</button>
-    <span class="muted projects-gantt-link-hint" id="gantt-link-hint" hidden>Клик: задача, затем укажите предшествующую (или ПКМ)</span>
+    <span class="muted projects-gantt-link-hint" id="gantt-link-hint" hidden>Клик: задача → предшествующая</span>
     {% endif %}
+    <span class="projects-gantt-legend-period muted projects-gantt-toolbar-period">
+      <span class="projects-gantt-legend projects-gantt-legend--inline projects-gantt-legend--compact" title="Легенда">
+        <span class="projects-gantt-legend-item"><i class="swatch p-1"></i>низш.</span>
+        <span class="projects-gantt-legend-item"><i class="swatch p-2"></i>обычн.</span>
+        <span class="projects-gantt-legend-item"><i class="swatch p-3"></i>выс.</span>
+        <span class="projects-gantt-legend-item"><i class="swatch p-4"></i>крит.</span>
+        <span class="projects-gantt-legend-item"><i class="swatch is-sla"></i>SLA</span>
+        <span class="projects-gantt-legend-item"><i class="swatch is-fs"></i>FS</span>
+        <span class="projects-gantt-legend-item"><i class="swatch is-milestone"></i>этап</span>
+      </span>
+      <strong>{{ gantt_scale_label }}</strong> · {{ gantt_period_label|default(gantt_span_label) }}
+    </span>
   </div>
 
   {% if gantt_can_edit %}
@@ -60,19 +81,6 @@
 
 
 
-  <div class="projects-gantt-legend projects-gantt-legend--compact">
-    <span class="projects-gantt-legend-item"><i class="swatch p-1"></i>низш.</span>
-    <span class="projects-gantt-legend-item"><i class="swatch p-2"></i>обычн.</span>
-    <span class="projects-gantt-legend-item"><i class="swatch p-3"></i>выс.</span>
-    <span class="projects-gantt-legend-item"><i class="swatch p-4"></i>крит.</span>
-    <span class="projects-gantt-legend-item"><i class="swatch is-sla"></i>SLA</span>
-    <span class="projects-gantt-legend-item"><i class="swatch is-fs"></i>FS</span>
-    <span class="projects-gantt-legend-item"><i class="swatch is-milestone"></i>дедлайн этапа</span>
-    <span class="projects-gantt-legend-period muted"><strong>{{ gantt_scale_label }}</strong> · {{ gantt_period_label|default(gantt_span_label) }}</span>
-  </div>
-
-
-
   {% if (gantt_bars or gantt_undated) and gantt_n > 0 %}
 
   <div class="projects-gantt-chart" data-gantt-chart
@@ -93,7 +101,10 @@
 
 
 
-    <div class="projects-gantt-hscroll">
+    <div class="projects-gantt-hscroll-top" id="gantt-hscroll-top" aria-hidden="true">
+      <div class="projects-gantt-hscroll-top-inner"></div>
+    </div>
+    <div class="projects-gantt-hscroll" id="gantt-hscroll">
 
       <div class="projects-gantt-scroll-sizer">
 

@@ -25,7 +25,7 @@ class Config:
     # Публичный адрес для ссылок в письмах и подписках (ICS). Пример: http://192.168.3.125:8095
     PUBLIC_BASE_URL = (os.environ.get("PUBLIC_BASE_URL") or "").strip().rstrip("/")
 
-    APP_NAME = os.environ.get("APP_NAME", "Сервис ЭМСТПН")
+    APP_NAME = os.environ.get("APP_NAME", "ПРОГРЕСС")
     ORG_NAME = os.environ.get("ORG_NAME", 'РУП «Белнипиэнергопром»')
     ORG_LEGAL_FORM = os.environ.get(
         "ORG_LEGAL_FORM",

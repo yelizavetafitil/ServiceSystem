@@ -308,11 +308,18 @@ def update_customer_curator_window(project: Project) -> None:
         if not curator.organization_id:
             curator.organization_id = contract.organization_id
 
-    # «Подключён» только пока договор и мастер-ключ действительны
-    if contract and contract.is_access_disabled:
-        curator.is_active = False
-    else:
+    # «Подключён», пока действует свой или перекрывающий договор организации
+    org_id = (
+        curator.organization_id
+        or (contract.organization_id if contract else None)
+        or (project.contract.organization_id if project.contract else None)
+    )
+    from servicesystem.models import Contract as ContractModel
+
+    if ContractModel.organization_grants_portal_access(org_id):
         curator.is_active = True
+    else:
+        curator.is_active = False
 
     # Приостановленный (но не истёкший) договор снова активируем
     if contract and contract.status == "suspended" and not contract.is_expired:
@@ -320,9 +327,11 @@ def update_customer_curator_window(project: Project) -> None:
 
 
 def ensure_customer_curator_contract_access(user: User) -> bool:
-    """Роль/привязка куратора; вход разрешён, пока договор не закрыт по сроку."""
+    """Роль/привязка куратора; вход разрешён при своём или перекрывающем договоре org."""
     if not user or user.role != "customer_curator":
-        return bool(user and user.contract and not user.contract.is_blocked)
+        if not user:
+            return False
+        return user.covering_portal_contract() is not None
 
     from servicesystem.project_management.models import Project
 
@@ -342,10 +351,7 @@ def ensure_customer_curator_contract_access(user: User) -> bool:
             if not user.organization_id:
                 user.organization_id = contract.organization_id
 
-    if not contract:
-        user.is_active = False
-        return False
-    if contract.is_access_disabled:
+    if user.covering_portal_contract() is None:
         user.is_active = False
         return False
     user.is_active = True
@@ -1281,6 +1287,84 @@ def set_stage_acceptance(
             stage.remarks_note = None
 
 
+def stage_tasks_active_count(stage_id: int) -> int:
+    """Задачи этапа, ещё не в архиве (для предложения архивации после приёмки)."""
+    return (
+        ProjectTask.query.filter(
+            ProjectTask.stage_id == stage_id,
+            ProjectTask.kanban_status != "archived",
+        ).count()
+    )
+
+
+def stages_pending_archive_prompt(*, project_id: int | None = None) -> list[dict]:
+    """Этапы, принятые куратором, у которых ещё есть незаархивированные задачи."""
+    q = ProjectStage.query.filter(
+        ProjectStage.acceptance_status.in_(("accepted", "accepted_remarks")),
+    )
+    if project_id:
+        q = q.filter(ProjectStage.project_id == project_id)
+    out: list[dict] = []
+    for st in q.order_by(ProjectStage.acceptance_at.desc()).limit(30).all():
+        n = stage_tasks_active_count(st.id)
+        if n <= 0:
+            continue
+        proj = st.project
+        out.append(
+            {
+                "stage_id": st.id,
+                "stage_title": st.title,
+                "project_id": st.project_id,
+                "project_name": proj.name if proj else "",
+                "task_count": n,
+                "acceptance_label": st.acceptance_label,
+            }
+        )
+    return out
+
+
+def archive_stage_tasks(stage: ProjectStage, user: User) -> int:
+    """Архивировать все задачи этапа (скрываются с канбана/ганта). Возвращает число."""
+    tasks = ProjectTask.query.filter(
+        ProjectTask.stage_id == stage.id,
+        ProjectTask.kanban_status != "archived",
+    ).all()
+    n = 0
+    for t in tasks:
+        move_task_kanban(
+            t,
+            "archived",
+            t.kanban_sort or 0,
+            user_id=user.id,
+            note=f"Архив после приёмки этапа «{stage.title}»",
+            sync_timer=True,
+        )
+        n += 1
+    return n
+
+
+def restore_stage_tasks(stage: ProjectStage, user: User, *, to_status: str = "done") -> int:
+    """Вернуть задачи этапа из архива на доску (по умолчанию в «Выполнено»)."""
+    if to_status not in TASK_KANBAN_COLUMNS or to_status == "archived":
+        to_status = "done"
+    tasks = ProjectTask.query.filter(
+        ProjectTask.stage_id == stage.id,
+        ProjectTask.kanban_status == "archived",
+    ).all()
+    n = 0
+    for t in tasks:
+        move_task_kanban(
+            t,
+            to_status,
+            t.kanban_sort or 0,
+            user_id=user.id,
+            note=f"Возврат из архива этапа «{stage.title}»",
+            sync_timer=False,
+        )
+        n += 1
+    return n
+
+
 def notify_auditor_stage_acceptance(stage: ProjectStage, status_label: str, curator_name: str = "") -> None:
     proj = stage.project
     auditor = proj.curator_auditor if proj else None
@@ -1292,11 +1376,17 @@ def notify_auditor_stage_acceptance(stage: ProjectStage, status_label: str, cura
     try:
         from servicesystem.services.notify import send_email
 
+        archive_hint = ""
+        if status_label and ("Принято" in status_label or "принят" in status_label.lower()):
+            archive_hint = (
+                "\nПосле приёмки система предложит перенести задачи этапа в архив "
+                "(скрываются с канбана и Ганта; при необходимости их можно вернуть)."
+            )
         send_email(
             auditor.email,
             f"Приёмка этапа: {stage.title}",
             f"Проект «{proj.name}», этап «{stage.title}»: статус «{status_label}».\n"
-            f"Куратор: {who}.",
+            f"Куратор: {who}.{archive_hint}",
         )
     except Exception:
         current_app.logger.exception("stage acceptance notify failed stage=%s", stage.id)
@@ -1453,17 +1543,242 @@ def tasks_for_user_query(user: User, *, project_id: int | None = None, include_c
     return q.filter(ProjectTask.id == -1)
 
 
-def move_task_kanban(task: ProjectTask, new_status: str, sort: int = 0) -> None:
+def record_task_status_event(
+    task: ProjectTask,
+    to_status: str,
+    *,
+    user_id: int | None = None,
+    note: str | None = None,
+    from_status: str | None = None,
+) -> None:
+    """Журнал смены статуса (+ снимок накопленного времени)."""
+    from servicesystem.project_management.models import ProjectTaskStatusEvent
+
+    prev = from_status if from_status is not None else task.kanban_status
+    if prev == to_status and not note:
+        return
+    db.session.add(
+        ProjectTaskStatusEvent(
+            task_id=task.id,
+            user_id=user_id,
+            from_status=prev,
+            to_status=to_status,
+            note=(note or None),
+            time_spent_snapshot=int(task.time_spent_seconds or 0),
+        )
+    )
+
+
+def move_task_kanban(
+    task: ProjectTask,
+    new_status: str,
+    sort: int = 0,
+    *,
+    user_id: int | None = None,
+    note: str | None = None,
+    sync_timer: bool = True,
+) -> None:
     if new_status not in TASK_KANBAN_COLUMNS:
         raise ValueError("invalid status")
-    if new_status == "done" and task_is_completion_blocked(task):
+    if new_status in ("done", "review") and task_is_completion_blocked(task):
         raise ValueError("blocked")
+    prev = task.kanban_status
+    # Таймер: уход из «В работе» / вход в «В работе» (кнопки карточки и DnD)
+    if sync_timer and user_id and prev != new_status:
+        if prev == "in_progress" and new_status != "in_progress":
+            timer_stop(task, user_id)
+        if new_status == "in_progress" and prev != "in_progress":
+            # старт после смены статуса — ниже
+            pass
     task.kanban_status = new_status
     task.kanban_sort = sort
     if new_status == "done":
         task.completed_at = datetime.now(timezone.utc)
-    else:
+    elif prev == "done":
         task.completed_at = None
+    if prev != new_status:
+        record_task_status_event(
+            task, new_status, user_id=user_id, note=note, from_status=prev
+        )
+    if sync_timer and user_id and prev != new_status and new_status == "in_progress":
+        timer_start(task, user_id)
+
+
+# Матрица соседних переходов (без «через шаг»)
+_KANBAN_ADJACENT: dict[str, frozenset[str]] = {
+    "todo": frozenset({"in_progress", "rejected", "archived"}),
+    "in_progress": frozenset({"todo", "review", "rejected", "archived"}),
+    "review": frozenset({"in_progress", "done", "rejected", "archived"}),
+    "done": frozenset({"review", "archived"}),
+    "rejected": frozenset({"todo", "in_progress", "archived"}),
+    "archived": frozenset({"todo", "in_progress", "review", "done", "rejected"}),
+}
+
+
+def task_kanban_board_column(task: ProjectTask) -> str:
+    """Колонка на доске: «waiting» — виртуальная для заблокированных (к исполнению / в работе)."""
+    if task.kanban_status in ("todo", "in_progress") and task_is_completion_blocked(task):
+        return "waiting"
+    return task.kanban_status
+
+
+def normalize_blocked_tasks_to_waiting(tasks: list[ProjectTask], *, user_id: int | None = None) -> int:
+    """Заблокированные «В работе» → «К исполнению» (на доске окажутся в «В ожидании»)."""
+    n = 0
+    for task in tasks:
+        if task.kanban_status != "in_progress":
+            continue
+        if not task_is_completion_blocked(task):
+            continue
+        move_task_kanban(
+            task,
+            "todo",
+            task.kanban_sort or 0,
+            user_id=user_id,
+            note="Авто: блокировка — в ожидании",
+            sync_timer=True,
+        )
+        n += 1
+    return n
+
+
+# Исполнитель и свои задачи аудитора (без самопроверки)
+_KANBAN_EXEC_TRANSITIONS = frozenset({
+    ("todo", "in_progress"),
+    ("in_progress", "todo"),
+    ("in_progress", "review"),
+    ("review", "in_progress"),
+})
+# Свои задачи аудитора: как исполнитель + самопроверка
+_KANBAN_AUDITOR_OWN = _KANBAN_EXEC_TRANSITIONS | frozenset({
+    ("review", "done"),
+    ("done", "review"),
+})
+# Чужие задачи аудитора: только верификация / доработка / архив / отклонение с проверки
+# (к исполнению ↔ в работе — только смотреть)
+_KANBAN_AUDITOR_OTHER = frozenset({
+    ("review", "done"),
+    ("review", "in_progress"),
+    ("done", "review"),
+    ("review", "rejected"),
+    ("done", "archived"),
+    ("rejected", "archived"),
+    ("archived", "done"),
+    ("archived", "review"),
+    ("archived", "todo"),
+    ("archived", "in_progress"),
+    ("archived", "rejected"),
+})
+
+
+def kanban_task_is_own(user: User, task: ProjectTask) -> bool:
+    if not user:
+        return False
+    if task.assignee_id == user.id or task.created_by_id == user.id:
+        return True
+    return task.collaborators.filter_by(user_id=user.id).first() is not None
+
+
+def kanban_transition_allowed(user: User, task: ProjectTask, new_status: str) -> str | None:
+    """Проверка DnD/API. None = ок, иначе код ошибки: forbidden / skip / blocked / need_report."""
+    if new_status not in TASK_KANBAN_COLUMNS:
+        return "bad_status"
+    prev = task.kanban_status
+    if prev == new_status:
+        return None
+    if new_status not in _KANBAN_ADJACENT.get(prev, frozenset()):
+        return "skip"
+    # Заблокированные нельзя брать в работу / закрывать
+    if new_status in ("in_progress", "done", "review") and task_is_completion_blocked(task):
+        return "blocked"
+
+    is_own = kanban_task_is_own(user, task)
+
+    if user and user.is_admin:
+        # Админ — любые соседние переходы
+        pass
+    elif user and user.is_auditor:
+        allowed = _KANBAN_AUDITOR_OWN if is_own else _KANBAN_AUDITOR_OTHER
+        if (prev, new_status) not in allowed:
+            return "forbidden"
+    else:
+        # Исполнитель: todo ↔ in_progress ↔ review; в done/rejected/archived сам не тащит
+        if (prev, new_status) not in _KANBAN_EXEC_TRANSITIONS:
+            return "forbidden"
+
+    if new_status == "review" and not (task.completion_report or "").strip():
+        return "need_report"
+    return None
+
+
+def apply_kanban_move(
+    user: User,
+    task: ProjectTask,
+    new_status: str,
+    sort: int = 0,
+    *,
+    force_empty_report: bool = False,
+    note: str | None = None,
+) -> None:
+    err = kanban_transition_allowed(user, task, new_status)
+    if err == "need_report" and force_empty_report:
+        err = None
+    if err:
+        raise ValueError(err)
+    # Таймер учёта времени включается/останавливается внутри move_task_kanban
+    move_task_kanban(
+        task,
+        new_status,
+        sort,
+        user_id=user.id if user else None,
+        note=note or "Перемещение на канбане",
+    )
+
+
+def build_tasks_wbs_map(tasks: list[ProjectTask]) -> dict[int, str]:
+    """Сквозной WBS как на Ганте (по gantt_sort внутри проекта).
+
+    Для совпадения с Гантом подтягивает все задачи проектов из выборки,
+    даже если на канбане виден только срез исполнителя.
+    """
+    by_project: dict[int | None, list[ProjectTask]] = {}
+    project_ids = {t.project_id for t in tasks if t.project_id}
+    if project_ids:
+        full = ProjectTask.query.filter(ProjectTask.project_id.in_(project_ids)).all()
+        for t in full:
+            by_project.setdefault(t.project_id, []).append(t)
+    # Задачи без проекта (если есть) — только из переданного списка
+    for t in tasks:
+        if not t.project_id:
+            by_project.setdefault(None, []).append(t)
+    out: dict[int, str] = {}
+    for _pid, group in by_project.items():
+        by_id = {t.id: t for t in group}
+        children: dict[int | None, list[int]] = {None: []}
+        for t in group:
+            pid = t.parent_id if t.parent_id in by_id else None
+            children.setdefault(pid, []).append(t.id)
+        for pid, ids in children.items():
+            ids.sort(key=lambda i: gantt_sort_key(by_id[i]))
+        visited: set[int] = set()
+
+        def walk(tid: int, parts: list[int]) -> None:
+            if tid in visited:
+                return
+            visited.add(tid)
+            out[tid] = ".".join(str(p) for p in parts)
+            for j, cid in enumerate(children.get(tid, []), start=1):
+                walk(cid, parts + [j])
+
+        roots = children.get(None, [])
+        for i, tid in enumerate(roots, start=1):
+            walk(tid, [i])
+        n_root = len(roots)
+        for tid in by_id:
+            if tid not in visited:
+                n_root += 1
+                walk(tid, [n_root])
+    return out
 
 
 def rollover_overdue_tasks(*, today: date | None = None) -> int:
@@ -1746,9 +2061,9 @@ def user_can_edit_task(user: User, task: ProjectTask) -> bool:
 
 
 def user_can_edit_task_plan(user: User, task: ProjectTask | None = None) -> bool:
-    """Планирование задачи (сроки, этап, исполнитель, иерархия) — только ГИП/админ.
+    """Планирование задачи (сроки, этап, исполнитель, иерархия, описание, соисполнители) — ГИП/админ.
 
-    Исполнитель правит контент: статус, чек-лист, файлы, комментарии, время, соисполнители.
+    Исполнитель: отчёт, чек-лист, файлы, комментарии, время; статусы по workflow.
     """
     return bool(user and (user.is_admin or user.is_auditor))
 
@@ -1756,6 +2071,11 @@ def user_can_edit_task_plan(user: User, task: ProjectTask | None = None) -> bool
 def user_can_manage_task_links(user: User, task: ProjectTask | None = None) -> bool:
     """Связи между задачами — только ГИП/админ (не исполнители)."""
     return user_can_edit_task_plan(user, task)
+
+
+def user_can_view_status_journal(user: User) -> bool:
+    """Журнал статусов — только ГИП и админы."""
+    return bool(user and (user.is_admin or user.is_auditor))
 
 
 def user_can_link_project_tasks(
@@ -1775,12 +2095,8 @@ def user_can_delete_task(user: User, task: ProjectTask | None = None) -> bool:
 
 
 def user_can_manage_collaborators(user: User, task: ProjectTask) -> bool:
-    """Соисполнители: ГИП/админ или исполнитель своей карточки."""
-    if not user or not task:
-        return False
-    if user.is_admin or user.is_auditor:
-        return True
-    return user_can_edit_task(user, task)
+    """Соисполнители правит только ГИП/админ; исполнитель только видит."""
+    return user_can_edit_task_plan(user, task)
 
 
 def user_can_view_others_time_logs(user: User) -> bool:

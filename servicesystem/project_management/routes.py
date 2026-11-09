@@ -18,6 +18,7 @@ from servicesystem.project_management.models import (
     ProjectStage,
     ProjectTask,
     ProjectTaskCollaborator,
+    ProjectTaskStatusEvent,
 )
 from servicesystem.project_management.dates import parse_optional_date as _parse_form_date
 from servicesystem.project_management.services import (
@@ -33,8 +34,12 @@ from servicesystem.project_management.services import (
     gantt_sla_breach,
     gantt_sort_key,
     kanban_sort_key,
+    apply_kanban_move,
+    build_tasks_wbs_map,
     move_task_kanban,
     next_gantt_sort,
+    normalize_blocked_tasks_to_waiting,
+    task_kanban_board_column,
     non_working_dates_message,
     cascade_fs_successors_only,
     parent_date_window,
@@ -53,6 +58,9 @@ from servicesystem.project_management.services import (
     update_customer_curator_window,
     executors_for_project,
     is_project_member,
+    stages_pending_archive_prompt,
+    archive_stage_tasks,
+    restore_stage_tasks,
     user_can_create_task,
     user_can_edit_task,
     user_can_edit_task_plan,
@@ -64,6 +72,7 @@ from servicesystem.project_management.services import (
     user_can_view_custom_field,
     user_can_view_gantt,
     user_can_view_others_time_logs,
+    user_can_view_status_journal,
     user_can_view_week_calendar,
 )
 
@@ -84,6 +93,7 @@ def _default_arm_view() -> str:
     return "gantt" if user_can_view_gantt(current_user) else "kanban"
 
 KANBAN_LABELS = {
+    "waiting": "В ожидании",
     "todo": "К исполнению",
     "in_progress": "В работе",
     "review": "На верификации",
@@ -91,6 +101,9 @@ KANBAN_LABELS = {
     "rejected": "Отклонено",
     "archived": "Архив",
 }
+# Колонки доски (waiting — виртуальная; rejected/archived скрыты по умолчанию)
+KANBAN_BOARD_COLUMNS_CORE = ("waiting", "todo", "in_progress", "review", "done")
+KANBAN_BOARD_COLUMNS_EXTRA = ("rejected", "archived")
 
 # UI: blocks и blocked_by — «выполнить после» (FS); в БД blocked_by остаётся для старых записей
 PROJECT_LINK_LABELS = {
@@ -264,6 +277,13 @@ def arm():
     view = (request.args.get("view") or _default_arm_view()).lower()
     if view not in _ARM_VIEWS:
         view = _default_arm_view()
+    # Тумблеры канбана без view не должны уводить ГИПа на Гант по умолчанию
+    if (
+        view == "gantt"
+        and request.args.get("view") is None
+        and ("show_rejected" in request.args or "show_archived" in request.args)
+    ):
+        view = "kanban"
     # Гант — только ГИП; неделя/календарь — всем сотрудникам (в т.ч. исполнителям)
     if view == "gantt" and not user_can_view_gantt(current_user):
         flash("Диаграмма Ганта доступна только ГИП.", "warning")
@@ -327,6 +347,9 @@ def arm():
         )
     if view == "gantt" and not gantt_show_subtasks:
         tasks_q = tasks_q.filter(ProjectTask.parent_id.is_(None))
+    # Архив скрыт с Ганта по умолчанию (после приёмки этапа); опция show_archived=1
+    if view == "gantt" and request.args.get("show_archived") != "1":
+        tasks_q = tasks_q.filter(ProjectTask.kanban_status != "archived")
     tasks_raw = tasks_q.all()
     if view == "gantt":
         tasks = sorted(tasks_raw, key=gantt_sort_key)
@@ -354,14 +377,57 @@ def arm():
         gantt_group=gantt_group,
         gantt_show_subtasks=gantt_show_subtasks,
         cal_mode=cal_mode,
+        archive_pending_count=(
+            len(stages_pending_archive_prompt(project_id=project_id))
+            if (current_user.is_admin or current_user.is_auditor)
+            else 0
+        ),
     )
     if view == "kanban":
-        grouped = {c: [] for c in TASK_KANBAN_COLUMNS}
+        show_rejected = request.args.get("show_rejected") == "1"
+        show_archived = request.args.get("show_archived") == "1"
+        # Заблокированные «В работе» → todo → колонка «В ожидании»
+        if normalize_blocked_tasks_to_waiting(tasks, user_id=current_user.id):
+            db.session.commit()
+        columns = list(KANBAN_BOARD_COLUMNS_CORE)
+        if show_rejected:
+            columns.append("rejected")
+        if show_archived:
+            columns.append("archived")
+        grouped = {c: [] for c in columns}
         for t in tasks:
-            grouped.setdefault(t.kanban_status, []).append(t)
+            col = task_kanban_board_column(t)
+            if col == "rejected" and not show_rejected:
+                continue
+            if col == "archived" and not show_archived:
+                continue
+            if col not in grouped:
+                # скрытые колонки не показываем
+                if col in KANBAN_BOARD_COLUMNS_EXTRA:
+                    continue
+                grouped.setdefault(col, [])
+            grouped[col].append(t)
         for col in grouped:
             grouped[col] = sorted(grouped[col], key=kanban_sort_key)
+        # Подгрузить родителей для ссылок на карточке
+        parent_ids = {t.parent_id for t in tasks if t.parent_id}
+        parents = {
+            p.id: p
+            for p in ProjectTask.query.filter(ProjectTask.id.in_(parent_ids)).all()
+        } if parent_ids else {}
         ctx["grouped"] = grouped
+        ctx["columns"] = columns
+        ctx["kanban_labels"] = KANBAN_LABELS
+        ctx["show_rejected"] = show_rejected
+        ctx["show_archived"] = show_archived
+        ctx["wbs_by_id"] = build_tasks_wbs_map(tasks)
+        ctx["parents_by_id"] = parents
+        if current_user.is_admin:
+            ctx["kanban_role"] = "admin"
+        elif current_user.is_auditor:
+            ctx["kanban_role"] = "auditor"
+        else:
+            ctx["kanban_role"] = "executor"
         return render_template("projects/kanban.html", **ctx)
     if view == "week":
         week_days = _week_days()
@@ -1355,6 +1421,10 @@ def task_detail(tid):
         can_manage_collaborators=user_can_manage_collaborators(current_user, task),
         can_manage_task_links=user_can_manage_task_links(current_user, task),
         can_view_others_time=user_can_view_others_time_logs(current_user),
+        can_view_status_journal=user_can_view_status_journal(current_user),
+        status_events=list(task.status_events.order_by(ProjectTaskStatusEvent.created_at.desc()).limit(50))
+        if user_can_view_status_journal(current_user)
+        else [],
         link_type_choices=list(PROJECT_LINK_UI_CHOICES),
         **projects_ui_context(),
     )
@@ -1525,7 +1595,7 @@ def gantt_task_panel(tid):
     status = data.get("kanban_status")
     if status:
         try:
-            move_task_kanban(task, status, task.kanban_sort or 0)
+            move_task_kanban(task, status, task.kanban_sort or 0, user_id=current_user.id)
         except ValueError as exc:
             if str(exc) == "blocked":
                 return jsonify({"error": "blocked"}), 409
@@ -1660,15 +1730,122 @@ def api_move_task(tid):
         abort(403)
     data = request.get_json(silent=True) or {}
     status = data.get("status") or request.form.get("status")
+    # Виртуальная колонка waiting не является статусом БД
+    if status == "waiting":
+        return jsonify({"error": "waiting_readonly"}), 400
     sort = int(data.get("sort") or request.form.get("sort") or 0)
+    force_empty = bool(data.get("force_empty_report"))
+    report = (data.get("completion_report") or "").strip()
+    if report:
+        task.completion_report = report
     try:
-        move_task_kanban(task, status, sort)
+        apply_kanban_move(
+            current_user,
+            task,
+            status,
+            sort,
+            force_empty_report=force_empty,
+        )
     except ValueError as exc:
-        if str(exc) == "blocked":
+        code = str(exc)
+        if code == "blocked":
             return jsonify({"error": "blocked"}), 409
+        if code == "need_report":
+            return jsonify({"error": "need_report"}), 422
+        if code == "skip":
+            return jsonify({"error": "skip"}), 400
+        if code == "forbidden":
+            return jsonify({"error": "forbidden"}), 403
         return jsonify({"error": "bad status"}), 400
     db.session.commit()
-    return jsonify({"ok": True})
+    return jsonify({"ok": True, "status": task.kanban_status})
+
+
+@bp.route("/archive")
+@login_required
+def archive_hub():
+    """Отдельный раздел: приёмка этапов → архив, просмотр и возврат задач."""
+    if not (current_user.is_admin or current_user.is_auditor):
+        abort(403)
+    project_id = request.args.get("project", type=int)
+    prompts = stages_pending_archive_prompt(project_id=project_id)
+    q = ProjectTask.query.filter_by(kanban_status="archived")
+    if project_id:
+        q = q.filter_by(project_id=project_id)
+    archived_tasks = (
+        q.order_by(ProjectTask.project_id.asc(), ProjectTask.gantt_sort.asc(), ProjectTask.id.asc())
+        .limit(300)
+        .all()
+    )
+    projects = (
+        Project.query.filter_by(is_template=False).order_by(Project.name).all()
+        if (current_user.is_admin or current_user.is_auditor)
+        else []
+    )
+    return render_template(
+        "projects/archive.html",
+        archive_prompts=prompts,
+        archived_tasks=archived_tasks,
+        filter_project=project_id,
+        projects=projects,
+        kanban_labels=KANBAN_LABELS,
+    )
+
+
+@bp.route("/stages/<int:sid>/archive-tasks", methods=["POST"])
+@login_required
+def stage_archive_tasks_route(sid):
+    """После приёмки куратором: ГИП архивирует задачи этапа (скрываются с канбана/Ганта)."""
+    if not (current_user.is_admin or current_user.is_auditor):
+        abort(403)
+    stage = db.session.get(ProjectStage, sid) or abort(404)
+    if stage.acceptance_status not in ("accepted", "accepted_remarks"):
+        flash("Архивация доступна после приёмки этапа куратором.", "warning")
+        return redirect(url_for("projects.archive_hub", project=stage.project_id))
+    n = archive_stage_tasks(stage, current_user)
+    db.session.commit()
+    flash(f"В архив перенесено задач этапа «{stage.title}»: {n}.", "success")
+    return redirect(url_for("projects.archive_hub", project=stage.project_id))
+
+
+@bp.route("/stages/<int:sid>/restore-tasks", methods=["POST"])
+@login_required
+def stage_restore_tasks_route(sid):
+    """ГИП возвращает задачи этапа из архива на доски."""
+    if not (current_user.is_admin or current_user.is_auditor):
+        abort(403)
+    stage = db.session.get(ProjectStage, sid) or abort(404)
+    to_status = (request.form.get("to_status") or "done").strip()
+    n = restore_stage_tasks(stage, current_user, to_status=to_status)
+    db.session.commit()
+    flash(f"Из архива возвращено задач этапа «{stage.title}»: {n}.", "success")
+    return redirect(url_for("projects.archive_hub", project=stage.project_id))
+
+
+@bp.route("/tasks/<int:tid>/restore-from-archive", methods=["POST"])
+@login_required
+def task_restore_from_archive(tid):
+    """Вернуть одну задачу из архива (ГИП)."""
+    if not (current_user.is_admin or current_user.is_auditor):
+        abort(403)
+    task = db.session.get(ProjectTask, tid) or abort(404)
+    if task.kanban_status != "archived":
+        flash("Задача не в архиве.", "warning")
+        return redirect(url_for("projects.archive_hub", project=task.project_id))
+    to_status = (request.form.get("to_status") or "done").strip()
+    if to_status not in TASK_KANBAN_COLUMNS or to_status == "archived":
+        to_status = "done"
+    move_task_kanban(
+        task,
+        to_status,
+        task.kanban_sort or 0,
+        user_id=current_user.id,
+        note="Возврат из архива",
+        sync_timer=False,
+    )
+    db.session.commit()
+    flash(f"Задача «{task.title}» возвращена на доску.", "success")
+    return redirect(url_for("projects.archive_hub", project=task.project_id))
 
 
 _WEEKDAY_RU = ("Пн", "Вт", "Ср", "Чт", "Пт", "Сб", "Вс")

@@ -5,7 +5,7 @@
 {% block title %}{{ task.title }}{% endblock %}
 
 {% block head %}
-<link rel="stylesheet" href="{{ url_for('static', filename='css/projects.css') }}?v=118">
+<link rel="stylesheet" href="{{ url_for('static', filename='css/projects.css') }}?v=137">
 <script src="{{ url_for('static', filename='js/task-date-duration.js') }}?v=1"></script>
 {% if can_plan_task is defined and can_plan_task %}
 <script src="{{ url_for('static', filename='js/task-project-tree-nav.js') }}?v=4"></script>
@@ -64,14 +64,7 @@
     <form method="post" action="{{ url_for('projects.task_update', tid=task.id) }}" class="projects-task-brief">
       {{ csrf_field() }}
 
-      {% if not can_plan %}
-      <div class="projects-task-brief-actions projects-task-brief-actions--executor projects-task-brief-actions--top">
-        <button type="submit" class="btn btn-primary projects-task-complete-btn" name="action" value="complete" formnovalidate {% if blocked %}disabled{% endif %} title="{% if blocked %}Сначала завершите блокирующие задачи{% else %}Отметить задачу выполненной{% endif %}">Выполнить</button>
-        <button type="submit" class="btn btn-outline btn-sm" name="action" value="save">Сохранить</button>
-      </div>
-      {% endif %}
-
-      <input name="title" class="projects-task-title-input" required value="{{ task.title }}" placeholder="Название задачи" aria-label="Название">
+      <input name="title" class="projects-task-title-input{% if task.priority >= 4 %} is-urgent{% endif %}" required value="{{ task.title }}" placeholder="Название задачи" aria-label="Название">
 
       <div class="projects-task-meta">
         <div class="projects-task-meta-item">
@@ -145,12 +138,16 @@
 
       <div class="projects-task-desc">
         <label for="task-edit-description" class="projects-task-desc-label">Описание</label>
+        {% if can_plan %}
         <textarea name="description" id="task-edit-description" class="form-control projects-task-desc-input" rows="2" placeholder="Постановка задачи…">{{ task.description or '' }}</textarea>
+        {% else %}
+        <div class="hint projects-task-desc-input" id="task-edit-description">{% if task.description %}{{ task.description|markdown|safe }}{% else %}<span class="muted">Нет описания</span>{% endif %}</div>
+        {% endif %}
       </div>
 
       {% if can_manage_collaborators %}
       <details class="projects-task-more">
-        <summary>Соисполнители{% if collaborator_ids %} ({{ collaborator_ids|length }}){% endif %}</summary>
+        <summary>Соисполнители{% if collaborator_ids %} ({{ collaborator_ids|length }}){% endif %} · только ГИП</summary>
         <select name="collaborator_ids" class="form-control" multiple size="3">
           {% for u in executors %}
           {% if u.id != task.assignee_id %}
@@ -159,7 +156,54 @@
           {% endfor %}
         </select>
       </details>
+      {% else %}
+      <p class="projects-task-collab-readonly">
+        <span class="projects-task-desc-label">Соисполнители</span>
+        {% if collaborator_ids %}
+          {% for u in executors if u.id in collaborator_ids %}{{ u.full_name }}{% if not loop.last %}, {% endif %}{% else %}—{% endfor %}
+        {% else %}
+        <span class="muted">не назначены</span>
+        {% endif %}
+      </p>
       {% endif %}
+
+      <div class="projects-task-desc" id="task-report">
+        <label for="task-completion-report" class="projects-task-desc-label">Отчёт о выполнении задачи</label>
+        <textarea name="completion_report" id="task-completion-report" class="form-control projects-task-desc-input{% if request.args.get('highlight')=='report' %} is-invalid{% endif %}" rows="3" placeholder="Что сделано / причина отклонения…">{{ task.completion_report or '' }}</textarea>
+      </div>
+
+      {# Под отчётом: все действия в одной сетке без наложений #}
+      <div class="projects-task-actions-bar">
+        <div class="projects-task-actions-bar__primary">
+          <button type="submit" class="btn btn-primary btn-sm" name="action" value="save">Сохранить</button>
+
+          {% if task.kanban_status == 'review' %}
+          <button type="submit" class="btn btn-outline btn-sm" name="action" value="uncomplete" formnovalidate title="Вернуть в работу">Отменить выполнение — принять в работу</button>
+          {% elif task.kanban_status not in ('done', 'rejected', 'archived') %}
+          <button type="submit" class="btn btn-outline btn-sm" name="action" value="complete" formnovalidate {% if blocked %}disabled{% endif %}
+                  data-require-report="1"
+                  title="{% if blocked %}Сначала завершите блокирующие задачи{% else %}Отправить на верификацию{% endif %}">Выполнить</button>
+          {% endif %}
+
+          {% if can_plan %}
+            {% if task.kanban_status == 'review' %}
+            <button type="submit" class="btn btn-primary btn-sm" name="action" value="verify">Проверено</button>
+            <button type="submit" class="btn btn-outline btn-sm" name="action" value="rework" data-require-rework-comment="1">На доработку</button>
+            {% elif task.kanban_status == 'done' %}
+            <button type="submit" class="btn btn-outline btn-sm" name="action" value="reopen_review">Вернуть на проверку</button>
+            {% endif %}
+            {% if task.kanban_status not in ('rejected', 'archived') %}
+            <button type="submit" class="btn btn-outline btn-sm btn-danger-text" name="action" value="reject" data-require-report="1">Отклонить задачу</button>
+            {% endif %}
+            {% if task.parent_id %}
+            <a href="{{ url_for('projects.task_new', parent=task.parent_id, project=task.project_id) }}" class="btn btn-outline btn-sm">Ещё к родителю</a>
+            {% endif %}
+            <a href="{{ url_for('projects.task_new', parent=task.id) }}" class="btn btn-outline btn-sm">Подзадача ↓</a>
+          {% endif %}
+        </div>
+      </div>
+      <input type="hidden" name="rework_comment" id="task-rework-comment" value="">
+      <input type="hidden" name="force_empty_report" id="force-empty-report" value="0">
 
       {% if can_plan %}
       <details class="projects-task-more" data-task-hierarchy
@@ -196,25 +240,14 @@
         <a href="{{ url_for('projects.task_detail', tid=task.parent.id) }}">открыть родителя</a>
       </p>
       {% endif %}
-
-      {% if can_plan %}
-      <div class="projects-task-brief-actions">
-        <button type="submit" class="btn btn-primary btn-sm" name="action" value="save">Сохранить</button>
-        <button type="submit" class="btn btn-outline btn-sm" name="action" value="complete" formnovalidate {% if blocked %}disabled{% endif %}>Выполнить</button>
-        {% if task.parent_id %}
-        <a href="{{ url_for('projects.task_new', parent=task.parent_id, project=task.project_id) }}" class="btn btn-outline btn-sm">Ещё к родителю</a>
-        {% endif %}
-        <a href="{{ url_for('projects.task_new', parent=task.id) }}" class="btn btn-outline btn-sm">Подзадача ↓</a>
-      </div>
-      {% endif %}
     </form>
     {% if can_plan %}
-    <div class="projects-task-brief-actions projects-task-brief-actions--secondary">
-      <form method="post" action="{{ url_for('projects.task_duplicate', tid=task.id) }}" class="inline-form">
+    <div class="projects-task-actions-bar projects-task-actions-bar--secondary">
+      <form method="post" action="{{ url_for('projects.task_duplicate', tid=task.id) }}" class="projects-task-actions-bar__form">
         {{ csrf_field() }}<input type="hidden" name="copy_subtasks" value="1">
         <button type="submit" class="btn btn-outline btn-sm">Дублировать</button>
       </form>
-      <form method="post" action="{{ url_for('projects.task_update', tid=task.id) }}" class="inline-form"
+      <form method="post" action="{{ url_for('projects.task_update', tid=task.id) }}" class="projects-task-actions-bar__form"
             data-confirm="Удалить задачу безвозвратно?"
             data-confirm-title="Удаление задачи"
             data-confirm-ok="Удалить"
@@ -491,6 +524,28 @@
 
   </section>
 
+  {% if can_view_status_journal %}
+  <details id="task-status-journal" class="card projects-task-section projects-task-panel projects-task-panel--side projects-status-journal">
+    <summary class="projects-task-section-title projects-status-journal-summary">
+      Журнал статусов
+      <span class="muted projects-status-journal-count">{{ status_events|length }}</span>
+    </summary>
+    <ul class="projects-time-log projects-status-journal-list">
+      {% for ev in status_events %}
+      <li>
+        <time datetime="{{ ev.created_at.isoformat() }}">{{ ev.created_at.strftime('%d.%m.%Y %H:%M') }}</time>
+        — {% if ev.user %}{{ ev.user.full_name }}{% else %}система{% endif %}:
+        {{ kanban_labels.get(ev.from_status, ev.from_status or '—') }} → {{ kanban_labels.get(ev.to_status, ev.to_status) }}
+        {% if ev.time_spent_snapshot is not none %} · {{ ev.time_spent_snapshot // 3600 }}ч {{ (ev.time_spent_snapshot % 3600) // 60 }}м{% endif %}
+        {% if ev.note %} · {{ ev.note }}{% endif %}
+      </li>
+      {% else %}
+      <li class="muted">Переходов пока нет</li>
+      {% endfor %}
+    </ul>
+  </details>
+  {% endif %}
+
   </div>
   </aside>
   </div>
@@ -528,6 +583,88 @@
       dateMax: {{ (parent_window_due.isoformat() if parent_window_due else '')|tojson }},
     });
   }
+})();
+</script>
+<script>
+(function () {
+  var form = document.querySelector("form.projects-task-brief");
+  if (!form) return;
+  var report = document.getElementById("task-completion-report");
+  var force = document.getElementById("force-empty-report");
+  var reworkHidden = document.getElementById("task-rework-comment");
+
+  function highlightReport() {
+    if (!report) return;
+    report.classList.add("is-invalid");
+    report.focus();
+    report.scrollIntoView({ behavior: "smooth", block: "center" });
+  }
+
+  function resumeSubmit(submitter) {
+    if (typeof form.requestSubmit === "function") form.requestSubmit(submitter);
+    else form.submit();
+  }
+
+  form.addEventListener("submit", function (ev) {
+    var submitter = ev.submitter;
+    if (!submitter) return;
+    if (form.dataset.ssGatePass === "1") {
+      delete form.dataset.ssGatePass;
+      return;
+    }
+    if (force) force.value = "0";
+
+    if (submitter.getAttribute("data-require-rework-comment") === "1") {
+      ev.preventDefault();
+      var ask =
+        typeof window.ssPrompt === "function"
+          ? window.ssPrompt("Комментарий ГИПа для доработки", "", {
+              title: "На доработку",
+              confirmLabel: "Отправить",
+            })
+          : Promise.resolve(window.prompt("Комментарий ГИПа для доработки:", ""));
+      ask.then(function (comment) {
+        if (comment == null || !String(comment).trim()) {
+          if (typeof window.ssAlert === "function") window.ssAlert("Укажите комментарий для доработки.");
+          else window.alert("Укажите комментарий для доработки.");
+          return;
+        }
+        if (reworkHidden) reworkHidden.value = String(comment).trim();
+        form.dataset.ssGatePass = "1";
+        resumeSubmit(submitter);
+      });
+      return;
+    }
+
+    if (submitter.getAttribute("data-require-report") !== "1") return;
+    var text = report ? String(report.value || "").trim() : "";
+    if (text) return;
+    ev.preventDefault();
+    var action = submitter.value;
+    var msg =
+      action === "reject"
+        ? "Отклонить задачу без объяснения причины?"
+        : "Выполнить задачу без отчёта?";
+    var title = action === "reject" ? "Отклонение задачи" : "Отчёт о выполнении";
+    var askConfirm =
+      typeof window.ssConfirm === "function"
+        ? window.ssConfirm(msg, {
+            title: title,
+            confirmLabel: action === "reject" ? "Отклонить" : "Без отчёта",
+            cancelLabel: "Заполнить",
+            danger: action === "reject",
+          })
+        : Promise.resolve(window.confirm(msg));
+    askConfirm.then(function (ok) {
+      if (!ok) {
+        highlightReport();
+        return;
+      }
+      if (force) force.value = "1";
+      form.dataset.ssGatePass = "1";
+      resumeSubmit(submitter);
+    });
+  });
 })();
 </script>
 <script>

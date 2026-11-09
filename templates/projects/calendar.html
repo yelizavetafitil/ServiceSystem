@@ -1,6 +1,6 @@
 {% extends "base.html" %}
 {% block title %}Проекты — календарь{% endblock %}
-{% block head %}<link rel="stylesheet" href="{{ url_for('static', filename='css/projects.css') }}?v=96">{% endblock %}
+{% block head %}<link rel="stylesheet" href="{{ url_for('static', filename='css/projects.css') }}?v=131">{% endblock %}
 {% block content %}
 <div class="container cms-page projects-page">
   {% include "projects/_arm_header.html" %}
@@ -71,28 +71,30 @@
   <p class="muted projects-calendar-load-empty">Нет задач с исполнителями в этом периоде.</p>
   {% endif %}
 
-  <div class="projects-calendar-grid{% if cal_mode == 'day' %} projects-calendar-grid--day{% elif cal_mode == 'workweek' %} projects-calendar-grid--week{% endif %}">
-    {% for d in month_grid %}
-    {% set load = team_load.get(d) if team_load else 0 %}
-    {% set day_tasks = tasks_by_day.get(d, []) if tasks_by_day is defined else [] %}
-    <div class="projects-calendar-cell{% if d.weekday() >= 5 %} is-weekend{% endif %}{% if d.month != today.month and cal_mode == 'month' %} is-muted{% endif %}{% if load %} projects-load-{{ 'high' if load >= 5 else ('mid' if load >= 3 else 'low') }}{% endif %}">
-      <span class="projects-calendar-day">{% if cal_mode == 'month' %}{{ d.day }}{% else %}{% set wd = ('Пн','Вт','Ср','Чт','Пт','Сб','Вс') %}{{ wd[d.weekday()] }} {{ d.strftime('%d.%m') }}{% endif %}</span>
-      {% if cal_mode == 'team' %}<span class="projects-calendar-load">{{ load }} задач</span>{% endif %}
-      {% for t in day_tasks %}
-      {% set s = t.start_date or t.due_date %}
-      {% set e = t.due_date or t.start_date %}
-      {% set is_start = s == d %}
-      {% set is_end = e == d %}
-      {% set multi = s and e and s != e %}
-      {% set who = t.assignee.full_name if t.assignee else '' %}
-      <a class="projects-calendar-event p-{{ t.priority }}{% if multi %} is-span{% if is_start %} is-span-start{% elif is_end %} is-span-end{% else %} is-span-mid{% endif %}{% endif %}"
-         href="{{ url_for('projects.task_detail', tid=t.id, arm_view='calendar') }}"
-         title="{{ t.title }}{% if who %} · {{ who }}{% endif %}{% if s and e %} · {{ s.strftime('%d.%m') }}—{{ e.strftime('%d.%m.%Y') }}{% endif %}">
-        {% if who and cal_mode == 'team' %}<span class="projects-calendar-event-who">{{ who.split()[0] }}</span> {% endif %}{{ t.title[:32] }}
-      </a>
+  <div class="projects-calendar-board">
+    <div class="projects-calendar-grid{% if cal_mode == 'day' %} projects-calendar-grid--day{% elif cal_mode == 'workweek' %} projects-calendar-grid--week{% endif %}">
+      {% for d in month_grid %}
+      {% set load = team_load.get(d) if team_load else 0 %}
+      {% set day_tasks = tasks_by_day.get(d, []) if tasks_by_day is defined else [] %}
+      <div class="projects-calendar-cell{% if d.weekday() >= 5 %} is-weekend{% endif %}{% if d.month != today.month and cal_mode == 'month' %} is-muted{% endif %}{% if load %} projects-load-{{ 'high' if load >= 5 else ('mid' if load >= 3 else 'low') }}{% endif %}">
+        <span class="projects-calendar-day">{% if cal_mode == 'month' %}{{ d.day }}{% else %}{% set wd = ('Пн','Вт','Ср','Чт','Пт','Сб','Вс') %}{{ wd[d.weekday()] }} {{ d.strftime('%d.%m') }}{% endif %}</span>
+        {% if cal_mode == 'team' %}<span class="projects-calendar-load">{{ load }} задач</span>{% endif %}
+        {% for t in day_tasks %}
+        {% set s = t.start_date or t.due_date %}
+        {% set e = t.due_date or t.start_date %}
+        {% set is_start = s == d %}
+        {% set is_end = e == d %}
+        {% set multi = s and e and s != e %}
+        {% set who = t.assignee.full_name if t.assignee else '' %}
+        <a class="projects-calendar-event p-{{ t.priority }}{% if multi %} is-span{% if is_start %} is-span-start{% elif is_end %} is-span-end{% else %} is-span-mid{% endif %}{% endif %}"
+           href="{{ url_for('projects.task_detail', tid=t.id, arm_view='calendar') }}"
+           title="{{ t.title }}{% if who %} · {{ who }}{% endif %}{% if s and e %} · {{ s.strftime('%d.%m') }}—{{ e.strftime('%d.%m.%Y') }}{% endif %}">
+          {% if who and cal_mode == 'team' %}<span class="projects-calendar-event-who">{{ who.split()[0] }}</span> {% endif %}{{ t.title[:32] }}
+        </a>
+        {% endfor %}
+      </div>
       {% endfor %}
     </div>
-    {% endfor %}
   </div>
 </div>
 {% endblock %}

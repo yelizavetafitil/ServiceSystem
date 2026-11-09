@@ -1420,12 +1420,7 @@
 
   scheduleDraw();
   var host = chart.querySelector(".projects-gantt-hscroll");
-  if (host) {
-    host.addEventListener("scroll", function () {
-      scheduleDraw();
-      saveGanttScroll();
-    });
-  }
+  // scroll-слушатель для отрисовки/сохранения + sync верхнего скролла — ниже, после syncTopScroll
   if (body && window.ResizeObserver) {
     new ResizeObserver(scheduleDraw).observe(body);
   }
@@ -1457,8 +1452,10 @@
     } else {
       frac = days / Math.max(1, daySpan());
     }
+    // sticky-боковая колонка: scrollLeft = смещение шкалы (без +sideW)
     var timelineLeft = frac * timelineW();
-    return Math.max(0, sideW() + timelineLeft - host.clientWidth * 0.35);
+    var view = Math.max(40, host.clientWidth - sideW());
+    return Math.max(0, timelineLeft - view * 0.35);
   }
 
   function scrollGanttTo(left, smooth) {
@@ -1546,36 +1543,184 @@
     }
   }
 
-  function scrollToProjectEdge(which) {
+  function actualColWidth() {
+    var head = chart.querySelector(".projects-gantt-cols-head");
+    var n = head ? head.querySelectorAll(".projects-gantt-col-head").length : 0;
+    if (head && head.offsetWidth && n > 0) {
+      return head.offsetWidth / n;
+    }
+    if (head && head.offsetWidth && ganttCols > 0) {
+      return head.offsetWidth / ganttCols;
+    }
+    return Math.max(24, parseInt(chart.getAttribute("data-col-px") || "56", 10) || 56);
+  }
+
+  /** Дата у левого края видимой шкалы (sticky-колонка «Задача»: scrollLeft = смещение шкалы). */
+  function dateAtScrollLeft(scrollLeft) {
+    if (!spanStart) return null;
+    var a = parseIso(spanStart);
+    if (!a) return null;
+    var tw = timelineW();
+    if (tw <= 0) return new Date(a.getTime());
+    var x = Math.max(0, scrollLeft || 0);
+    var frac = Math.min(1, x / tw);
+    if (ganttScale === "quarter") {
+      var slotF = frac * ganttCols;
+      var slot = Math.floor(slotF);
+      var part = slotF - slot;
+      var d = new Date(a.getFullYear(), a.getMonth() + slot, 1);
+      var dim = daysInMonth(d.getFullYear(), d.getMonth());
+      d.setDate(1 + Math.floor(part * dim));
+      return d;
+    }
+    var days = Math.floor(frac * Math.max(1, daySpan()));
+    var d2 = new Date(a.getTime());
+    d2.setDate(d2.getDate() + days);
+    return d2;
+  }
+
+  function scrollLeftForDate(d) {
+    if (!host || !spanStart || !d) return 0;
+    var a = parseIso(spanStart);
+    if (!a) return 0;
+    var frac;
+    if (ganttScale === "quarter") {
+      var slot = (d.getFullYear() - a.getFullYear()) * 12 + (d.getMonth() - a.getMonth());
+      var dim = daysInMonth(d.getFullYear(), d.getMonth());
+      frac = (slot + (d.getDate() - 1) / Math.max(1, dim)) / Math.max(1, ganttCols);
+    } else {
+      var days = Math.max(0, Math.round((d - a) / 86400000));
+      frac = days / Math.max(1, daySpan());
+    }
+    frac = Math.max(0, Math.min(1, frac));
+    return Math.max(0, frac * timelineW());
+  }
+
+  function startOfZoomUnit(d) {
+    var x = new Date(d.getFullYear(), d.getMonth(), d.getDate());
+    if (ganttScale === "week") {
+      var wd = (x.getDay() + 6) % 7;
+      x.setDate(x.getDate() - wd);
+    } else if (ganttScale === "month") {
+      x.setDate(1);
+    } else if (ganttScale === "quarter") {
+      x = new Date(x.getFullYear(), Math.floor(x.getMonth() / 3) * 3, 1);
+    }
+    return x;
+  }
+
+  function addZoomUnit(d, dir) {
+    var x = new Date(d.getFullYear(), d.getMonth(), d.getDate());
+    if (ganttScale === "day") {
+      x.setDate(x.getDate() + dir);
+    } else if (ganttScale === "week") {
+      x.setDate(x.getDate() + dir * 7);
+    } else if (ganttScale === "month") {
+      x.setDate(1);
+      x.setMonth(x.getMonth() + dir);
+    } else if (ganttScale === "quarter") {
+      x = new Date(x.getFullYear(), Math.floor(x.getMonth() / 3) * 3 + dir * 3, 1);
+    } else {
+      x.setDate(x.getDate() + dir);
+    }
+    return x;
+  }
+
+  var topHost = document.getElementById("gantt-hscroll-top");
+  var syncingScroll = false;
+
+  function setGanttScrollLeft(left, smooth) {
     if (!host) return;
     var maxLeft = Math.max(0, host.scrollWidth - host.clientWidth);
-    scrollGanttTo(which === "end" ? maxLeft : 0, true);
+    var next = Math.max(0, Math.min(maxLeft, left));
+    syncingScroll = true;
+    if (smooth) {
+      host.scrollTo({ left: next, top: host.scrollTop, behavior: "smooth" });
+      if (topHost) topHost.scrollLeft = next;
+    } else {
+      host.scrollLeft = next;
+      if (topHost) topHost.scrollLeft = next;
+    }
+    syncingScroll = false;
     saveGanttScroll();
   }
+
+  /** Сдвиг шкалы стрелками: ровно ±1 единица зума (день / неделя / месяц / квартал). */
+  function panByZoom(dir) {
+    if (!host) return;
+    var cur = dateAtScrollLeft(host.scrollLeft) || parseIso(spanStart);
+    if (!cur) return;
+    var unit = startOfZoomUnit(cur);
+    var same =
+      unit.getFullYear() === cur.getFullYear() &&
+      unit.getMonth() === cur.getMonth() &&
+      unit.getDate() === cur.getDate();
+    var nextDate = same ? addZoomUnit(unit, dir) : (dir > 0 ? addZoomUnit(unit, 1) : unit);
+    setGanttScrollLeft(scrollLeftForDate(nextDate), false);
+    scheduleDraw();
+  }
+  function syncTopScroll() {
+    if (!host || !topHost) return;
+    if (syncingScroll) return;
+    syncingScroll = true;
+    topHost.scrollLeft = host.scrollLeft;
+    syncingScroll = false;
+  }
+  function syncMainScroll() {
+    if (!host || !topHost) return;
+    if (syncingScroll) return;
+    syncingScroll = true;
+    host.scrollLeft = topHost.scrollLeft;
+    syncingScroll = false;
+  }
+  function syncTopSizerWidth() {
+    if (!host || !topHost) return;
+    var sizer = host.querySelector(".projects-gantt-scroll-sizer");
+    var topInner = topHost.querySelector(".projects-gantt-hscroll-top-inner");
+    if (sizer && topInner) {
+      topInner.style.width = sizer.scrollWidth + "px";
+    }
+  }
+  if (host) host.addEventListener("scroll", function () {
+    scheduleDraw();
+    saveGanttScroll();
+    syncTopScroll();
+  }, { passive: true });
+  if (topHost) topHost.addEventListener("scroll", function () {
+    syncMainScroll();
+  }, { passive: true });
 
   var panLeft = document.getElementById("gantt-pan-left");
   var panRight = document.getElementById("gantt-pan-right");
   var panToday = document.getElementById("gantt-pan-today");
-  if (panLeft) panLeft.addEventListener("click", function () { scrollToProjectEdge("start"); });
-  if (panRight) panRight.addEventListener("click", function () { scrollToProjectEdge("end"); });
+  if (panLeft) panLeft.addEventListener("click", function () { panByZoom(-1); });
+  if (panRight) panRight.addEventListener("click", function () { panByZoom(1); });
   if (panToday) panToday.addEventListener("click", function () {
-    scrollGanttTo(todayScrollLeft(), true);
-    saveGanttScroll();
+    setGanttScrollLeft(todayScrollLeft(), false);
+    scheduleDraw();
   });
 
   function initGanttScroll() {
-    if (!restoreGanttScroll()) scrollGanttTo(todayScrollLeft(), false);
+    syncTopSizerWidth();
+    if (!restoreGanttScroll()) setGanttScrollLeft(todayScrollLeft(), false);
+    else if (topHost) topHost.scrollLeft = host.scrollLeft;
     scheduleDraw();
   }
 
-  window.addEventListener("resize", scheduleDraw);
+  window.addEventListener("resize", function () {
+    syncTopSizerWidth();
+    syncTopScroll();
+    scheduleDraw();
+  });
 
   // После reload — прежний скролл (X и Y); иначе «сегодня»
   requestAnimationFrame(function () {
     requestAnimationFrame(initGanttScroll);
   });
   window.addEventListener("load", function () {
+    syncTopSizerWidth();
     restoreGanttScroll();
+    syncTopScroll();
     scheduleDraw();
   }, { once: true });
 })();

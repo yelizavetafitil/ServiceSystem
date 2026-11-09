@@ -22,14 +22,15 @@
       {% if user.role == 'admin' %}
       <p class="hint">Учётная запись администратора всегда активна и не отключается через этот переключатель.</p>
       {% elif user.role == 'customer_curator' %}
-      <p class="hint">Куратор-заказчик «Подключён», пока действуют срок обслуживания и мастер-ключ договора.</p>
+      <p class="hint">«Подключён», пока действует привязанный договор или любой другой договор той же организации (перекрывающий, напр. разработка).</p>
       {% if user.contract %}
       <p class="hint">Договор {{ user.contract.number }}:
-        {% if user.contract.is_access_disabled %}
+        {% if not user.portal_access_on %}
         <strong class="access-disabled-date">Отключён</strong>
-        {% if user.contract.access_disabled_at %} с {{ user.contract.access_disabled_at.strftime('%d.%m.%Y') }}{% endif %}
-        {% if user.contract.is_master_key_expired %}(истёк мастер-ключ){% else %}(срок обслуживания){% endif %}
+        {% if user.portal_disabled_at %} с {{ user.portal_disabled_at.strftime('%d.%m.%Y') }}{% endif %}
         — <a href="{{ url_for('admin.contract_edit', cid=user.contract.id) }}">продлить в договорах</a>
+        {% elif user.contract.is_access_disabled and user.covering_portal_contract() %}
+        привязанный истёк, доступ по перекрывающему №{{ user.covering_portal_contract().number }}{% if user.covering_portal_contract().service_end_date %} до {{ user.covering_portal_contract().service_end_date.strftime('%d.%m.%Y') }}{% endif %}
         {% else %}
         активен
         {% if user.contract.service_end_date %} до {{ user.contract.service_end_date.strftime('%d.%m.%Y') }}{% endif %}

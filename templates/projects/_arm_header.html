@@ -81,6 +81,13 @@
             <option value="0" {% if not gantt_show_subtasks %}selected{% endif %}>Только задачи верхнего уровня</option>
           </select>
         </div>
+        <div class="projects-filters-field">
+          <label for="arm-filter-archived">Архив</label>
+          <select id="arm-filter-archived" name="show_archived" class="form-control">
+            <option value="0" {% if request.args.get('show_archived') != '1' %}selected{% endif %}>Скрыть архивные</option>
+            <option value="1" {% if request.args.get('show_archived') == '1' %}selected{% endif %}>Показать архивные</option>
+          </select>
+        </div>
         {% endif %}
 
         {% if view == 'calendar' %}
@@ -122,6 +129,9 @@
     </div>
 
     {% if current_user.is_auditor or current_user.is_admin %}
+    <a href="{{ url_for('projects.archive_hub', project=filter_project) }}"
+       class="btn btn-outline btn-sm{% if archive_pending_count|default(0) %} btn-primary{% endif %}"
+       title="Архив задач и приёмка этапов">Архив{% if archive_pending_count|default(0) %} · {{ archive_pending_count }}{% endif %}</a>
     <a href="{{ url_for('projects.manage_list') }}" class="btn btn-outline btn-sm">Управление проектами</a>
     {% if filter_project %}
     <a href="{{ url_for('projects.task_new', project=filter_project) }}"
@@ -150,36 +160,32 @@
 </div>
 <script>
 (function () {
-  var root = document.querySelector("[data-projects-filters]");
-  if (!root) return;
-  var btn = root.querySelector("[data-projects-filters-toggle]");
-  var panel = root.querySelector("[data-projects-filters-panel]");
-  if (!btn || !panel) return;
+  function bindMenu(rootSel, toggleSel, panelSel) {
+    var root = document.querySelector(rootSel);
+    if (!root) return;
+    var btn = root.querySelector(toggleSel);
+    var panel = root.querySelector(panelSel);
+    if (!btn || !panel) return;
 
-  function isOpen() {
-    return root.classList.contains("is-open");
+    function setOpen(open) {
+      panel.hidden = !open;
+      btn.setAttribute("aria-expanded", open ? "true" : "false");
+      root.classList.toggle("is-open", !!open);
+    }
+
+    setOpen(false);
+    btn.addEventListener("click", function (e) {
+      e.preventDefault();
+      e.stopPropagation();
+      setOpen(panel.hidden);
+    });
+    document.addEventListener("click", function (e) {
+      if (!root.contains(e.target)) setOpen(false);
+    });
+    document.addEventListener("keydown", function (e) {
+      if (e.key === "Escape") setOpen(false);
+    });
   }
-
-  function setOpen(open) {
-    panel.hidden = !open;
-    btn.setAttribute("aria-expanded", open ? "true" : "false");
-    root.classList.toggle("is-open", !!open);
-  }
-
-  setOpen(false);
-
-  btn.addEventListener("click", function (e) {
-    e.preventDefault();
-    e.stopPropagation();
-    setOpen(!isOpen());
-  });
-
-  document.addEventListener("click", function (e) {
-    if (!root.contains(e.target)) setOpen(false);
-  });
-
-  document.addEventListener("keydown", function (e) {
-    if (e.key === "Escape") setOpen(false);
-  });
+  bindMenu("[data-projects-filters]", "[data-projects-filters-toggle]", "[data-projects-filters-panel]");
 })();
 </script>

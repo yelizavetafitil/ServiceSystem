@@ -1,26 +1,97 @@
 {% extends "base.html" %}
 {% block title %}Проекты — канбан{% endblock %}
 {% block head %}
-<link rel="stylesheet" href="{{ url_for('static', filename='css/projects.css') }}?v=99">
-<script defer src="{{ url_for('static', filename='js/projects-kanban.js') }}?v=2"></script>
+<link rel="stylesheet" href="{{ url_for('static', filename='css/projects.css') }}?v=133">
+<script defer src="{{ url_for('static', filename='js/projects-kanban.js') }}?v=7"></script>
 <script defer src="{{ url_for('static', filename='js/projects-sla.js') }}?v=2"></script>
 {% endblock %}
 {% block content %}
+{% set kanban_rejected_url = url_for('projects.arm', view='kanban', project=filter_project or none, show_rejected=(0 if show_rejected else 1), show_archived=(1 if show_archived else 0)) %}
+{% set kanban_archived_url = url_for('projects.arm', view='kanban', project=filter_project or none, show_rejected=(1 if show_rejected else 0), show_archived=(0 if show_archived else 1)) %}
 <div class="container cms-page projects-page">
   {% include "projects/_arm_header.html" %}
-  <div class="projects-kanban" data-kanban-root>
+
+  {% if (current_user.is_admin or current_user.is_auditor) and archive_pending_count|default(0) %}
+  <div class="projects-kanban-archive-hint" role="status">
+    После приёмки этапа можно скрыть задачи с канбана и Ганта.
+    <a href="{{ url_for('projects.archive_hub', project=filter_project) }}">Архив · {{ archive_pending_count }}</a>
+  </div>
+  {% endif %}
+
+  <div class="projects-kanban-toolbar" role="group" aria-label="Доп. колонки канбана">
+    <a class="projects-kanban-toggle{% if show_rejected %} is-on{% endif %}"
+       href="{{ kanban_rejected_url }}"
+       title="Показать или скрыть колонку «Отклонено» (по умолчанию скрыта)">
+      <span class="projects-kanban-toggle-box" aria-hidden="true"></span>
+      Отклонено
+    </a>
+    <a class="projects-kanban-toggle{% if show_archived %} is-on{% endif %}"
+       href="{{ kanban_archived_url }}"
+       title="Показать или скрыть колонку «Архив» (по умолчанию скрыта)">
+      <span class="projects-kanban-toggle-box" aria-hidden="true"></span>
+      Архив
+    </a>
+  </div>
+  <div class="projects-kanban" data-kanban-root data-kanban-role="{{ kanban_role }}" data-user-id="{{ current_user.id }}">
     {% for col in columns %}
-    <section class="projects-kanban-col" data-kanban-column="{{ col }}">
+    <section class="projects-kanban-col{% if col == 'waiting' %} projects-kanban-col--waiting{% endif %}" data-kanban-column="{{ col }}">
       <h2 class="projects-kanban-col-title">{{ kanban_labels[col] }}</h2>
-      <div class="projects-kanban-drop" data-kanban-status="{{ col }}">
+      {% if col == 'waiting' %}
+      <p class="projects-kanban-col-hint">Система: блокирующие связи. Перемещение вручную недоступно.</p>
+      {% elif col == 'done' and kanban_role == 'executor' %}
+      <p class="projects-kanban-col-hint">Только просмотр: переносит аудитор кнопкой «Проверено».</p>
+      {% elif col in ('todo', 'in_progress') and kanban_role == 'auditor' %}
+      <p class="projects-kanban-col-hint">Чужие задачи — только просмотр; свои — как у исполнителя.</p>
+      {% endif %}
+      <div class="projects-kanban-drop" data-kanban-status="{{ col }}"{% if col == 'waiting' %} data-kanban-locked="1"{% endif %}>
         {% for t in grouped[col] %}
-        <article class="projects-kanban-card{% if t.priority >= 4 %} projects-kanban-card--critical{% elif t.priority >= 3 %} projects-kanban-card--high{% endif %}{% if t.is_critical_path %} projects-kanban-card--sla{% endif %}"
-                 draggable="true" data-task-id="{{ t.id }}" data-kanban-status="{{ col }}">
+        {% set is_own = (t.assignee_id == current_user.id) or (t.created_by_id == current_user.id) %}
+        {% if kanban_role == 'admin' %}
+          {% set can_drag = col != 'waiting' %}
+        {% elif kanban_role == 'auditor' %}
+          {% if col == 'waiting' %}
+            {% set can_drag = false %}
+          {% elif is_own %}
+            {% set can_drag = col not in ('rejected', 'archived') %}
+          {% else %}
+            {# чужие: нельзя трогать «к исполнению» / «в работе» #}
+            {% set can_drag = col in ('review', 'done', 'rejected', 'archived') %}
+          {% endif %}
+        {% else %}
+          {% set can_drag = col not in ('waiting', 'done', 'rejected', 'archived') %}
+        {% endif %}
+        <article class="projects-kanban-card{% if t.priority >= 4 %} projects-kanban-card--critical{% elif t.priority >= 3 %} projects-kanban-card--high{% endif %}{% if t.is_critical_path %} projects-kanban-card--sla{% endif %}{% if not can_drag %} projects-kanban-card--locked{% endif %}"
+                 {% if can_drag %}draggable="true"{% endif %}
+                 data-task-id="{{ t.id }}"
+                 data-kanban-status="{{ t.kanban_status }}"
+                 data-board-column="{{ col }}"
+                 data-has-report="{{ 1 if t.completion_report else 0 }}"
+                 data-assignee-id="{{ t.assignee_id or '' }}"
+                 data-own="{{ 1 if is_own else 0 }}">
+          <div class="projects-kanban-card-top">
+            {% set wbs = (wbs_by_id|default({})).get(t.id) %}
+            {% if wbs %}
+            <span class="projects-kanban-wbs" title="Индекс с Ганта (WBS)">{{ wbs }}</span>
+            {% endif %}
+            {% if t.parent_id %}
+            <span class="projects-kanban-kind" title="Подзадача">подзадача</span>
+            {% else %}
+            <span class="projects-kanban-kind projects-kanban-kind--task" title="Задача верхнего уровня">задача</span>
+            {% endif %}
+          </div>
           {% if t.ticket_id %}
           <a class="projects-kanban-card-title" href="{{ url_for('tickets.detail', tid=t.ticket_id) }}">{{ t.title }}</a>
           <span class="projects-kanban-badge">Заявка</span>
           {% else %}
           <a class="projects-kanban-card-title" href="{{ url_for('projects.task_detail', tid=t.id, arm_view='kanban') }}">{{ t.title }}</a>
+          {% endif %}
+          {% set parent_task = (parents_by_id|default({})).get(t.parent_id) if t.parent_id else none %}
+          {% if parent_task %}
+          <a class="projects-kanban-parent-tag"
+             href="{{ url_for('projects.task_detail', tid=t.parent_id, arm_view='kanban') }}"
+             title="Родительская задача">
+            ← {{ parent_task.title }}
+          </a>
           {% endif %}
           {% if t.project %}<p class="projects-kanban-meta">{{ t.project.name }}{% if t.stage %} · {{ t.stage.title }}{% endif %}</p>{% endif %}
           {% if t.due_date %}<p class="projects-kanban-due">до {{ t.due_date.strftime('%d.%m.%Y') }}{% if t.overdue_days %} · +{{ t.overdue_days }} д.{% endif %}</p>{% endif %}

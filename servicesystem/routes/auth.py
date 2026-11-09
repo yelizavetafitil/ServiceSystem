@@ -68,33 +68,32 @@ def _personal_login():
     if not user or not user.check_password(password):
         flash("Неверный email или пароль.", "danger")
         return redirect(url_for("auth.login"))
-    if user.is_customer and user.contract:
-        if user.is_customer_curator and user.contract.is_access_disabled:
+    if user.is_customer:
+        if user.is_customer_curator:
             from servicesystem.project_management.services import (
                 ensure_customer_curator_contract_access,
             )
 
             ensure_customer_curator_contract_access(user)
             db.session.commit()
-        if user.contract.is_access_disabled:
+        # Доступ по своему договору ИЛИ перекрывающему договору организации (разработка и т.п.)
+        if not user.portal_access_on:
             if user.is_active:
                 user.is_active = False
                 db.session.commit()
-            when = user.contract.access_disabled_at
+            when = user.portal_disabled_at
             when_txt = when.strftime("%d.%m.%Y") if when else "—"
-            if user.contract.is_master_key_expired:
-                flash(
-                    f"Мастер-ключ организации истёк ({when_txt}). Доступ отключён. "
-                    "Обратитесь к администратору.",
-                    "danger",
-                )
-            else:
-                flash(
-                    f"Доступ организации заблокирован или срок обслуживания истёк "
-                    f"(до {when_txt}). Обратитесь к администратору.",
-                    "danger",
-                )
+            flash(
+                f"Доступ организации заблокирован или срок обслуживания истёк "
+                f"(до {when_txt}). Перекрывающий договор разработки также не действует. "
+                "Обратитесь к администратору.",
+                "danger",
+            )
             return redirect(url_for("auth.login"))
+        # Есть свой или перекрывающий договор — УЗ должна быть включена
+        if not user.is_active:
+            user.is_active = True
+            db.session.commit()
     if not user.is_active:
         flash("Учётная запись отключена. Обратитесь к администратору.", "danger")
         return redirect(url_for("auth.login"))

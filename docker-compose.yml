@@ -28,7 +28,7 @@ services:
       DATABASE_URL: postgresql+psycopg2://servicesystem:servicesystem@db:5432/servicesystem
       SECRET_KEY: ${SECRET_KEY:-change-me-in-production-servicesystem}
       UPLOAD_FOLDER: /app/data/uploads
-      APP_NAME: "Сервис ЭМСТПН"
+      APP_NAME: "ПРОГРЕСС"
       ORG_NAME: 'РУП «Белнипиэнергопром»'
       FORCE_HTTPS: ${FORCE_HTTPS:-0}
       MAIL_ENABLED: ${MAIL_ENABLED:-0}

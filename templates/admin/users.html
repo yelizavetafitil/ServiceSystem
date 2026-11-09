@@ -18,7 +18,7 @@
           {% else %}
           <span class="badge status-rejected">Отключён</span>
           {% if u.portal_disabled_at %}
-          <span class="access-disabled-date" title="{% if u.contract and u.contract.is_master_key_expired %}Истёк мастер-ключ{% else %}Закрыт срок обслуживания{% endif %}">с {{ u.portal_disabled_at.strftime('%d.%m.%Y') }}</span>
+          <span class="access-disabled-date" title="Нет действующего договора организации (включая перекрывающий)">с {{ u.portal_disabled_at.strftime('%d.%m.%Y') }}</span>
           {% endif %}
           {% endif %}
           {% if u.is_customer %}
