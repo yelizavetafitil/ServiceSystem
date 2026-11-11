@@ -151,10 +151,12 @@
   position: relative;
   z-index: 100;
   isolation: isolate;
-  /* непрозрачный фон — не смешивается со sticky-topbar при наложении */
-  background: var(--bg, #edf3fb);
+  background: transparent;
   margin-top: 0;
   align-items: flex-start;
+  border: none;
+  box-shadow: none;
+  outline: none;
 }
 .projects-arm-header .page-header-actions {
   position: relative;
