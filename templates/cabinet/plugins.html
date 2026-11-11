@@ -19,7 +19,9 @@
       <h4 class="changelog-title">Что нового в v{{ ver.version }}</h4>
       <div class="changelog markdown-body">{{ ver.changelog_md|markdown|safe }}</div>
       {% endif %}
-      {% if can_download %}
+      {% if not (p.user_has_access|default(true)) %}
+      <span class="btn btn-primary disabled is-link-disabled" title="Нет доступа по договору">Нет доступа</span>
+      {% elif can_download %}
       <a href="{{ url_for('cabinet.plugin_download', pid=p.id) }}" class="btn btn-primary">Скачать v{{ p.current_version or ver.version if ver else '' }}</a>
       {% else %}
       <span class="btn btn-primary disabled" title="Доступ только для чтения">Скачивание недоступно</span>

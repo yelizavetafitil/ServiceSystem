@@ -49,10 +49,18 @@ def create_app(config_class=Config):
     app.register_blueprint(projects_bp, url_prefix="/projects")
 
     from servicesystem.project_management.routes import projects_ui_context
+    from servicesystem.project_management.services import user_can_view_task as _user_can_view_task
 
     @app.context_processor
     def _projects_template_labels():
         return projects_ui_context()
+
+    @app.template_global("can_open_project_task")
+    def can_open_project_task(task) -> bool:
+        """Можно ли открыть карточку задачи (иначе ссылку делаем неактивной)."""
+        if not task or not current_user.is_authenticated:
+            return False
+        return bool(_user_can_view_task(current_user, task))
 
     from servicesystem.services.cms_html import render_cms_markdown
 

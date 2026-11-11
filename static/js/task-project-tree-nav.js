@@ -80,9 +80,16 @@
         esc(tip) +
         (draggable ? " · перетащите в «Выполнить после»" : "") +
         ' · двойной клик — открыть">' +
-        '<span class="projects-task-tree-name">' +
-        esc(t.title) +
-        "</span>";
+        '<span class="projects-task-tree-name">';
+      if (t.wbs) {
+        html +=
+          '<span class="projects-task-tree-wbs" title="WBS ' +
+          esc(t.wbs) +
+          '">' +
+          esc(t.wbs) +
+          "</span> ";
+      }
+      html += esc(t.title) + "</span>";
       if (t.dates_label) {
         html += '<span class="projects-task-tree-dates">' + esc(t.dates_label) + "</span>";
       }

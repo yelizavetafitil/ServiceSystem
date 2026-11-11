@@ -112,33 +112,48 @@
     zone.addEventListener("drop", async (e) => {
       e.preventDefault();
       zone.classList.remove("is-drag-over");
-      if (!dragId || !dragCard) return;
+      // dragend обнуляет глобальные drag* сразу после drop — копируем до await
+      const card = dragCard;
+      const taskId = dragId;
+      const fromStatus = dragFromStatus;
+      if (!taskId || !card) return;
       if (zone.dataset.kanbanLocked === "1") {
         await uiAlert("Колонка «В ожидании» управляется системой (блокирующие связи).");
         return;
       }
       const status = zone.dataset.kanbanStatus;
       if (!status || status === "waiting") return;
-      if (!adjacentOk(dragFromStatus, status)) {
+      if (!adjacentOk(fromStatus, status)) {
         await uiAlert("Нельзя перемещать задачу через шаг. Допустимы только соседние статусы.");
         return;
       }
-      if (!roleClientOk(dragFromStatus, status, dragCard)) {
-        if (role === "auditor" && !isOwnCard(dragCard) && (dragFromStatus === "todo" || dragFromStatus === "in_progress" || status === "todo" || status === "in_progress")) {
+      if (!roleClientOk(fromStatus, status, card)) {
+        if (role === "auditor" && !isOwnCard(card) && (fromStatus === "todo" || fromStatus === "in_progress" || status === "todo" || status === "in_progress")) {
           await uiAlert("Чужие задачи в «К исполнению» / «В работе» аудитор только просматривает.");
         } else {
           await uiAlert("Это перемещение запрещено для вашей роли.");
         }
         return;
       }
+      if (fromStatus === status) return;
 
       const body = { status: status, sort: 0 };
-      const prevParent = dragCard.parentElement;
-      const prevNext = dragCard.nextElementSibling;
-      zone.prepend(dragCard);
+      const prevParent = card.parentElement;
+      const prevNext = card.nextElementSibling;
+
+      function restoreCard() {
+        if (!prevParent) return;
+        if (prevNext && prevNext.parentElement === prevParent) {
+          prevParent.insertBefore(card, prevNext);
+        } else {
+          prevParent.appendChild(card);
+        }
+      }
+
+      zone.prepend(card);
 
       try {
-        let res = await fetch("/projects/api/tasks/" + dragId + "/move", {
+        let res = await fetch("/projects/api/tasks/" + taskId + "/move", {
           method: "POST",
           headers: { "Content-Type": "application/json", "X-CSRFToken": csrf },
           body: JSON.stringify(body),
@@ -155,16 +170,13 @@
             cancelLabel: "Заполнить отчёт",
           });
           if (!ok) {
-            if (prevParent) {
-              if (prevNext) prevParent.insertBefore(dragCard, prevNext);
-              else prevParent.appendChild(dragCard);
-            }
+            restoreCard();
             window.location.href =
-              "/projects/tasks/" + dragId + "?highlight=report#task-report";
+              "/projects/tasks/" + taskId + "?highlight=report#task-report";
             return;
           }
           body.force_empty_report = true;
-          res = await fetch("/projects/api/tasks/" + dragId + "/move", {
+          res = await fetch("/projects/api/tasks/" + taskId + "/move", {
             method: "POST",
             headers: { "Content-Type": "application/json", "X-CSRFToken": csrf },
             body: JSON.stringify(body),
@@ -175,10 +187,7 @@
         }
 
         if (!res.ok) {
-          if (prevParent) {
-            if (prevNext) prevParent.insertBefore(dragCard, prevNext);
-            else prevParent.appendChild(dragCard);
-          }
+          restoreCard();
           const msgs = {
             blocked: "Задача заблокирована связями — сначала завершите предшественников.",
             skip: "Нельзя перемещать через шаг.",
@@ -188,13 +197,11 @@
           await uiAlert(msgs[data.error] || "Не удалось переместить задачу.");
           return;
         }
-        dragCard.dataset.kanbanStatus = data.status || status;
-        dragCard.dataset.boardColumn = data.status || status;
+        const nextStatus = data.status || status;
+        card.dataset.kanbanStatus = nextStatus;
+        card.dataset.boardColumn = nextStatus;
       } catch (_) {
-        if (prevParent) {
-          if (prevNext) prevParent.insertBefore(dragCard, prevNext);
-          else prevParent.appendChild(dragCard);
-        }
+        restoreCard();
         await uiAlert("Ошибка сети при перемещении.");
       }
     });

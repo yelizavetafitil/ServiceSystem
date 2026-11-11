@@ -151,15 +151,30 @@
   position: relative;
   z-index: 100;
   isolation: isolate;
-  background: transparent;
+  /* непрозрачный фон — не смешивается со sticky-topbar при наложении */
+  background: var(--bg, #edf3fb);
+  margin-top: 0;
+  align-items: flex-start;
 }
 .projects-arm-header .page-header-actions {
   position: relative;
   z-index: 110;
+  flex-shrink: 1;
+  max-width: 100%;
 }
 .projects-view-tabs {
   position: relative;
   z-index: 1;
+}
+@media (max-width: 1100px) {
+  .projects-arm-header.page-header {
+    flex-direction: column;
+    align-items: stretch;
+  }
+  .projects-arm-header .page-header-actions {
+    width: 100%;
+    justify-content: flex-start;
+  }
 }
 .projects-kanban { display: grid; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); gap: 12px; align-items: start; }
 .projects-kanban-col { background: #f4f7fb; border: 1px solid var(--border); border-radius: var(--radius); padding: 10px; min-height: 320px; }
@@ -218,7 +233,8 @@
   color: var(--primary-dark);
   background: #e8f0fe;
 }
-.projects-kanban-parent-tag {
+.projects-kanban-parent-tag,
+.projects-kanban-blocker-tag {
   display: inline-flex;
   max-width: 100%;
   margin: 6px 0 0;
@@ -235,9 +251,37 @@
   text-overflow: ellipsis;
   white-space: nowrap;
 }
-.projects-kanban-parent-tag:hover {
+.projects-kanban-parent-tag:hover,
+.projects-kanban-blocker-tag:hover {
   border-color: var(--primary);
   background: #e8f0fe;
+}
+.projects-kanban-blocker-tag {
+  border-color: #fdba74;
+  background: #fff7ed;
+  color: #c2410c;
+}
+.projects-kanban-blocker-tag:hover {
+  border-color: #ea580c;
+  background: #ffedd5;
+}
+.is-link-disabled,
+a.is-link-disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+  text-decoration: none !important;
+  pointer-events: none;
+  color: inherit;
+}
+.projects-kanban-blocker-tag.is-link-disabled,
+.projects-kanban-parent-tag.is-link-disabled {
+  border-style: dashed;
+  color: #78716c;
+  background: #f8fafc;
+  border-color: #cbd5e1;
+}
+.projects-calendar-event.is-link-disabled {
+  cursor: not-allowed;
 }
 .projects-kanban-parent { margin: 4px 0 0; font-size: 11px; color: var(--muted); }
 .projects-kanban-parent a { color: var(--primary); text-decoration: none; font-weight: 600; }
@@ -367,12 +411,46 @@
 .projects-archive-section {
   margin-bottom: 16px;
 }
+.projects-archive-section-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px 16px;
+  margin-bottom: 8px;
+}
+.projects-archive-section-head .projects-cms-subheading {
+  margin: 0;
+}
+.projects-archive-check-col {
+  width: 2.25rem;
+  text-align: center;
+  vertical-align: middle;
+}
+.projects-archive-wbs-col {
+  width: 4.5rem;
+  white-space: nowrap;
+  vertical-align: middle;
+}
+.projects-archive-wbs {
+  display: inline-block;
+  padding: 1px 6px;
+  border-radius: 4px;
+  background: #e2e8f0;
+  color: #334155;
+  font-size: 12px;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+}
 .projects-archive-row-actions {
   display: flex;
   flex-wrap: wrap;
   gap: 6px;
   justify-content: flex-end;
   white-space: nowrap;
+}
+.projects-archive-bulk-form .table {
+  margin-bottom: 0;
 }
 
 /* Гант, большой экран: без вертикального скролла браузера */
@@ -486,6 +564,20 @@
   border-radius: 6px;
 }
 .projects-calendar-toolbar { row-gap: 8px; }
+.projects-calendar-pan {
+  margin-left: 8px;
+}
+.projects-calendar-period {
+  margin-left: 6px;
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--text, #0f172a);
+  white-space: nowrap;
+}
+.projects-calendar-cell.is-today {
+  box-shadow: inset 0 0 0 1px #93c5fd;
+  background: #f8fbff;
+}
 .projects-calendar-assignee-filter {
   display: flex;
   align-items: center;
@@ -2260,6 +2352,25 @@ button.projects-task-checklist-check:hover {
 .projects-task-tree-name {
   overflow-wrap: anywhere;
   word-break: break-word;
+}
+.projects-task-tree-wbs {
+  display: inline-block;
+  margin-right: 2px;
+  padding: 0 5px;
+  border-radius: 4px;
+  background: #e2e8f0;
+  color: #334155;
+  font-size: 11px;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  line-height: 1.4;
+  white-space: nowrap;
+  vertical-align: baseline;
+}
+.projects-task-tree-link.is-current .projects-task-tree-wbs,
+.projects-task-tree-item--task.is-current .projects-task-tree-wbs {
+  background: #dbeafe;
+  color: #1e40af;
 }
 .projects-task-tree-dates {
   font-size: 11px;

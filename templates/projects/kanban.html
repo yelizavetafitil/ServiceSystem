@@ -1,8 +1,9 @@
 {% extends "base.html" %}
+{% from "macros/task_link.html" import project_task_link %}
 {% block title %}Проекты — канбан{% endblock %}
 {% block head %}
-<link rel="stylesheet" href="{{ url_for('static', filename='css/projects.css') }}?v=133">
-<script defer src="{{ url_for('static', filename='js/projects-kanban.js') }}?v=7"></script>
+<link rel="stylesheet" href="{{ url_for('static', filename='css/projects.css') }}?v=140">
+<script defer src="{{ url_for('static', filename='js/projects-kanban.js') }}?v=8"></script>
 <script defer src="{{ url_for('static', filename='js/projects-sla.js') }}?v=2"></script>
 {% endblock %}
 {% block content %}
@@ -83,15 +84,20 @@
           <a class="projects-kanban-card-title" href="{{ url_for('tickets.detail', tid=t.ticket_id) }}">{{ t.title }}</a>
           <span class="projects-kanban-badge">Заявка</span>
           {% else %}
-          <a class="projects-kanban-card-title" href="{{ url_for('projects.task_detail', tid=t.id, arm_view='kanban') }}">{{ t.title }}</a>
+          {{ project_task_link(t, class='projects-kanban-card-title', arm_view='kanban') }}
           {% endif %}
+          {% set blockers = (blockers_by_id|default({})).get(t.id) or [] %}
+          {% if blockers %}
+          {% for b in blockers[:3] %}
+          {% set bw = (wbs_by_id|default({})).get(b.id) %}
+          {% set blabel = 'Ожидает ' ~ ((bw ~ ' · ') if bw else '') ~ (b.title[:28] ~ ('…' if b.title|length > 28 else '')) %}
+          {{ project_task_link(b, text=blabel, class='projects-kanban-blocker-tag', title='Блокирует: ' ~ b.title, arm_view='kanban') }}
+          {% endfor %}
+          {% else %}
           {% set parent_task = (parents_by_id|default({})).get(t.parent_id) if t.parent_id else none %}
           {% if parent_task %}
-          <a class="projects-kanban-parent-tag"
-             href="{{ url_for('projects.task_detail', tid=t.parent_id, arm_view='kanban') }}"
-             title="Родительская задача">
-            ← {{ parent_task.title }}
-          </a>
+          {{ project_task_link(parent_task, text='← ' ~ parent_task.title, class='projects-kanban-parent-tag', title='Родительская задача', arm_view='kanban') }}
+          {% endif %}
           {% endif %}
           {% if t.project %}<p class="projects-kanban-meta">{{ t.project.name }}{% if t.stage %} · {{ t.stage.title }}{% endif %}</p>{% endif %}
           {% if t.due_date %}<p class="projects-kanban-due">до {{ t.due_date.strftime('%d.%m.%Y') }}{% if t.overdue_days %} · +{{ t.overdue_days }} д.{% endif %}</p>{% endif %}

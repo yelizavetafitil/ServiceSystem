@@ -1458,18 +1458,36 @@
     return Math.max(0, timelineLeft - view * 0.35);
   }
 
-  function scrollGanttTo(left, smooth) {
+  var topHost = document.getElementById("gantt-hscroll-top");
+  var syncingScroll = false;
+
+  function setGanttScrollLeft(left, smooth) {
     if (!host) return;
-    host.scrollTo({ left: left, top: host.scrollTop, behavior: smooth ? "smooth" : "auto" });
+    var maxLeft = Math.max(0, host.scrollWidth - host.clientWidth);
+    var next = Math.max(0, Math.min(maxLeft, left));
+    syncingScroll = true;
+    if (smooth) {
+      host.scrollTo({ left: next, top: host.scrollTop, behavior: "smooth" });
+      if (topHost) topHost.scrollLeft = next;
+    } else {
+      host.scrollLeft = next;
+      if (topHost) topHost.scrollLeft = next;
+    }
+    // отпустить флаг после синхронных scroll-событий
+    syncingScroll = false;
+    saveGanttScroll();
   }
 
-  /** Центрирует полоску задачи в видимой области шкалы (с учётом текущего зума). */
+  function scrollGanttTo(left, smooth) {
+    setGanttScrollLeft(left, !!smooth);
+  }
+
+  /** Центрирует полоску задачи на шкале (по датам — надёжно после стрелок зума). */
   function centerTaskInView(taskId, smooth) {
     if (!host || !taskId) return false;
     var row = chart.querySelector('.projects-gantt-row[data-task-id="' + taskId + '"]');
     if (!row || row.hidden) return false;
-    var slot = row.querySelector(".projects-gantt-bar-slot");
-    if (!slot) return false;
+
     var hostRect = host.getBoundingClientRect();
     var rowRect = row.getBoundingClientRect();
     if (rowRect.top < hostRect.top + 4) {
@@ -1477,13 +1495,34 @@
     } else if (rowRect.bottom > hostRect.bottom - 4) {
       host.scrollTop += rowRect.bottom - hostRect.bottom + 4;
     }
-    hostRect = host.getBoundingClientRect();
-    var slotRect = slot.getBoundingClientRect();
-    var sw = sideW();
-    var slotCenter = slotRect.left + slotRect.width / 2;
-    var viewCenter = hostRect.left + sw + Math.max(40, hostRect.width - sw) / 2;
-    scrollGanttTo(host.scrollLeft + (slotCenter - viewCenter), !!smooth);
-    saveGanttScroll();
+
+    var bar =
+      row.querySelector('.projects-gantt-bar[data-task-id="' + taskId + '"]') ||
+      row.querySelector(".projects-gantt-bar");
+    var start = bar ? parseIso(bar.getAttribute("data-start")) : null;
+    var due = bar ? parseIso(bar.getAttribute("data-due")) : null;
+    var targetLeft = null;
+
+    if (start || due) {
+      var a = start || due;
+      var b = due || start;
+      var mid = new Date(Math.round((a.getTime() + b.getTime()) / 2));
+      var view = Math.max(80, host.clientWidth - sideW());
+      // середина задачи ближе к центру видимой шкалы
+      targetLeft = scrollLeftForDate(mid) - view * 0.45;
+    } else {
+      var slot = row.querySelector(".projects-gantt-bar-slot");
+      if (!slot) return false;
+      hostRect = host.getBoundingClientRect();
+      var slotRect = slot.getBoundingClientRect();
+      var sw = sideW();
+      var slotCenter = slotRect.left + slotRect.width / 2;
+      var viewCenter = hostRect.left + sw + Math.max(40, hostRect.width - sw) / 2;
+      targetLeft = host.scrollLeft + (slotCenter - viewCenter);
+    }
+
+    // без smooth: dual-scroll (верх+низ) иначе гасит анимацию после стрелок
+    setGanttScrollLeft(targetLeft, false);
     row.classList.add("is-gantt-flash");
     window.setTimeout(function () { row.classList.remove("is-gantt-flash"); }, 900);
     scheduleDraw();
@@ -1624,25 +1663,6 @@
       x.setDate(x.getDate() + dir);
     }
     return x;
-  }
-
-  var topHost = document.getElementById("gantt-hscroll-top");
-  var syncingScroll = false;
-
-  function setGanttScrollLeft(left, smooth) {
-    if (!host) return;
-    var maxLeft = Math.max(0, host.scrollWidth - host.clientWidth);
-    var next = Math.max(0, Math.min(maxLeft, left));
-    syncingScroll = true;
-    if (smooth) {
-      host.scrollTo({ left: next, top: host.scrollTop, behavior: "smooth" });
-      if (topHost) topHost.scrollLeft = next;
-    } else {
-      host.scrollLeft = next;
-      if (topHost) topHost.scrollLeft = next;
-    }
-    syncingScroll = false;
-    saveGanttScroll();
   }
 
   /** Сдвиг шкалы стрелками: ровно ±1 единица зума (день / неделя / месяц / квартал). */

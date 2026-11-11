@@ -1,9 +1,18 @@
 {% for t in tutorials %}
+{% if t.user_has_access|default(true) %}
 <a href="{{ url_for('cabinet.tutorial_detail', slug=t.slug) }}" class="kb-item live-search-item" data-live-search-item data-search-text="{{ t.title }} {{ t.category or '' }} {{ t.tags or '' }}">
   <span class="kb-cat">{{ t.category }}</span>
   <h3>{{ t.title }}</h3>
   <span class="kb-tags">{{ t.tags }}</span>
 </a>
+{% else %}
+<div class="kb-item kb-item--locked live-search-item is-link-disabled" data-live-search-item data-search-text="{{ t.title }} {{ t.category or '' }} {{ t.tags or '' }}" title="Нет доступа по договору">
+  <span class="kb-cat">{{ t.category }}</span>
+  <h3>{{ t.title }}</h3>
+  <span class="kb-tags">{{ t.tags }}</span>
+  <span class="kb-locked-hint">Нет доступа</span>
+</div>
+{% endif %}
 {% else %}
 <p class="muted live-search-empty">Материалы не найдены.</p>
 {% endfor %}

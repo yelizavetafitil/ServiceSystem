@@ -6,7 +6,7 @@
   <meta name="csrf-token" content="{{ csrf_token() }}">
   <title>{% block title %}{{ APP_NAME }}{% endblock %}</title>
   <link rel="icon" href="{{ url_for('static', filename='img/progress-mark.svg') }}?v=2" type="image/svg+xml">
-  <link rel="stylesheet" href="{{ url_for('static', filename='css/main.css') }}?v=104">
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/main.css') }}?v=107">
   {% block head %}{% endblock %}
 </head>
 <body class="{% if not current_user.is_authenticated %}auth-body{% endif %}{% block body_class %}{% endblock %}">

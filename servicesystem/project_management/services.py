@@ -1735,22 +1735,75 @@ def apply_kanban_move(
     )
 
 
-def build_tasks_wbs_map(tasks: list[ProjectTask]) -> dict[int, str]:
-    """Сквозной WBS как на Ганте (по gantt_sort внутри проекта).
+def build_task_blockers_map(tasks: list[ProjectTask]) -> dict[int, list[ProjectTask]]:
+    """Незавершённые FS-предшественники («выполнить после») для карточек канбана."""
+    ids = {t.id for t in tasks if t and t.id}
+    if not ids:
+        return {}
+    from sqlalchemy import and_
 
-    Для совпадения с Гантом подтягивает все задачи проектов из выборки,
-    даже если на канбане виден только срез исполнителя.
+    links = ProjectTaskLink.query.filter(
+        or_(
+            and_(
+                ProjectTaskLink.to_task_id.in_(ids),
+                ProjectTaskLink.link_type == "blocks",
+            ),
+            and_(
+                ProjectTaskLink.from_task_id.in_(ids),
+                ProjectTaskLink.link_type == "blocked_by",
+            ),
+        )
+    ).all()
+    pairs: list[tuple[int, int]] = []
+    pred_ids: set[int] = set()
+    for link in links:
+        if link.link_type == "blocks":
+            pairs.append((link.to_task_id, link.from_task_id))
+            pred_ids.add(link.from_task_id)
+        else:
+            pairs.append((link.from_task_id, link.to_task_id))
+            pred_ids.add(link.to_task_id)
+    preds = {
+        p.id: p
+        for p in ProjectTask.query.filter(ProjectTask.id.in_(pred_ids)).all()
+    } if pred_ids else {}
+    out: dict[int, list[ProjectTask]] = {i: [] for i in ids}
+    seen: dict[int, set[int]] = {i: set() for i in ids}
+    for succ_id, pred_id in pairs:
+        if succ_id not in out:
+            continue
+        p = preds.get(pred_id)
+        if not p or p.kanban_status == "done":
+            continue
+        if pred_id in seen[succ_id]:
+            continue
+        seen[succ_id].add(pred_id)
+        out[succ_id].append(p)
+    return out
+
+
+def build_tasks_wbs_map(
+    tasks: list[ProjectTask],
+    *,
+    include_archived: bool = False,
+) -> dict[int, str]:
+    """Единый WBS проекта (1, 1.1, 2…) — один и тот же на Ганте и канбане.
+
+    Берёт все задачи проектов из выборки (не только видимый срез канбана),
+    по gantt_sort. Архив по умолчанию не участвует в нумерации — как на Ганте.
     """
     by_project: dict[int | None, list[ProjectTask]] = {}
     project_ids = {t.project_id for t in tasks if t.project_id}
     if project_ids:
-        full = ProjectTask.query.filter(ProjectTask.project_id.in_(project_ids)).all()
-        for t in full:
+        q = ProjectTask.query.filter(ProjectTask.project_id.in_(project_ids))
+        if not include_archived:
+            q = q.filter(ProjectTask.kanban_status != "archived")
+        for t in q.all():
             by_project.setdefault(t.project_id, []).append(t)
-    # Задачи без проекта (если есть) — только из переданного списка
     for t in tasks:
         if not t.project_id:
-            by_project.setdefault(None, []).append(t)
+            if include_archived or t.kanban_status != "archived":
+                by_project.setdefault(None, []).append(t)
     out: dict[int, str] = {}
     for _pid, group in by_project.items():
         by_id = {t.id: t for t in group}
@@ -2105,10 +2158,21 @@ def user_can_view_others_time_logs(user: User) -> bool:
 
 
 def user_can_view_task(user: User, task: ProjectTask) -> bool:
+    """Просмотр карточки задачи (ссылки без доступа — неактивны в UI)."""
+    if not user or not task:
+        return False
     if user_can_edit_task(user, task):
+        return True
+    if user.is_admin or user.is_auditor:
         return True
     if user.role == "customer_curator" and task.project and task.project.customer_curator_id == user.id:
         return True
-    if user.is_auditor:
-        return True
+    # Исполнитель видит задачи своего проекта (правка — только свои)
+    if user.is_executor and task.project_id:
+        return (
+            ProjectMember.query.filter_by(
+                project_id=task.project_id, user_id=user.id
+            ).first()
+            is not None
+        )
     return False

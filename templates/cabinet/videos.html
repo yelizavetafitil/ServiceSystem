@@ -16,11 +16,19 @@
     {{ live_search_panel('Поиск по названию, категории…') }}
     <div class="video-grid" data-live-search-list>
     {% for v in videos %}
+    {% if v.user_has_access|default(true) %}
     <a href="{{ url_for('cabinet.video_detail', slug=v.slug) }}" class="video-card live-search-item" data-search-text="{{ v.title }} {{ v.category or '' }}">
       <div class="video-thumb"></div>
       <h3>{{ v.title }}</h3>
       <span class="muted">{{ v.category }}{% if v.duration_sec %} · {{ (v.duration_sec // 60) }} мин{% endif %}</span>
     </a>
+    {% else %}
+    <div class="video-card video-card--locked live-search-item is-link-disabled" data-search-text="{{ v.title }} {{ v.category or '' }}" title="Нет доступа по договору">
+      <div class="video-thumb"></div>
+      <h3>{{ v.title }}</h3>
+      <span class="muted">{{ v.category }}{% if v.duration_sec %} · {{ (v.duration_sec // 60) }} мин{% endif %} · нет доступа</span>
+    </div>
+    {% endif %}
     {% endfor %}
     <p class="live-search-empty muted" hidden>Видео не найдены.</p>
     </div>

@@ -1,4 +1,5 @@
 {% extends "base.html" %}
+{% from "macros/task_link.html" import project_task_link %}
 
 {% block title %}Проекты — диаграмма Ганта{% endblock %}
 
@@ -6,9 +7,9 @@
 
 {% block head %}
 
-<link rel="stylesheet" href="{{ url_for('static', filename='css/projects.css') }}?v=131">
+<link rel="stylesheet" href="{{ url_for('static', filename='css/projects.css') }}?v=140">
 
-<script defer src="{{ url_for('static', filename='js/projects-gantt.js') }}?v=72"></script>
+<script defer src="{{ url_for('static', filename='js/projects-gantt.js') }}?v=73"></script>
 
 {% endblock %}
 
@@ -37,8 +38,6 @@
       {% endfor %}
     </div>
     {% if gantt_can_edit %}
-    <span class="projects-gantt-toolbar-sep"></span>
-    <button type="button" class="btn btn-outline btn-sm" id="gantt-link-mode-btn" data-gantt-link-toggle>Выполнить после…</button>
     <span class="muted projects-gantt-link-hint" id="gantt-link-hint" hidden>Клик: задача → предшествующая</span>
     {% endif %}
     <span class="projects-gantt-legend-period muted projects-gantt-toolbar-period">
@@ -218,7 +217,7 @@
                   <a href="{{ url_for('tickets.detail', tid=grow.ticket_id) }}" class="projects-gantt-label" data-gantt-title title="{{ t.title }}">{{ t.title }}</a>
                   <span class="projects-kanban-badge">Заявка</span>
                   {% else %}
-                  <a href="{{ url_for('projects.task_detail', tid=t.id, arm_view='gantt') }}" class="projects-gantt-label" data-gantt-title title="{{ t.title }}">{{ t.title }}</a>
+                  {{ project_task_link(t, class='projects-gantt-label', title=t.title, arm_view='gantt') }}
                   {% endif %}
                   {% if grow.in_range or gantt_can_edit %}
                   <span class="projects-gantt-side-actions">
@@ -360,7 +359,7 @@
                   <a href="{{ url_for('tickets.detail', tid=grow.ticket_id) }}" class="projects-gantt-label" data-gantt-title title="{{ t.title }}">{{ t.title }}</a>
                   <span class="projects-kanban-badge">Заявка</span>
                   {% else %}
-                  <a href="{{ url_for('projects.task_detail', tid=t.id, arm_view='gantt') }}" class="projects-gantt-label" data-gantt-title title="{{ t.title }}">{{ t.title }}</a>
+                  {{ project_task_link(t, class='projects-gantt-label', title=t.title, arm_view='gantt') }}
                   {% endif %}
                   {% if gantt_can_edit %}
                   <span class="projects-gantt-side-actions">

@@ -7,8 +7,7 @@
       {% endif %}
       <a class="projects-view-tab{% if view == 'kanban' %} is-active{% endif %}" href="{{ url_for('projects.arm', view='kanban', project=filter_project) }}">Канбан</a>
       {% if current_user.is_admin or current_user.is_auditor or current_user.is_executor %}
-      <a class="projects-view-tab{% if view == 'calendar' %} is-active{% endif %}" href="{{ url_for('projects.arm', view='calendar', project=filter_project) }}">Календарь</a>
-      <a class="projects-view-tab{% if view == 'week' %} is-active{% endif %}" href="{{ url_for('projects.arm', view='week', project=filter_project) }}">Неделя</a>
+      <a class="projects-view-tab{% if view == 'calendar' or view == 'week' %} is-active{% endif %}" href="{{ url_for('projects.arm', view='calendar', project=filter_project) }}">Календарь</a>
       {% endif %}
     </div>
   </div>
@@ -92,17 +91,11 @@
 
         {% if view == 'calendar' %}
         {% set can_team = can_view_team_load if can_view_team_load is defined else (current_user.is_admin or current_user.is_auditor) %}
-        <div class="projects-filters-field">
-          <label for="arm-filter-cal-mode">Вид календаря</label>
-          <select id="arm-filter-cal-mode" name="cal_mode" class="form-control">
-            <option value="month" {% if cal_mode == 'month' %}selected{% endif %}>Месяц</option>
-            <option value="workweek" {% if cal_mode == 'workweek' %}selected{% endif %}>Рабочая неделя</option>
-            <option value="day" {% if cal_mode == 'day' %}selected{% endif %}>День</option>
-            {% if can_team %}
-            <option value="team" {% if cal_mode == 'team' %}selected{% endif %}>Расписание команды</option>
-            {% endif %}
-          </select>
-        </div>
+        {# Режим месяца/недели/дня — вкладки под шапкой, не дублируем в фильтрах #}
+        <input type="hidden" name="cal_mode" value="{{ cal_mode }}">
+        {% if cal_anchor is defined and cal_anchor %}
+        <input type="hidden" name="cal_date" value="{{ cal_anchor.isoformat() }}">
+        {% endif %}
         {% if can_team %}
         <div class="projects-filters-field">
           <label for="arm-filter-assignee">Исполнитель</label>
@@ -133,6 +126,8 @@
        class="btn btn-outline btn-sm{% if archive_pending_count|default(0) %} btn-primary{% endif %}"
        title="Архив задач и приёмка этапов">Архив{% if archive_pending_count|default(0) %} · {{ archive_pending_count }}{% endif %}</a>
     <a href="{{ url_for('projects.manage_list') }}" class="btn btn-outline btn-sm">Управление проектами</a>
+    {# На Ганте с выбранным проектом кнопка уже есть под фильтрами — не дублируем #}
+    {% if not (view == 'gantt' and filter_project) %}
     {% if filter_project %}
     <a href="{{ url_for('projects.task_new', project=filter_project) }}"
        class="btn btn-primary btn-sm"
@@ -141,6 +136,7 @@
     <a href="{{ url_for('projects.task_new') }}"
        class="btn btn-primary btn-sm"
        title="Задача верхнего уровня — выберите проект в форме">Новая задача</a>
+    {% endif %}
     {% endif %}
     {% endif %}
 

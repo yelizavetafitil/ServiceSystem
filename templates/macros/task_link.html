@@ -1,0 +1,12 @@
+{# Ссылка на задачу: неактивна, если у пользователя нет доступа (без 403). #}
+{% macro project_task_link(task, text=none, class='', title='', arm_view=none) -%}
+{%- set label = text if text is not none else (task.title if task else '') -%}
+{%- if task and can_open_project_task(task) -%}
+<a href="{% if arm_view %}{{ url_for('projects.task_detail', tid=task.id, arm_view=arm_view) }}{% else %}{{ url_for('projects.task_detail', tid=task.id) }}{% endif %}"
+   class="{{ class }}"{% if title %} title="{{ title }}"{% endif %}>{{ label }}</a>
+{%- elif task -%}
+<span class="{{ class }} is-link-disabled" title="Нет доступа к задаче"{% if title %} data-full-title="{{ title }}"{% endif %}>{{ label }}</span>
+{%- else -%}
+<span class="{{ class }} is-link-disabled">{{ label }}</span>
+{%- endif -%}
+{%- endmacro %}

@@ -35,6 +35,7 @@ from servicesystem.project_management.services import (
     gantt_sort_key,
     kanban_sort_key,
     apply_kanban_move,
+    build_task_blockers_map,
     build_tasks_wbs_map,
     move_task_kanban,
     next_gantt_sort,
@@ -73,6 +74,7 @@ from servicesystem.project_management.services import (
     user_can_view_gantt,
     user_can_view_others_time_logs,
     user_can_view_status_journal,
+    user_can_view_task,
     user_can_view_week_calendar,
 )
 
@@ -177,12 +179,16 @@ def _stage_deadline_label(stage) -> str:
 
 
 def _project_task_tree_payload(project_id: int) -> list[dict]:
-    out: list[dict] = []
-    for t in (
+    tasks = (
         ProjectTask.query.filter_by(project_id=project_id)
         .order_by(ProjectTask.gantt_sort.asc(), ProjectTask.id.asc())
         .limit(400)
-    ):
+        .all()
+    )
+    # Та же сквозная WBS, что на Ганте/канбане (архив в дереве тоже нумеруем)
+    wbs_map = build_tasks_wbs_map(tasks, include_archived=True)
+    out: list[dict] = []
+    for t in tasks:
         s, e = t.start_date, t.due_date
         if s and e:
             dates_label = (
@@ -204,6 +210,7 @@ def _project_task_tree_payload(project_id: int) -> list[dict]:
                 "start": s.isoformat() if s else "",
                 "due": e.isoformat() if e else "",
                 "dates_label": dates_label,
+                "wbs": wbs_map.get(t.id) or "",
             }
         )
     return out
@@ -291,6 +298,16 @@ def arm():
     if view in ("week", "calendar") and not user_can_view_week_calendar(current_user):
         flash("Календарь и неделя доступны сотрудникам.", "warning")
         return redirect(url_for("projects.arm", view="kanban", project=request.args.get("project")))
+    # Вкладка «Неделя» объединена с календарём (режим рабочей недели)
+    if view == "week":
+        q = {"view": "calendar", "cal_mode": "workweek"}
+        if request.args.get("project"):
+            q["project"] = request.args.get("project")
+        if request.args.get("assignee"):
+            q["assignee"] = request.args.get("assignee")
+        if request.args.get("cal_date"):
+            q["cal_date"] = request.args.get("cal_date")
+        return redirect(url_for("projects.arm", **q))
     if current_user.is_staff:
         try:
             rollover_overdue_tasks()
@@ -350,6 +367,11 @@ def arm():
     # Архив скрыт с Ганта по умолчанию (после приёмки этапа); опция show_archived=1
     if view == "gantt" and request.args.get("show_archived") != "1":
         tasks_q = tasks_q.filter(ProjectTask.kanban_status != "archived")
+    # Календарь: только активные (не выполненные / отклонённые / архив)
+    if view == "calendar":
+        tasks_q = tasks_q.filter(
+            ProjectTask.kanban_status.notin_(("done", "rejected", "archived"))
+        )
     tasks_raw = tasks_q.all()
     if view == "gantt":
         tasks = sorted(tasks_raw, key=gantt_sort_key)
@@ -420,7 +442,11 @@ def arm():
         ctx["kanban_labels"] = KANBAN_LABELS
         ctx["show_rejected"] = show_rejected
         ctx["show_archived"] = show_archived
-        ctx["wbs_by_id"] = build_tasks_wbs_map(tasks)
+        ctx["wbs_by_id"] = build_tasks_wbs_map(
+            tasks,
+            include_archived=show_archived,
+        )
+        ctx["blockers_by_id"] = build_task_blockers_map(tasks)
         ctx["parents_by_id"] = parents
         if current_user.is_admin:
             ctx["kanban_role"] = "admin"
@@ -429,17 +455,11 @@ def arm():
         else:
             ctx["kanban_role"] = "executor"
         return render_template("projects/kanban.html", **ctx)
-    if view == "week":
-        week_days = _week_days()
-        week_dates = [d for d, _ in week_days]
-        return render_template(
-            "projects/week.html",
-            **ctx,
-            week_days=week_days,
-            tasks_by_day=_tasks_by_day(tasks, week_dates),
-        )
     if view == "calendar":
-        month_grid = _month_grid(cal_mode)
+        cal_anchor = _parse_form_date(request.args.get("cal_date")) or date.today()
+        month_grid = _month_grid(cal_mode, cal_anchor)
+        cal_prev = _cal_shift(cal_anchor, cal_mode, -1)
+        cal_next = _cal_shift(cal_anchor, cal_mode, 1)
         executor_workload = _executor_workload(tasks, list(month_grid))
         if can_view_team_load:
             ctx["calendar_executors"] = _calendar_executors(
@@ -466,6 +486,10 @@ def arm():
             "projects/calendar.html",
             **ctx,
             month_grid=month_grid,
+            cal_anchor=cal_anchor,
+            cal_prev=cal_prev,
+            cal_next=cal_next,
+            cal_period_label=_cal_period_label(cal_mode, list(month_grid), cal_anchor),
             tasks_by_day=_tasks_by_day(grid_tasks, list(month_grid)),
             team_load=_team_load(grid_tasks) if cal_mode == "team" and can_view_team_load else None,
             executor_workload=executor_workload,
@@ -482,6 +506,7 @@ def arm():
         anchor=gantt_anchor,
         project_filter=project_id,
         projects=span_projects,
+        include_archived=request.args.get("show_archived") == "1",
     )
     gantt_stages = []
     for p in projects:
@@ -522,9 +547,11 @@ def _arm_back_url(*, project_id: int | None = None) -> str:
     view = session.get(_ARM_BACK_VIEW_KEY) or _default_arm_view()
     if view not in _ARM_VIEWS:
         view = _default_arm_view()
+    if view == "week":
+        view = "calendar"
     if view == "gantt" and not user_can_view_gantt(current_user):
         view = "kanban"
-    elif view in ("week", "calendar") and not user_can_view_week_calendar(current_user):
+    elif view == "calendar" and not user_can_view_week_calendar(current_user):
         view = "kanban"
     pid = project_id if project_id is not None else session.get(_ARM_FILTER_PROJECT_KEY)
     kwargs: dict = {"view": view}
@@ -543,7 +570,11 @@ def _arm_back_url(*, project_id: int | None = None) -> str:
             kwargs["subtasks"] = subtasks
     elif view == "calendar":
         cal_mode = session.get(_ARM_FILTER_CAL_MODE_KEY)
-        if cal_mode in ("month", "workweek", "day", "team"):
+        if cal_mode not in ("month", "workweek", "day", "team"):
+            cal_mode = (
+                "workweek" if session.get(_ARM_BACK_VIEW_KEY) == "week" else None
+            )
+        if cal_mode:
             kwargs["cal_mode"] = cal_mode
     return url_for("projects.arm", **kwargs)
 
@@ -1275,7 +1306,7 @@ def task_new():
 @login_required
 def task_detail(tid):
     task = db.session.get(ProjectTask, tid) or abort(404)
-    if not user_can_edit_task(current_user, task) and current_user.role != "customer_curator":
+    if not user_can_view_task(current_user, task):
         abort(403)
     if task_opens_as_ticket(task) and task.ticket_id:
         return redirect(url_for("tickets.detail", tid=task.ticket_id))
@@ -1786,6 +1817,7 @@ def archive_hub():
         "projects/archive.html",
         archive_prompts=prompts,
         archived_tasks=archived_tasks,
+        wbs_by_id=build_tasks_wbs_map(archived_tasks, include_archived=True),
         filter_project=project_id,
         projects=projects,
         kanban_labels=KANBAN_LABELS,
@@ -1848,8 +1880,65 @@ def task_restore_from_archive(tid):
     return redirect(url_for("projects.archive_hub", project=task.project_id))
 
 
+@bp.route("/archive/restore-selected", methods=["POST"])
+@login_required
+def archive_restore_selected():
+    """Вернуть выбранные архивные задачи на доску."""
+    if not (current_user.is_admin or current_user.is_auditor):
+        abort(403)
+    project_id = request.form.get("project", type=int) or request.args.get("project", type=int)
+    raw_ids = request.form.getlist("task_ids")
+    ids: list[int] = []
+    for x in raw_ids:
+        try:
+            ids.append(int(x))
+        except (TypeError, ValueError):
+            continue
+    if not ids:
+        flash("Выберите хотя бы одну задачу.", "warning")
+        return redirect(url_for("projects.archive_hub", project=project_id or None))
+    to_status = (request.form.get("to_status") or "done").strip()
+    if to_status not in TASK_KANBAN_COLUMNS or to_status == "archived":
+        to_status = "done"
+    restored = 0
+    for tid in ids:
+        task = db.session.get(ProjectTask, tid)
+        if not task or task.kanban_status != "archived":
+            continue
+        move_task_kanban(
+            task,
+            to_status,
+            task.kanban_sort or 0,
+            user_id=current_user.id,
+            note="Возврат из архива (пакетно)",
+            sync_timer=False,
+        )
+        restored += 1
+    db.session.commit()
+    if restored:
+        flash(f"На доску возвращено задач: {restored}.", "success")
+    else:
+        flash("Подходящих архивных задач не найдено.", "warning")
+    return redirect(url_for("projects.archive_hub", project=project_id or None))
+
+
 _WEEKDAY_RU = ("Пн", "Вт", "Ср", "Чт", "Пт", "Сб", "Вс")
 _MONTH_RU = ("", "янв", "фев", "мар", "апр", "май", "июн", "июл", "авг", "сен", "окт", "ноя", "дек")
+_MONTH_RU_FULL = (
+    "",
+    "январь",
+    "февраль",
+    "март",
+    "апрель",
+    "май",
+    "июнь",
+    "июль",
+    "август",
+    "сентябрь",
+    "октябрь",
+    "ноябрь",
+    "декабрь",
+)
 
 
 def _week_days():
@@ -1862,16 +1951,52 @@ def _week_days():
     return out
 
 
-def _month_grid(cal_mode: str):
-    today = date.today()
+def _month_grid(cal_mode: str, anchor: date | None = None):
+    pivot = anchor or date.today()
     if cal_mode == "day":
-        return [today]
+        return [pivot]
     if cal_mode == "workweek":
-        start = today - timedelta(days=today.weekday())
+        start = pivot - timedelta(days=pivot.weekday())
         return [start + timedelta(days=i) for i in range(5)]
-    first = today.replace(day=1)
+    first = pivot.replace(day=1)
     start = first - timedelta(days=(first.weekday()))
     return [start + timedelta(days=i) for i in range(42)]
+
+
+def _cal_shift(anchor: date, cal_mode: str, direction: int) -> date:
+    """Сдвиг якоря календаря на ±1 период (день / раб. неделя / месяц)."""
+    if cal_mode == "day":
+        return anchor + timedelta(days=direction)
+    if cal_mode == "workweek":
+        return anchor + timedelta(days=7 * direction)
+    y, m = anchor.year, anchor.month + direction
+    while m < 1:
+        m += 12
+        y -= 1
+    while m > 12:
+        m -= 12
+        y += 1
+    return date(y, m, 1)
+
+
+def _cal_period_label(cal_mode: str, days: list[date], anchor: date) -> str:
+    """Подпись периода рядом со стрелками: месяц и год (для недели/дня — с числами)."""
+    if not days:
+        return ""
+
+    def _my(d: date) -> str:
+        return f"{_MONTH_RU_FULL[d.month].capitalize()} {d.year}"
+
+    if cal_mode == "day":
+        d = days[0]
+        return f"{_WEEKDAY_RU[d.weekday()]}, {d.day} {_my(d)}"
+    if cal_mode == "workweek":
+        a, b = days[0], days[-1]
+        if a.month == b.month and a.year == b.year:
+            return f"{a.day}–{b.day} {_my(b)}"
+        return f"{a.day} {_my(a)} – {b.day} {_my(b)}"
+    # month / team
+    return _my(anchor)
 
 
 def _task_date_range(t) -> tuple[date, date] | None:
@@ -2533,12 +2658,13 @@ def _gantt_build_bars(
     related_with,
     user,
     row_offset: int = 0,
+    wbs_map: dict | None = None,
 ) -> list[dict]:
     bars = []
     for idx, item in enumerate(dated):
         t = item[0]
         s, e = item[1], item[2]
-        # хвост: depth, wbs (после _gantt_tree_order)
+        # хвост: depth, wbs (после _gantt_tree_order); WBS проекта — из wbs_map
         depth = 0
         wbs = str(row_offset + idx + 1)
         if len(item) >= 5 and isinstance(item[-1], str) and isinstance(item[-2], int):
@@ -2546,6 +2672,8 @@ def _gantt_build_bars(
             wbs = item[-1]
         elif len(item) >= 4 and isinstance(item[3], int):
             depth = max(0, int(item[3]))
+        if wbs_map and t.id in wbs_map:
+            wbs = wbs_map[t.id]
         in_range, left_pct, width_pct = _bar_geometry(s, e, span_start, span_end, scale, n_cols)
         sla = gantt_sla_breach(t, t.project)
         critical = sla or bool(t.is_critical_path)
@@ -2607,6 +2735,7 @@ def _gantt_layout(
     project_filter: int | None = None,
     anchor: date | None = None,
     projects=None,
+    include_archived: bool = False,
 ) -> dict:
     """Данные для диаграммы Gantt — стратегическое планирование (ТЗ 2.1)."""
     today = date.today()
@@ -2625,6 +2754,8 @@ def _gantt_layout(
     task_list = [it[0] for it in dated]
     links = _gantt_links(task_list)
     waits_for, blocks, related_with = _gantt_task_relations(task_list, links)
+    # Тот же WBS, что на канбане (все неархивные задачи проекта)
+    wbs_map = build_tasks_wbs_map(list(tasks), include_archived=include_archived)
 
     groups: list[dict] = []
     if group_by == "project" and not project_filter:
@@ -2646,6 +2777,7 @@ def _gantt_layout(
             bars = _gantt_build_bars(
                 chunk, span_start, span_end, scale, n_cols,
                 waits_for, blocks, related_with, user, row_off,
+                wbs_map=wbs_map,
             )
             row_off += len(bars)
             groups.append(
@@ -2661,6 +2793,7 @@ def _gantt_layout(
         bars = _gantt_build_bars(
             dated, span_start, span_end, scale, n_cols,
             waits_for, blocks, related_with, user, 0,
+            wbs_map=wbs_map,
         )
         proj = None
         if project_filter:
@@ -2694,6 +2827,8 @@ def _gantt_layout(
         if len(item) >= 3 and isinstance(item[-1], str) and isinstance(item[-2], int):
             depth = max(0, int(item[-2]))
             wbs = item[-1]
+        if t.id in wbs_map:
+            wbs = wbs_map[t.id]
         gantt_undated.append(
             {
                 "task": t,

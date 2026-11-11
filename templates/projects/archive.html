@@ -2,7 +2,7 @@
 {% from "macros/forms.html" import csrf_field %}
 {% block title %}Архив проектов{% endblock %}
 {% block head %}
-<link rel="stylesheet" href="{{ url_for('static', filename='css/projects.css') }}?v=129">
+<link rel="stylesheet" href="{{ url_for('static', filename='css/projects.css') }}?v=140">
 {% endblock %}
 {% block content %}
 <div class="container cms-page projects-page">
@@ -71,42 +71,96 @@
     {% endif %}
   </section>
 
-  <section class="card projects-cms-card projects-archive-section">
-    <h2 class="projects-cms-subheading">Задачи в архиве{% if archived_tasks %} · {{ archived_tasks|length }}{% endif %}</h2>
-    {% if archived_tasks %}
-    <div class="table-wrap">
-      <table class="table">
-        <thead>
-          <tr>
-            <th>Задача</th>
-            <th>Проект</th>
-            <th>Этап</th>
-            <th></th>
-          </tr>
-        </thead>
-        <tbody>
-          {% for t in archived_tasks %}
-          <tr>
-            <td>
-              <a href="{{ url_for('projects.task_detail', tid=t.id, arm_view='kanban') }}">{{ t.title }}</a>
-            </td>
-            <td>{% if t.project %}{{ t.project.name }}{% else %}—{% endif %}</td>
-            <td>{% if t.stage %}{{ t.stage.title }}{% else %}—{% endif %}</td>
-            <td class="projects-archive-row-actions">
-              <form method="post" action="{{ url_for('projects.task_restore_from_archive', tid=t.id) }}" class="inline-form">
-                {{ csrf_field() }}
-                <input type="hidden" name="to_status" value="done">
-                <button type="submit" class="btn btn-outline btn-sm">На доску</button>
-              </form>
-            </td>
-          </tr>
-          {% endfor %}
-        </tbody>
-      </table>
+  <section class="card projects-cms-card projects-archive-section" data-archive-tasks>
+    <div class="projects-archive-section-head">
+      <h2 class="projects-cms-subheading">Задачи в архиве{% if archived_tasks %} · {{ archived_tasks|length }}{% endif %}</h2>
+      {% if archived_tasks %}
+      <button type="submit" form="archive-restore-selected" class="btn btn-primary btn-sm" id="archive-bulk-restore" disabled>
+        На доску по выбранным
+      </button>
+      {% endif %}
     </div>
+    {% if archived_tasks %}
+    <form method="post"
+          id="archive-restore-selected"
+          action="{{ url_for('projects.archive_restore_selected') }}"
+          class="projects-archive-bulk-form">
+      {{ csrf_field() }}
+      <input type="hidden" name="to_status" value="done">
+      {% if filter_project %}<input type="hidden" name="project" value="{{ filter_project }}">{% endif %}
+      <div class="table-wrap">
+        <table class="table">
+          <thead>
+            <tr>
+              <th class="projects-archive-check-col">
+                <input type="checkbox" id="archive-check-all" title="Выбрать все" aria-label="Выбрать все">
+              </th>
+              <th class="projects-archive-wbs-col">№</th>
+              <th>Задача</th>
+              <th>Проект</th>
+              <th>Этап</th>
+              <th></th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for t in archived_tasks %}
+            {% set wbs = (wbs_by_id|default({})).get(t.id) %}
+            <tr>
+              <td class="projects-archive-check-col">
+                <input type="checkbox" class="archive-task-check" name="task_ids" value="{{ t.id }}" aria-label="Выбрать «{{ t.title }}»">
+              </td>
+              <td class="projects-archive-wbs-col">
+                {% if wbs %}<span class="projects-archive-wbs" title="WBS {{ wbs }}">{{ wbs }}</span>{% else %}—{% endif %}
+              </td>
+              <td>
+                <a href="{{ url_for('projects.task_detail', tid=t.id, arm_view='kanban') }}">{{ t.title }}</a>
+              </td>
+              <td>{% if t.project %}{{ t.project.name }}{% else %}—{% endif %}</td>
+              <td>{% if t.stage %}{{ t.stage.title }}{% else %}—{% endif %}</td>
+              <td class="projects-archive-row-actions">
+                <button type="submit"
+                        formaction="{{ url_for('projects.task_restore_from_archive', tid=t.id) }}"
+                        class="btn btn-outline btn-sm"
+                        name="to_status"
+                        value="done">На доску</button>
+              </td>
+            </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    </form>
     {% else %}
     <p class="muted">Архивных задач нет.</p>
     {% endif %}
   </section>
 </div>
+{% if archived_tasks %}
+<script>
+(function () {
+  var root = document.querySelector("[data-archive-tasks]");
+  if (!root) return;
+  var all = document.getElementById("archive-check-all");
+  var boxes = root.querySelectorAll(".archive-task-check");
+  var bulk = document.getElementById("archive-bulk-restore");
+  function sync() {
+    var n = 0;
+    boxes.forEach(function (c) { if (c.checked) n += 1; });
+    if (bulk) bulk.disabled = n === 0;
+    if (all) {
+      all.checked = n > 0 && n === boxes.length;
+      all.indeterminate = n > 0 && n < boxes.length;
+    }
+  }
+  if (all) {
+    all.addEventListener("change", function () {
+      boxes.forEach(function (c) { c.checked = all.checked; });
+      sync();
+    });
+  }
+  boxes.forEach(function (c) { c.addEventListener("change", sync); });
+  sync();
+})();
+</script>
+{% endif %}
 {% endblock %}

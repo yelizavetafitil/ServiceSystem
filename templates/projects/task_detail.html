@@ -1,16 +1,17 @@
 {% extends "base.html" %}
 
 {% from "macros/forms.html" import csrf_field %}
+{% from "macros/task_link.html" import project_task_link %}
 
 {% block title %}{{ task.title }}{% endblock %}
 
 {% block head %}
-<link rel="stylesheet" href="{{ url_for('static', filename='css/projects.css') }}?v=137">
+<link rel="stylesheet" href="{{ url_for('static', filename='css/projects.css') }}?v=138">
 <script src="{{ url_for('static', filename='js/task-date-duration.js') }}?v=1"></script>
 {% if can_plan_task is defined and can_plan_task %}
-<script src="{{ url_for('static', filename='js/task-project-tree-nav.js') }}?v=4"></script>
+<script src="{{ url_for('static', filename='js/task-project-tree-nav.js') }}?v=5"></script>
 {% elif can_plan_task is not defined and (current_user.is_admin or current_user.is_auditor) %}
-<script src="{{ url_for('static', filename='js/task-project-tree-nav.js') }}?v=4"></script>
+<script src="{{ url_for('static', filename='js/task-project-tree-nav.js') }}?v=5"></script>
 {% endif %}
 {% endblock %}
 
@@ -214,7 +215,7 @@
         <summary>Вложенность{% if task.parent_id and task.parent %} · подзадача{% endif %}</summary>
         {% if task.parent_id and task.parent %}
         <p class="muted projects-cms-hint">Сейчас подзадача «{{ task.parent.title }}»
-          <a href="{{ url_for('projects.task_detail', tid=task.parent.id) }}">открыть родителя</a>
+          {{ project_task_link(task.parent, text='открыть родителя') }}
         </p>
         <button type="button" class="btn btn-outline btn-sm" data-hierarchy-promote>Сделать отдельной задачей</button>
         {% else %}
@@ -237,7 +238,7 @@
       </details>
       {% elif task.parent_id and task.parent %}
       <p class="muted projects-cms-hint projects-task-parent-hint">Подзадача «{{ task.parent.title }}»
-        <a href="{{ url_for('projects.task_detail', tid=task.parent.id) }}">открыть родителя</a>
+        {{ project_task_link(task.parent, text='открыть родителя') }}
       </p>
       {% endif %}
     </form>
@@ -271,7 +272,7 @@
 
       <h3 class="projects-task-subtasks-title">Подзадачи</h3>
 
-      <ul class="projects-task-subtasks-list">{% for s in subtasks %}<li><a href="{{ url_for('projects.task_detail', tid=s.id) }}">{{ s.title }}</a></li>{% endfor %}</ul>
+      <ul class="projects-task-subtasks-list">{% for s in subtasks %}<li>{{ project_task_link(s) }}</li>{% endfor %}</ul>
 
     </section>
 
@@ -338,7 +339,7 @@
     <ul class="projects-link-list">{% for l in link_rows %}
       <li>
         <span>{{ project_link_labels.get(l.link_type, l.link_type) }} →
-          <a href="{{ url_for('projects.task_detail', tid=l.to_task_id) }}">{% if l.to_task %}{{ l.to_task.title }}{% else %}№{{ l.to_task_id }}{% endif %}</a>
+          {{ project_task_link(l.to_task, text=(l.to_task.title if l.to_task else ('№' ~ l.to_task_id))) }}
         </span>
         <form method="post" action="{{ url_for('projects.task_update', tid=task.id) }}" class="inline-form">
           {{ csrf_field() }}<input type="hidden" name="action" value="link_remove"><input type="hidden" name="link_id" value="{{ l.id }}">
@@ -351,7 +352,7 @@
     <ul class="projects-link-list">{% for l in link_rows_in %}
       <li>
         <span>
-          <a href="{{ url_for('projects.task_detail', tid=l.from_task_id) }}">{% if l.from_task %}{{ l.from_task.title }}{% else %}№{{ l.from_task_id }}{% endif %}</a>
+          {{ project_task_link(l.from_task, text=(l.from_task.title if l.from_task else ('№' ~ l.from_task_id))) }}
           → {{ project_link_labels.get(l.link_type, l.link_type) }}
         </span>
         <form method="post" action="{{ url_for('projects.task_update', tid=task.id) }}" class="inline-form">

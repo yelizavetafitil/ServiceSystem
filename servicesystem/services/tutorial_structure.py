@@ -56,6 +56,10 @@ def is_placeholder_overview(lesson: TutorialLesson) -> bool:
     return title == "обзор" and not body
 
 
+def has_md_content(text: str | None) -> bool:
+    return bool((text or "").strip())
+
+
 def section_page_slug(section: TutorialSection | int) -> str:
     sid = section.id if isinstance(section, TutorialSection) else int(section)
     return f"_section_{sid}"
@@ -86,6 +90,16 @@ def tutorial_reading_sequence(tutorial: Tutorial) -> list[tuple[str, TutorialSec
         out.append(("section", sec))
         visible = section_visible_lessons(sec)
         out.extend(("lesson", les) for les in flatten_lesson_tree(build_lesson_tree(visible)))
+    return out
+
+
+def tutorial_readable_sequence(tutorial: Tutorial) -> list[tuple[str, TutorialSection | TutorialLesson]]:
+    """Как reading_sequence, но только страницы с непустым текстом (кликабельные)."""
+    out: list[tuple[str, TutorialSection | TutorialLesson]] = []
+    for kind, obj in tutorial_reading_sequence(tutorial):
+        body = obj.content_md if hasattr(obj, "content_md") else ""
+        if has_md_content(body):
+            out.append((kind, obj))
     return out
 
 
@@ -143,6 +157,7 @@ def section_nav_lessons(
                     "lesson": les,
                     "depth": depth,
                     "active": current_lesson_id is not None and les.id == current_lesson_id,
+                    "has_content": has_md_content(les.content_md),
                 }
             )
             walk(children, num, depth + 1)
@@ -156,6 +171,7 @@ def section_nav_lessons(
                     "lesson": les,
                     "depth": 0,
                     "active": current_lesson_id is not None and les.id == current_lesson_id,
+                    "has_content": has_md_content(les.content_md),
                 }
             )
     section_active = current_section_id is not None and sec.id == current_section_id
@@ -168,6 +184,7 @@ def section_nav_lessons(
         "lessons": items,
         "first_lesson": visible[0] if visible else None,
         "section_active": section_active,
+        "has_content": has_md_content(sec.content_md),
     }
 
 

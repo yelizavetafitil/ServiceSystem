@@ -77,8 +77,8 @@ def plugins():
         allowed = _allowed_content_ids(current_user.contract_id, "plugin")
     q = Plugin.query.filter_by(is_active=True)
     items = q.all()
-    if allowed is not None:
-        items = [p for p in items if p.id in allowed]
+    for p in items:
+        p.user_has_access = True if allowed is None else (p.id in allowed)
     can_download = not (
         current_user.is_customer
         and current_user.contract
@@ -119,8 +119,9 @@ def tutorials():
         allowed = _allowed_content_ids(current_user.contract_id, "tutorial")
     q = Tutorial.query.filter_by(is_published=True).order_by(Tutorial.title)
     items = q.all()
-    if allowed is not None:
-        items = [t for t in items if t.id in allowed]
+    # Показываем весь каталог; без доступа — неактивная карточка (без 403)
+    for t in items:
+        t.user_has_access = True if allowed is None else (t.id in allowed)
     search = request.args.get("q", "").strip()
     if search:
         q_lower = search.lower()
@@ -174,13 +175,16 @@ def tutorial_detail(slug, lesson_slug=None):
     if has_structure:
         from servicesystem.services.tutorial_structure import (
             find_lesson_in_tutorial,
+            has_md_content,
             parse_section_page_slug,
             section_nav_lessons,
             section_page_slug,
+            tutorial_readable_sequence,
             tutorial_reading_sequence,
         )
 
         sequence = tutorial_reading_sequence(t)
+        readable = tutorial_readable_sequence(t)
 
         def _page_href(kind: str, obj) -> str:
             if kind == "section":
@@ -195,8 +199,25 @@ def tutorial_detail(slug, lesson_slug=None):
                 lesson_slug=obj.slug,
             )
 
-        if sequence:
+        if readable:
+            nav_first_href = _page_href(readable[0][0], readable[0][1])
+        elif sequence:
             nav_first_href = _page_href(sequence[0][0], sequence[0][1])
+
+        def _redirect_past_empty(kind: str, obj):
+            """Пустая страница не кликабельна — уводим к ближайшей с текстом."""
+            if has_md_content(getattr(obj, "content_md", None)):
+                return None
+            if not readable:
+                return None
+            passed = False
+            for k, o in sequence:
+                if k == kind and o.id == obj.id:
+                    passed = True
+                    continue
+                if passed and has_md_content(getattr(o, "content_md", None)):
+                    return redirect(_page_href(k, o))
+            return redirect(_page_href(readable[0][0], readable[0][1]))
 
         if lesson_slug:
             section_id = parse_section_page_slug(lesson_slug)
@@ -204,12 +225,20 @@ def tutorial_detail(slug, lesson_slug=None):
                 current_section = (
                     TutorialSection.query.filter_by(id=section_id, tutorial_id=t.id).first_or_404()
                 )
+                bounced = _redirect_past_empty("section", current_section)
+                if bounced is not None:
+                    return bounced
                 content_html = render_cms_markdown(current_section.content_md or "")
             else:
                 current_lesson = find_lesson_in_tutorial(t, lesson_slug)
                 if not current_lesson:
                     abort(404)
+                bounced = _redirect_past_empty("lesson", current_lesson)
+                if bounced is not None:
+                    return bounced
                 content_html = render_cms_markdown(current_lesson.content_md or "")
+        elif readable:
+            return redirect(_page_href(readable[0][0], readable[0][1]))
         elif sequence:
             return redirect(_page_href(sequence[0][0], sequence[0][1]))
         else:
@@ -222,9 +251,11 @@ def tutorial_detail(slug, lesson_slug=None):
                 section_nav_lessons(si, sec, cur_lesson_id, cur_section_id)
             )
 
-        if sequence and (current_lesson or current_section):
+        # «Назад / Далее» только по страницам с текстом
+        pager_seq = readable or sequence
+        if pager_seq and (current_lesson or current_section):
             idx = -1
-            for i, (kind, obj) in enumerate(sequence):
+            for i, (kind, obj) in enumerate(pager_seq):
                 if kind == "section" and current_section and obj.id == current_section.id:
                     idx = i
                     break
@@ -233,10 +264,10 @@ def tutorial_detail(slug, lesson_slug=None):
                     break
             if idx >= 0:
                 if idx > 0:
-                    pk, po = sequence[idx - 1]
+                    pk, po = pager_seq[idx - 1]
                     prev_href = _page_href(pk, po)
-                if idx + 1 < len(sequence):
-                    nk, no = sequence[idx + 1]
+                if idx + 1 < len(pager_seq):
+                    nk, no = pager_seq[idx + 1]
                     next_href = _page_href(nk, no)
     else:
         content_html = render_cms_markdown(t.content_md or "")
@@ -333,8 +364,8 @@ def videos():
     if current_user.is_customer and current_user.contract_id:
         allowed = _allowed_content_ids(current_user.contract_id, "video")
     items = VideoTutorial.query.filter_by(is_published=True).order_by(VideoTutorial.title).all()
-    if allowed is not None:
-        items = [v for v in items if v.id in allowed]
+    for v in items:
+        v.user_has_access = True if allowed is None else (v.id in allowed)
     return render_template("cabinet/videos.html", videos=items)
 
 

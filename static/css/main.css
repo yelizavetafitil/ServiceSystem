@@ -120,6 +120,7 @@ body.auth-body .auth-page {
 .flash-messages { margin-bottom: 20px; }
 
 .topbar {
+  min-height: var(--topbar-h);
   height: var(--topbar-h);
   display: flex;
   align-items: center;
@@ -131,7 +132,9 @@ body.auth-body .auth-page {
   box-shadow: 0 2px 10px rgba(20, 42, 75, 0.06);
   position: sticky;
   top: 0;
-  z-index: 100;
+  /* Выше шапки АРМ (.projects-arm-header z-index 100), иначе пункты меню «наезжают» на заголовок */
+  z-index: 300;
+  overflow: hidden;
 }
 
 .topbar-left, .topbar-right { display: flex; align-items: center; gap: 12px; min-width: 0; }
@@ -853,6 +856,25 @@ tr.is-access-disabled td { background: #fffbfb; }
 .kb-item h3 { margin: 6px 0 4px; font-size: 16px; font-weight: 700; color: var(--primary-dark); line-height: 1.35; }
 .kb-cat { font-size: 11px; font-weight: 700; color: var(--primary); text-transform: uppercase; letter-spacing: .05em; display: block; }
 .kb-tags { font-size: 12px; color: var(--muted); display: block; margin-top: 4px; }
+.kb-item--locked,
+.video-card--locked,
+.is-link-disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+  pointer-events: none;
+  text-decoration: none;
+}
+.kb-item--locked {
+  border-style: dashed;
+  box-shadow: none;
+}
+.kb-locked-hint {
+  display: inline-block;
+  margin-top: 8px;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--muted);
+}
 .page-header form.search-bar {
   flex: 0 1 440px;
   max-width: 440px;
@@ -2981,9 +3003,23 @@ body.cms-editor-immersive .EasyMDEContainer.cms-rich-toolbar.sided {
   color: var(--primary-dark);
   background: color-mix(in srgb, var(--primary) 10%, transparent);
 }
+.tutorial-nav__section-title--empty {
+  display: block;
+  border-radius: 8px;
+  padding: 6px 8px;
+  margin: 0 -8px 6px;
+  color: #94a3b8;
+  cursor: default;
+  user-select: none;
+  opacity: 0.85;
+}
+.tutorial-nav__section-title--empty.is-active {
+  background: color-mix(in srgb, var(--primary) 8%, transparent);
+}
 .tutorial-nav__link--depth-1 { padding-left: 22px; }
 .tutorial-nav__link--depth-2 { padding-left: 34px; }
-.tutorial-nav__link--depth-3 { padding-left: 46px; }.tutorial-nav__section ul {
+.tutorial-nav__link--depth-3 { padding-left: 46px; }
+.tutorial-nav__section ul {
   list-style: none;
   margin: 0;
   padding: 0;
@@ -3004,6 +3040,16 @@ body.cms-editor-immersive .EasyMDEContainer.cms-rich-toolbar.sided {
   background: color-mix(in srgb, var(--primary) 12%, transparent);
   color: var(--primary-dark);
   font-weight: 600;
+}
+.tutorial-nav__link--empty {
+  color: #94a3b8;
+  cursor: default;
+  user-select: none;
+  opacity: 0.85;
+}
+.tutorial-nav__link--empty:hover {
+  background: transparent;
+  color: #94a3b8;
 }
 .tutorial-nav__num {
   flex-shrink: 0;

@@ -23,18 +23,33 @@
         <nav class="tutorial-nav__list" aria-label="Разделы туториала">
           {% for sec in section_nav %}
           <div class="tutorial-nav__section">
+            {% if sec.has_content %}
             <a href="{{ url_for('cabinet.tutorial_detail', slug=tutorial.slug, lesson_slug=sec.section_slug) }}"
                class="tutorial-nav__section-title tutorial-nav__section-title--link{% if sec.section_active %} is-active{% endif %}">
               {{ sec.num }}. {{ sec.title }}
             </a>
+            {% else %}
+            <span class="tutorial-nav__section-title tutorial-nav__section-title--empty{% if sec.section_active %} is-active{% endif %}"
+                  title="Раздел без текста — откройте подраздел">
+              {{ sec.num }}. {{ sec.title }}
+            </span>
+            {% endif %}
             <ul>
               {% for item in sec.lessons %}
               <li>
+                {% if item.has_content %}
                 <a href="{{ url_for('cabinet.tutorial_detail', slug=tutorial.slug, lesson_slug=item.lesson.slug) }}"
                    class="tutorial-nav__link tutorial-nav__link--depth-{{ item.depth|default(0) }}{% if item.active %} is-active{% endif %}">
                   <span class="tutorial-nav__num">{{ item.num }}</span>
                   {{ item.lesson.title }}
                 </a>
+                {% else %}
+                <span class="tutorial-nav__link tutorial-nav__link--empty tutorial-nav__link--depth-{{ item.depth|default(0) }}{% if item.active %} is-active{% endif %}"
+                      title="Подраздел без текста">
+                  <span class="tutorial-nav__num">{{ item.num }}</span>
+                  {{ item.lesson.title }}
+                </span>
+                {% endif %}
               </li>
               {% endfor %}
             </ul>
