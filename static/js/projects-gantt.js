@@ -1443,7 +1443,7 @@
     var a = parseIso(spanStart);
     var t = parseIso(todayIso);
     if (!a || !t) return 0;
-    var days = Math.max(0, Math.round((t - a) / 86400000));
+    var days = Math.max(0, calendarDays(a, t));
     var frac;
     if (ganttScale === "quarter") {
       var slot = (t.getFullYear() - a.getFullYear()) * 12 + (t.getMonth() - a.getMonth());
@@ -1455,7 +1455,7 @@
     // sticky-боковая колонка: scrollLeft = смещение шкалы (без +sideW)
     var timelineLeft = frac * timelineW();
     var view = Math.max(40, host.clientWidth - sideW());
-    return Math.max(0, timelineLeft - view * 0.35);
+    return Math.max(0, Math.round(timelineLeft - view * 0.35));
   }
 
   var topHost = document.getElementById("gantt-hscroll-top");
@@ -1594,28 +1594,58 @@
     return Math.max(24, parseInt(chart.getAttribute("data-col-px") || "56", 10) || 56);
   }
 
+  /** Календарные сутки без сдвига DST (Date.UTC, не локальные миллисекунды). */
+  function calendarDays(a, b) {
+    var utcA = Date.UTC(a.getFullYear(), a.getMonth(), a.getDate());
+    var utcB = Date.UTC(b.getFullYear(), b.getMonth(), b.getDate());
+    return Math.round((utcB - utcA) / 86400000);
+  }
+
+  function columnWidthPx() {
+    var n = Math.max(1, ganttCols);
+    var tw = timelineW();
+    return tw > 0 ? tw / n : 0;
+  }
+
+  /** Индекс колонки у левого края. +1e-4 — иначе float даёт 23.999 и floor откатывает на шаг назад. */
+  function columnAtScroll(scrollLeft) {
+    var cw = columnWidthPx();
+    if (!(cw > 0)) return 0;
+    var col = Math.floor((scrollLeft || 0) / cw + 1e-4);
+    return Math.max(0, Math.min(ganttCols, col));
+  }
+
+  function scrollLeftForColumn(index) {
+    var cw = columnWidthPx();
+    var col = Math.max(0, Math.min(ganttCols, index));
+    return Math.round(col * cw);
+  }
+
   /** Дата у левого края видимой шкалы (sticky-колонка «Задача»: scrollLeft = смещение шкалы). */
   function dateAtScrollLeft(scrollLeft) {
     if (!spanStart) return null;
     var a = parseIso(spanStart);
     if (!a) return null;
     var tw = timelineW();
-    if (tw <= 0) return new Date(a.getTime());
+    if (tw <= 0) return new Date(a.getFullYear(), a.getMonth(), a.getDate());
     var x = Math.max(0, scrollLeft || 0);
     var frac = Math.min(1, x / tw);
     if (ganttScale === "quarter") {
       var slotF = frac * ganttCols;
-      var slot = Math.floor(slotF);
-      var part = slotF - slot;
+      var slot = Math.floor(slotF + 1e-4);
+      var part = Math.max(0, slotF - slot);
+      if (slot >= ganttCols) {
+        slot = Math.max(0, ganttCols - 1);
+        part = 1;
+      }
       var d = new Date(a.getFullYear(), a.getMonth() + slot, 1);
       var dim = daysInMonth(d.getFullYear(), d.getMonth());
-      d.setDate(1 + Math.floor(part * dim));
+      d.setDate(1 + Math.min(dim - 1, Math.floor(part * dim + 1e-4)));
       return d;
     }
-    var days = Math.floor(frac * Math.max(1, daySpan()));
-    var d2 = new Date(a.getTime());
-    d2.setDate(d2.getDate() + days);
-    return d2;
+    var days = Math.floor(frac * Math.max(1, daySpan()) + 1e-4);
+    days = Math.max(0, Math.min(daySpan() - 1, days));
+    return new Date(a.getFullYear(), a.getMonth(), a.getDate() + days);
   }
 
   function scrollLeftForDate(d) {
@@ -1628,11 +1658,11 @@
       var dim = daysInMonth(d.getFullYear(), d.getMonth());
       frac = (slot + (d.getDate() - 1) / Math.max(1, dim)) / Math.max(1, ganttCols);
     } else {
-      var days = Math.max(0, Math.round((d - a) / 86400000));
+      var days = Math.max(0, calendarDays(a, d));
       frac = days / Math.max(1, daySpan());
     }
     frac = Math.max(0, Math.min(1, frac));
-    return Math.max(0, frac * timelineW());
+    return Math.round(Math.max(0, frac * timelineW()));
   }
 
   function startOfZoomUnit(d) {
@@ -1667,16 +1697,36 @@
 
   /** Сдвиг шкалы стрелками: ровно ±1 единица зума (день / неделя / месяц / квартал). */
   function panByZoom(dir) {
-    if (!host) return;
-    var cur = dateAtScrollLeft(host.scrollLeft) || parseIso(spanStart);
-    if (!cur) return;
-    var unit = startOfZoomUnit(cur);
-    var same =
-      unit.getFullYear() === cur.getFullYear() &&
-      unit.getMonth() === cur.getMonth() &&
-      unit.getDate() === cur.getDate();
-    var nextDate = same ? addZoomUnit(unit, dir) : (dir > 0 ? addZoomUnit(unit, 1) : unit);
-    setGanttScrollLeft(scrollLeftForDate(nextDate), false);
+    if (!host || !dir) return;
+    var col = columnAtScroll(host.scrollLeft);
+    var nextCol;
+    if (ganttScale === "day") {
+      nextCol = col + dir;
+    } else if (ganttScale === "week") {
+      // шкала недели выровнена с понедельника: колонка 0 — пн
+      var weekStart = col - (col % 7);
+      nextCol = (col % 7 === 0) ? col + dir * 7 : (dir > 0 ? weekStart + 7 : weekStart);
+    } else if (ganttScale === "month" || ganttScale === "quarter") {
+      var cur = dateAtScrollLeft(host.scrollLeft) || parseIso(spanStart);
+      if (!cur) return;
+      var unit = startOfZoomUnit(cur);
+      var same =
+        unit.getFullYear() === cur.getFullYear() &&
+        unit.getMonth() === cur.getMonth() &&
+        unit.getDate() === cur.getDate();
+      var nextDate = same ? addZoomUnit(unit, dir) : (dir > 0 ? addZoomUnit(unit, 1) : unit);
+      var target = scrollLeftForDate(nextDate);
+      if (Math.abs(target - host.scrollLeft) < 1) {
+        nextDate = addZoomUnit(nextDate, dir);
+        target = scrollLeftForDate(nextDate);
+      }
+      setGanttScrollLeft(target, false);
+      scheduleDraw();
+      return;
+    } else {
+      nextCol = col + dir;
+    }
+    setGanttScrollLeft(scrollLeftForColumn(nextCol), false);
     scheduleDraw();
   }
   function syncTopScroll() {
