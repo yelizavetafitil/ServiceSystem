@@ -356,12 +356,10 @@ a.is-link-disabled {
 }
 .projects-gantt-page .projects-view-tabs { margin-top: 4px; }
 .projects-gantt-page .projects-view-tab { padding: 4px 10px; font-size: 12px; }
-.projects-gantt-page .projects-gantt-toolbar,
-.projects-gantt-page .projects-gantt-add-bar {
+.projects-gantt-page .projects-gantt-toolbar {
   flex-shrink: 0;
   margin-bottom: 8px;
 }
-.projects-gantt-page .projects-gantt-add-hint { display: none; }
 .projects-gantt-page .projects-gantt-legend--inline {
   display: inline-flex;
   flex-wrap: nowrap;
@@ -2909,18 +2907,6 @@ button.projects-task-checklist-check:hover {
 .projects-gantt-ctx-item:hover { background: var(--surface-2, #f1f5f9); }
 .projects-gantt-ctx-item[hidden] { display: none !important; }
 a.projects-gantt-ctx-link { color: var(--text); }
-.projects-gantt-add-bar {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 10px 14px;
-  margin: 0 0 14px;
-  padding: 10px 12px;
-  background: #f0f6fb;
-  border: 1px solid #d7e6f2;
-  border-radius: 10px;
-}
-.projects-gantt-add-hint { font-size: 13px; line-height: 1.35; }
 .projects-gantt-undated-head .projects-gantt-group-title {
   color: #64748b;
 }

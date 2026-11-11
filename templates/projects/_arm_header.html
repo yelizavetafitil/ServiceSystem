@@ -126,17 +126,22 @@
        class="btn btn-outline btn-sm{% if archive_pending_count|default(0) %} btn-primary{% endif %}"
        title="Архив задач и приёмка этапов">Архив{% if archive_pending_count|default(0) %} · {{ archive_pending_count }}{% endif %}</a>
     <a href="{{ url_for('projects.manage_list') }}" class="btn btn-outline btn-sm">Управление проектами</a>
-    {# На Ганте с выбранным проектом кнопка уже есть под фильтрами — не дублируем #}
-    {% if not (view == 'gantt' and filter_project) %}
-    {% if filter_project %}
+    {% if view == 'gantt' and filter_project %}
+    <a href="{{ url_for('projects.task_new', project=filter_project, arm_view='gantt') }}"
+       class="btn btn-primary btn-sm"
+       title="Задача верхнего уровня в проекте «{{ fp_name }}» (не подзадача)">Новая задача</a>
+    {% elif filter_project %}
     <a href="{{ url_for('projects.task_new', project=filter_project) }}"
        class="btn btn-primary btn-sm"
        title="Задача верхнего уровня в проекте «{{ fp_name }}» (не подзадача)">Новая задача</a>
+    {% elif view == 'gantt' %}
+    <a href="{{ url_for('projects.task_new', arm_view='gantt') }}"
+       class="btn btn-primary btn-sm"
+       title="Задача верхнего уровня — выберите проект в форме">Новая задача</a>
     {% else %}
     <a href="{{ url_for('projects.task_new') }}"
        class="btn btn-primary btn-sm"
        title="Задача верхнего уровня — выберите проект в форме">Новая задача</a>
-    {% endif %}
     {% endif %}
     {% endif %}
 

@@ -7,7 +7,7 @@
 
 {% block head %}
 
-<link rel="stylesheet" href="{{ url_for('static', filename='css/projects.css') }}?v=141">
+<link rel="stylesheet" href="{{ url_for('static', filename='css/projects.css') }}?v=142">
 
 <script defer src="{{ url_for('static', filename='js/projects-gantt.js') }}?v=73"></script>
 
@@ -66,19 +66,6 @@
     <button type="button" class="projects-gantt-ctx-item" data-gantt-ctx="cancel-link" role="menuitem" hidden>Отменить</button>
   </div>
   {% endif %}
-
-  {% if (current_user.is_auditor or current_user.is_admin) and filter_project %}
-  {% set fp_name = (projects|selectattr('id', 'equalto', filter_project)|map(attribute='name')|first) or ('№' ~ filter_project) %}
-  {% set fp_short = fp_name if fp_name|length <= 42 else (fp_name[:41] ~ '…') %}
-  <div class="projects-gantt-add-bar">
-    <a href="{{ url_for('projects.task_new', project=filter_project, arm_view='gantt') }}" class="btn btn-primary btn-sm" title="{{ fp_name }}">
-      Новая задача в «{{ fp_short }}»
-    </a>
-    <span class="muted projects-gantt-add-hint">Верхний уровень проекта · подзадача — ПКМ по полоске задачи</span>
-  </div>
-  {% endif %}
-
-
 
   {% if (gantt_bars or gantt_undated) and gantt_n > 0 %}
 
