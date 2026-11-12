@@ -1,36 +1,9 @@
 <div class="page-header projects-arm-header">
-  <div class="page-header-main">
-    <h1>Управление проектами</h1>
-  </div>
-
-  <div class="page-header-actions">
-    <div class="projects-view-tabs" role="tablist">
-      {% if current_user.is_admin or current_user.is_auditor %}
-      <a class="projects-view-tab{% if view == 'gantt' %} is-active{% endif %}" href="{{ url_for('projects.arm', view='gantt', project=filter_project) }}" title="Диаграмма Ганта">Гант</a>
-      {% endif %}
-      <a class="projects-view-tab{% if view == 'kanban' %} is-active{% endif %}" href="{{ url_for('projects.arm', view='kanban', project=filter_project) }}">Канбан</a>
-      {% if current_user.is_admin or current_user.is_auditor or current_user.is_executor %}
-      <a class="projects-view-tab{% if view == 'calendar' or view == 'week' %} is-active{% endif %}" href="{{ url_for('projects.arm', view='calendar', project=filter_project) }}">Календарь</a>
-      {% endif %}
+  <div class="projects-arm-header-top">
+    <div class="page-header-main">
+      <h1>Управление проектами</h1>
     </div>
-    {% if view == 'kanban' %}
-    {% set kanban_rejected_url = url_for('projects.arm', view='kanban', project=filter_project or none, show_rejected=(0 if show_rejected else 1), show_archived=(1 if show_archived else 0)) %}
-    {% set kanban_archived_url = url_for('projects.arm', view='kanban', project=filter_project or none, show_rejected=(1 if show_rejected else 0), show_archived=(0 if show_archived else 1)) %}
-    <div class="projects-kanban-toolbar projects-kanban-toolbar--header" role="group" aria-label="Доп. колонки канбана">
-      <a class="projects-kanban-toggle{% if show_rejected %} is-on{% endif %}"
-         href="{{ kanban_rejected_url }}"
-         title="Показать или скрыть колонку «Отклонено» (по умолчанию скрыта)">
-        <span class="projects-kanban-toggle-box" aria-hidden="true"></span>
-        Отклонено
-      </a>
-      <a class="projects-kanban-toggle{% if show_archived %} is-on{% endif %}"
-         href="{{ kanban_archived_url }}"
-         title="Показать или скрыть колонку «Архив» (по умолчанию скрыта)">
-        <span class="projects-kanban-toggle-box" aria-hidden="true"></span>
-        Архив
-      </a>
-    </div>
-    {% endif %}
+    <div class="page-header-actions">
     {% set fp_name = (projects|selectattr('id', 'equalto', filter_project)|map(attribute='name')|first) if filter_project else none %}
     {% set fp_name = fp_name or (('№' ~ filter_project) if filter_project else none) %}
     {% set ns = namespace(summary=(fp_name or 'Все проекты')) %}
@@ -175,21 +148,65 @@
       </svg>
     </a>
     {% endif %}
+    </div>
+  </div>
+  <div class="projects-arm-views">
+    <div class="projects-view-tabs" role="tablist">
+      {% if current_user.is_admin or current_user.is_auditor %}
+      <a class="projects-view-tab{% if view == 'gantt' %} is-active{% endif %}" href="{{ url_for('projects.arm', view='gantt', project=filter_project) }}" title="Диаграмма Ганта">Гант</a>
+      {% endif %}
+      <a class="projects-view-tab{% if view == 'kanban' %} is-active{% endif %}" href="{{ url_for('projects.arm', view='kanban', project=filter_project) }}">Канбан</a>
+      {% if current_user.is_admin or current_user.is_auditor or current_user.is_executor %}
+      <a class="projects-view-tab{% if view == 'calendar' or view == 'week' %} is-active{% endif %}" href="{{ url_for('projects.arm', view='calendar', project=filter_project) }}">Календарь</a>
+      {% endif %}
+    </div>
+    {% if view == 'kanban' %}
+    {% set kanban_rejected_url = url_for('projects.arm', view='kanban', project=filter_project or none, show_rejected=(0 if show_rejected else 1), show_archived=(1 if show_archived else 0)) %}
+    {% set kanban_archived_url = url_for('projects.arm', view='kanban', project=filter_project or none, show_rejected=(1 if show_rejected else 0), show_archived=(0 if show_archived else 1)) %}
+    <div class="projects-kanban-toolbar projects-kanban-toolbar--header" role="group" aria-label="Доп. колонки канбана">
+      <a class="projects-kanban-toggle{% if show_rejected %} is-on{% endif %}"
+         href="{{ kanban_rejected_url }}"
+         title="Показать или скрыть колонку «Отклонено» (по умолчанию скрыта)">
+        <span class="projects-kanban-toggle-box" aria-hidden="true"></span>
+        Отклонено
+      </a>
+      <a class="projects-kanban-toggle{% if show_archived %} is-on{% endif %}"
+         href="{{ kanban_archived_url }}"
+         title="Показать или скрыть колонку «Архив» (по умолчанию скрыта)">
+        <span class="projects-kanban-toggle-box" aria-hidden="true"></span>
+        Архив
+      </a>
+    </div>
+    {% endif %}
   </div>
 </div>
 <script>
 (function () {
-  function bindMenu(rootSel, toggleSel, panelSel) {
-    var root = document.querySelector(rootSel);
-    if (!root) return;
-    var btn = root.querySelector(toggleSel);
-    var panel = root.querySelector(panelSel);
+  if (window.__projectsFiltersBound) return;
+  window.__projectsFiltersBound = true;
+
+  function bindMenu(root) {
+    var btn = root.querySelector("[data-projects-filters-toggle]");
+    var panel = root.querySelector("[data-projects-filters-panel]");
     if (!btn || !panel) return;
+
+    function placePanel() {
+      var r = btn.getBoundingClientRect();
+      var width = Math.min(340, Math.max(240, window.innerWidth - 24));
+      var left = Math.min(Math.max(12, r.right - width), window.innerWidth - width - 12);
+      panel.style.position = "fixed";
+      panel.style.top = Math.round(r.bottom + 6) + "px";
+      panel.style.left = Math.round(left) + "px";
+      panel.style.right = "auto";
+      panel.style.width = width + "px";
+      panel.style.zIndex = "500";
+    }
 
     function setOpen(open) {
       panel.hidden = !open;
       btn.setAttribute("aria-expanded", open ? "true" : "false");
       root.classList.toggle("is-open", !!open);
+      if (open) placePanel();
     }
 
     setOpen(false);
@@ -204,7 +221,14 @@
     document.addEventListener("keydown", function (e) {
       if (e.key === "Escape") setOpen(false);
     });
+    window.addEventListener("resize", function () {
+      if (root.classList.contains("is-open")) placePanel();
+    });
+    window.addEventListener("scroll", function () {
+      if (root.classList.contains("is-open")) placePanel();
+    }, true);
   }
-  bindMenu("[data-projects-filters]", "[data-projects-filters-toggle]", "[data-projects-filters-panel]");
+
+  document.querySelectorAll("[data-projects-filters]").forEach(bindMenu);
 })();
 </script>
