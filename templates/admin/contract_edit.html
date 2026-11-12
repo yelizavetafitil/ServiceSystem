@@ -45,7 +45,7 @@
           </select>
           <p class="hint mt-sm">
             {% if contract.status == 'active_warranty' %}Полный доступ ко всем ресурсам.{% endif %}
-            {% if contract.status == 'active_post_warranty' %}Доступ к плагинам, туториалам и тикетам в рамках SLA.{% endif %}
+            {% if contract.status == 'active_post_warranty' %}Доступ к плагинам, инструкциям и тикетам в рамках SLA.{% endif %}
             {% if contract.status == 'suspended' %}Только чтение: старые тикеты без скачивания и новых заявок.{% endif %}
             {% if contract.status == 'terminated' %}Полная блокировка входа для всех сотрудников организации.{% endif %}
           </p>
@@ -110,7 +110,7 @@
         {% for p in plugins %}
         <label class="check-row"><input type="checkbox" name="access_plugin_{{ p.id }}" {% if ('plugin', p.id) in access %}checked{% endif %}> {{ p.name }}</label>
         {% endfor %}
-        <h4>Туториалы</h4>
+        <h4>Инструкции</h4>
         {% for t in tutorials %}
         <label class="check-row"><input type="checkbox" name="access_tutorial_{{ t.id }}" {% if ('tutorial', t.id) in access %}checked{% endif %}> {{ t.title }}</label>
         {% endfor %}

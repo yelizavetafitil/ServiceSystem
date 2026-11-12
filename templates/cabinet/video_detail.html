@@ -5,6 +5,10 @@
 {% endblock %}
 {% block content %}
 <div class="container video-page-container">
+  <div class="page-header-actions kb-section-nav-wrap">
+    {% set kb_section = 'videos' %}
+    {% include "cabinet/_kb_nav.html" %}
+  </div>
   <a href="{{ url_for('cabinet.videos') }}" class="back-link">← К видео</a>
   <div class="video-page">
     <div class="card video-player-shell"

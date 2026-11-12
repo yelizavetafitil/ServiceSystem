@@ -611,7 +611,7 @@ def tutorial_edit(tid):
             t.content_md = ""
         t.is_published = request.form.get("is_published") == "1"
         db.session.commit()
-        flash("Туториал обновлён.", "success")
+        flash("Инструкция обновлена.", "success")
         return redirect(url_for("admin.tutorial_edit", tid=tid))
     sections, lesson_trees_by_section = _tutorial_structure_bundle(t)
     return render_template(
@@ -635,6 +635,8 @@ def tutorial_delete(tid):
     db.session.commit()
     log_audit(current_user.id, "tutorial_delete", "tutorial", tid, title)
     flash(f"Текстовый материал «{title}» удалён.", "success")
+    if (request.form.get("next") or "").strip() == "cabinet":
+        return redirect(url_for("cabinet.tutorials"))
     return redirect(url_for("admin.tutorials"))
 
 

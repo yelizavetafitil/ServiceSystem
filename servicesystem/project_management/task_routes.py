@@ -426,6 +426,7 @@ def task_update(tid):
         from servicesystem.project_management.services import (
             clamp_task_dates,
             dates_within_parent,
+            non_working_dates_message,
             parent_date_window,
             project_dates_violation_message,
             shift_task_subtree,
@@ -444,7 +445,13 @@ def task_update(tid):
                     return redirect(url_for("projects.task_detail", tid=tid))
         proj_msg = project_dates_violation_message(task.start_date, task.due_date, task.project)
         if proj_msg:
+            db.session.rollback()
             flash(proj_msg, "warning")
+            return redirect(url_for("projects.task_detail", tid=tid))
+        nw = non_working_dates_message(task.start_date, task.due_date, task.project)
+        if nw:
+            db.session.rollback()
+            flash(nw, "warning")
             return redirect(url_for("projects.task_detail", tid=tid))
         clamp_task_dates(task)
         new_start = task.start_date or task.due_date
@@ -594,6 +601,12 @@ def api_task_dates(tid):
         task.start_date = parse_optional_date(data["start_date"])
     if data.get("due_date"):
         task.due_date = parse_optional_date(data["due_date"])
+    from servicesystem.project_management.services import non_working_dates_message
+
+    nw = non_working_dates_message(task.start_date, task.due_date, task.project)
+    if nw:
+        db.session.rollback()
+        return jsonify({"error": "non_working", "message": nw}), 400
     cascade_fs_from_task(task)
     sync_calendar_events_for_task(task)
     db.session.commit()

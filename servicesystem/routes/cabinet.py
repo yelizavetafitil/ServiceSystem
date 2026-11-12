@@ -110,6 +110,15 @@ def plugin_download(pid):
     return send_file(storage.read_path(rel), as_attachment=True, download_name=version.original_name)
 
 
+def _latest_news(limit=3):
+    return (
+        NewsPost.query.filter_by(is_published=True)
+        .order_by(func.coalesce(NewsPost.published_at, NewsPost.created_at).desc())
+        .limit(limit)
+        .all()
+    )
+
+
 @bp.route("/tutorials")
 @login_required
 @contract_access_required
@@ -132,7 +141,7 @@ def tutorials():
             or q_lower in (t.tags or "").lower()
             or q_lower in (t.category or "").lower()
         ]
-    ctx = dict(tutorials=items, search=search)
+    ctx = dict(tutorials=items, search=search, latest_news=_latest_news())
     if request.args.get("partial") == "1":
         return render_template("cabinet/tutorials_rows.html", **ctx)
     return render_template("cabinet/tutorials.html", **ctx)

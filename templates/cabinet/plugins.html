@@ -3,7 +3,13 @@
 {% block title %}Плагины{% endblock %}
 {% block content %}
 <div class="container">
-  <div class="page-header"><h1>Репозиторий плагинов</h1></div>
+  <div class="page-header">
+    <div class="page-header-main"><h1>Репозиторий плагинов</h1></div>
+    <div class="page-header-actions">
+      {% set kb_section = 'plugins' %}
+      {% include "cabinet/_kb_nav.html" %}
+    </div>
+  </div>
   <div class="live-search-root mb-md" data-mode="filter">
     {{ live_search_panel('Поиск по названию плагина…') }}
     <div class="plugin-grid" data-live-search-list>
@@ -18,6 +24,9 @@
       {% if ver and ver.changelog_md %}
       <h4 class="changelog-title">Что нового в v{{ ver.version }}</h4>
       <div class="changelog markdown-body">{{ ver.changelog_md|markdown|safe }}</div>
+      {% endif %}
+      {% if current_user.is_admin %}
+      <a href="{{ url_for('admin.plugin_edit', pid=p.id) }}" class="btn btn-outline btn-sm">Редактировать</a>
       {% endif %}
       {% if not (p.user_has_access|default(true)) %}
       <span class="btn btn-primary disabled is-link-disabled" title="Нет доступа по договору">Нет доступа</span>

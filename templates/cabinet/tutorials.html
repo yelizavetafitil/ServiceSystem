@@ -9,11 +9,26 @@
       <p class="page-subtitle">Пошаговые инструкции и методические материалы по ЭМСТПН</p>
     </div>
     <div class="page-header-actions">
-      <a href="{{ url_for('cabinet.videos') }}" class="btn btn-outline btn-sm">Видео</a>
+      {% set kb_section = 'tutorials' %}
+      {% include "cabinet/_kb_nav.html" %}
     </div>
   </div>
 
-  <div class="live-search-root mb-md" data-mode="fetch"
+  <div class="kb-with-news">
+    <aside class="kb-news-feed card" aria-label="Новостная лента">
+      <h2 class="kb-news-feed-title">Новостная лента</h2>
+      <p class="kb-news-feed-hint">3 последние новости</p>
+      {% for n in latest_news or [] %}
+      <a href="{{ url_for('cabinet.news_detail', slug=n.slug) }}" class="kb-news-feed-item">
+        <time>{{ (n.published_at or n.created_at).strftime('%d.%m.%Y') if (n.published_at or n.created_at) else '' }}</time>
+        <span>{{ n.title }}</span>
+      </a>
+      {% else %}
+      <p class="muted">Пока нет новостей.</p>
+      {% endfor %}
+      <a href="{{ url_for('cabinet.news_list') }}" class="kb-news-feed-all">Все новости</a>
+    </aside>
+    <div class="live-search-root mb-md" data-mode="fetch"
        data-url="{{ url_for('cabinet.tutorials') }}"
        data-target="#tutorials-results"
        data-live-search-history="1">
@@ -22,6 +37,7 @@
     </form>
     <div id="tutorials-results" class="kb-list live-search-results">
       {% include "cabinet/tutorials_rows.html" %}
+    </div>
     </div>
   </div>
 </div>

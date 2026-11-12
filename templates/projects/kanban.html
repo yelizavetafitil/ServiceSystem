@@ -2,13 +2,11 @@
 {% from "macros/task_link.html" import project_task_link %}
 {% block title %}Проекты — канбан{% endblock %}
 {% block head %}
-<link rel="stylesheet" href="{{ url_for('static', filename='css/projects.css') }}?v=141">
-<script defer src="{{ url_for('static', filename='js/projects-kanban.js') }}?v=8"></script>
+<link rel="stylesheet" href="{{ url_for('static', filename='css/projects.css') }}?v=145">
+<script defer src="{{ url_for('static', filename='js/projects-kanban.js') }}?v=9"></script>
 <script defer src="{{ url_for('static', filename='js/projects-sla.js') }}?v=2"></script>
 {% endblock %}
 {% block content %}
-{% set kanban_rejected_url = url_for('projects.arm', view='kanban', project=filter_project or none, show_rejected=(0 if show_rejected else 1), show_archived=(1 if show_archived else 0)) %}
-{% set kanban_archived_url = url_for('projects.arm', view='kanban', project=filter_project or none, show_rejected=(1 if show_rejected else 0), show_archived=(0 if show_archived else 1)) %}
 <div class="container cms-page projects-page">
   {% include "projects/_arm_header.html" %}
 
@@ -19,20 +17,12 @@
   </div>
   {% endif %}
 
-  <div class="projects-kanban-toolbar" role="group" aria-label="Доп. колонки канбана">
-    <a class="projects-kanban-toggle{% if show_rejected %} is-on{% endif %}"
-       href="{{ kanban_rejected_url }}"
-       title="Показать или скрыть колонку «Отклонено» (по умолчанию скрыта)">
-      <span class="projects-kanban-toggle-box" aria-hidden="true"></span>
-      Отклонено
-    </a>
-    <a class="projects-kanban-toggle{% if show_archived %} is-on{% endif %}"
-       href="{{ kanban_archived_url }}"
-       title="Показать или скрыть колонку «Архив» (по умолчанию скрыта)">
-      <span class="projects-kanban-toggle-box" aria-hidden="true"></span>
-      Архив
-    </a>
-  </div>
+  {% if kanban_role in ('auditor', 'admin') %}
+  <p class="projects-kanban-who-legend">
+    <span class="projects-kanban-who projects-kanban-who--mine">Вы</span> задача назначена вам
+    <span class="projects-kanban-who projects-kanban-who--other">ФИО</span> другому исполнителю
+  </p>
+  {% endif %}
   <div class="projects-kanban" data-kanban-root data-kanban-role="{{ kanban_role }}" data-user-id="{{ current_user.id }}">
     {% for col in columns %}
     <section class="projects-kanban-col{% if col == 'waiting' %} projects-kanban-col--waiting{% endif %}" data-kanban-column="{{ col }}">
@@ -61,7 +51,7 @@
         {% else %}
           {% set can_drag = col not in ('waiting', 'done', 'rejected', 'archived') %}
         {% endif %}
-        <article class="projects-kanban-card{% if t.priority >= 4 %} projects-kanban-card--critical{% elif t.priority >= 3 %} projects-kanban-card--high{% endif %}{% if t.is_critical_path %} projects-kanban-card--sla{% endif %}{% if not can_drag %} projects-kanban-card--locked{% endif %}"
+        <article class="projects-kanban-card{% if t.priority >= 4 %} projects-kanban-card--critical{% elif t.priority >= 3 %} projects-kanban-card--high{% endif %}{% if t.is_critical_path %} projects-kanban-card--sla{% endif %}{% if not can_drag %} projects-kanban-card--locked{% endif %}{% if kanban_role in ('auditor', 'admin') and t.assignee_id == current_user.id %} projects-kanban-card--mine{% elif kanban_role in ('auditor', 'admin') and t.assignee_id %} projects-kanban-card--other{% endif %}"
                  {% if can_drag %}draggable="true"{% endif %}
                  data-task-id="{{ t.id }}"
                  data-kanban-status="{{ t.kanban_status }}"
@@ -78,6 +68,15 @@
             <span class="projects-kanban-kind" title="Подзадача">подзадача</span>
             {% else %}
             <span class="projects-kanban-kind projects-kanban-kind--task" title="Задача верхнего уровня">задача</span>
+            {% endif %}
+            {% if kanban_role in ('auditor', 'admin') %}
+            {% if t.assignee_id == current_user.id %}
+            <span class="projects-kanban-who projects-kanban-who--mine" title="Назначено вам">Вы</span>
+            {% elif t.assignee %}
+            <span class="projects-kanban-who projects-kanban-who--other" title="Исполнитель: {{ t.assignee.full_name }}">{{ t.assignee.full_name }}</span>
+            {% else %}
+            <span class="projects-kanban-who projects-kanban-who--none" title="Исполнитель не назначен">Не назначено</span>
+            {% endif %}
             {% endif %}
           </div>
           {% if t.ticket_id %}

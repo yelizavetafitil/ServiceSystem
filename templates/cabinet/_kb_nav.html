@@ -1,0 +1,11 @@
+<nav class="kb-section-nav" aria-label="Разделы базы знаний">
+  <a href="{{ url_for('cabinet.news_list') }}" class="btn btn-sm {% if kb_section == 'news' %}btn-primary{% else %}btn-outline{% endif %}">Новости</a>
+  <a href="{{ url_for('cabinet.tutorials') }}" class="btn btn-sm {% if kb_section == 'tutorials' %}btn-primary{% else %}btn-outline{% endif %}">Инструкции</a>
+  <a href="{{ url_for('cabinet.plugins') }}" class="btn btn-sm {% if kb_section == 'plugins' %}btn-primary{% else %}btn-outline{% endif %}">Плагины</a>
+  <a href="{{ url_for('cabinet.videos') }}" class="btn btn-sm {% if kb_section == 'videos' %}btn-primary{% else %}btn-outline{% endif %}">Видео</a>
+  {% if current_user.is_admin %}
+  <a href="{{ url_for('admin.news') }}" class="btn btn-sm btn-outline">Создать новость</a>
+  <a href="{{ url_for('admin.tutorials') }}" class="btn btn-sm btn-outline">Создать инструкцию</a>
+  <a href="{{ url_for('admin.videos') }}" class="btn btn-sm btn-outline">Создать видео</a>
+  {% endif %}
+</nav>

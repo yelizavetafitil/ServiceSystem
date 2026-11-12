@@ -2,6 +2,10 @@
 {% block title %}{{ item.title }}{% endblock %}
 {% block content %}
 <div class="container prose">
+  <div class="page-header-actions kb-section-nav-wrap">
+    {% set kb_section = 'news' %}
+    {% include "cabinet/_kb_nav.html" %}
+  </div>
   <a href="{{ url_for('cabinet.news_list') }}" class="back-link">← К новостям</a>
   <div class="card">
     <span class="kb-cat">Новости</span>

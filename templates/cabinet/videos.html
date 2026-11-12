@@ -9,7 +9,8 @@
       <p class="page-subtitle">Потоковый просмотр обучающих материалов без скачивания</p>
     </div>
     <div class="page-header-actions">
-      <a href="{{ url_for('cabinet.tutorials') }}" class="btn btn-outline btn-sm">База знаний</a>
+      {% set kb_section = 'videos' %}
+      {% include "cabinet/_kb_nav.html" %}
     </div>
   </div>
   <div class="live-search-root mb-md" data-mode="filter">

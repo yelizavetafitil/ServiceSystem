@@ -6,7 +6,7 @@
   <meta name="csrf-token" content="{{ csrf_token() }}">
   <title>{% block title %}{{ APP_NAME }}{% endblock %}</title>
   <link rel="icon" href="{{ url_for('static', filename='img/progress-mark.svg') }}?v=2" type="image/svg+xml">
-  <link rel="stylesheet" href="{{ url_for('static', filename='css/main.css') }}?v=107">
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/main.css') }}?v=111">
   {% block head %}{% endblock %}
 </head>
 <body class="{% if not current_user.is_authenticated %}auth-body{% endif %}{% block body_class %}{% endblock %}">
@@ -25,29 +25,23 @@
     </div>
     <nav class="topbar-nav" aria-label="Основное меню">
       {% if current_user.is_customer %}
-        <a href="{{ url_for('cabinet.dashboard') }}">Кабинет</a>
-        <a href="{{ url_for('tickets.list_tickets') }}">Заявки</a>
         {% if current_user.is_customer_curator %}
         <a href="{{ url_for('cabinet.customer_projects') }}">Проекты</a>
         {% endif %}
-        <a href="{{ url_for('cabinet.news_list') }}">Новости</a>
-        <a href="{{ url_for('cabinet.tutorials') }}">База</a>
-        <a href="{{ url_for('cabinet.plugins') }}">Плагины</a>
+        <a href="{{ url_for('tickets.list_tickets') }}">Тикеты</a>
+        <a href="{{ url_for('cabinet.tutorials') }}">База знаний</a>
       {% elif current_user.is_staff %}
-        <a href="{{ url_for('tickets.staff_queue') }}">Очередь</a>
         <a href="{{ url_for('projects.arm', view=('gantt' if current_user.is_admin or current_user.is_auditor else 'kanban')) }}">Проекты</a>
-        <a href="{{ url_for('cabinet.news_list') }}">Новости</a>
-        <a href="{{ url_for('admin.directory') }}">Контакты</a>
-        <a href="{{ url_for('cabinet.tutorials') }}">База</a>
-        {% if current_user.is_admin or current_user.is_auditor or current_user.is_executor %}
-        <a href="{{ url_for('admin.tutorials') }}">Контент</a>
-        {% endif %}
-        {% if current_user.is_admin %}
-        <a href="{{ url_for('admin.dashboard') }}">Админ</a>
-        {% endif %}
+        <a href="{{ url_for('tickets.staff_queue') }}">Тикеты</a>
+        <a href="{{ url_for('cabinet.tutorials') }}">База знаний</a>
       {% endif %}
     </nav>
     <div class="topbar-right">
+      {% if current_user.is_staff %}
+      <a href="{{ url_for('admin.directory') }}" class="topbar-phone" title="Тел. справ." aria-label="Телефонный справочник">
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M22 16.9v2a2 2 0 0 1-2.2 2 19.8 19.8 0 0 1-8.6-3.1 19.5 19.5 0 0 1-6-6A19.8 19.8 0 0 1 2.1 3.2 2 2 0 0 1 4.1 1h2a2 2 0 0 1 2 1.7c.1.9.3 1.8.6 2.6a2 2 0 0 1-.5 2.1L7.1 8.5a16 16 0 0 0 6 6l1.1-1.1a2 2 0 0 1 2.1-.5c.8.3 1.7.5 2.6.6a2 2 0 0 1 1.7 2z"/></svg>
+      </a>
+      {% endif %}
       <span class="user-pill">{{ current_user.full_name }}</span>
       <a href="{{ url_for('auth.logout') }}" class="btn btn-sm btn-outline">Выход</a>
     </div>

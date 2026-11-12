@@ -1096,6 +1096,11 @@ def task_new():
                         flash(f"«{r['title']}»: {proj_msg}", "warning")
                         db.session.rollback()
                         return _back_new()
+                    nw = non_working_dates_message(start_date, due_date, proj_for_dates)
+                    if nw:
+                        flash(f"«{r['title']}»: {nw}", "warning")
+                        db.session.rollback()
+                        return _back_new()
                     t = ProjectTask(
                         project_id=project_id,
                         stage_id=(row_parent.stage_id if row_parent and row_parent.stage_id else stage_id),
@@ -1161,6 +1166,12 @@ def task_new():
         proj_msg = project_dates_violation_message(start_date, due_date, proj_for_dates)
         if proj_msg:
             flash(proj_msg, "warning")
+            return redirect(
+                url_for("projects.task_new", project=project_id, parent=parent_id, stage=stage_id)
+            )
+        nw = non_working_dates_message(start_date, due_date, proj_for_dates)
+        if nw:
+            flash(nw, "warning")
             return redirect(
                 url_for("projects.task_new", project=project_id, parent=parent_id, stage=stage_id)
             )

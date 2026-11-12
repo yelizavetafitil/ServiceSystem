@@ -53,6 +53,23 @@
     return Promise.resolve(true);
   }
 
+  function ganttConfirm(message, title) {
+    if (typeof window.ssConfirm === "function") {
+      return window.ssConfirm(message, {
+        title: title || "Перенос срока",
+        confirmLabel: "Перенести",
+        cancelLabel: "Отмена",
+      });
+    }
+    return Promise.resolve(window.confirm(message));
+  }
+
+  function ruDate(iso) {
+    var p = String(iso || "").split("-");
+    if (p.length < 3 || !p[0]) return iso || "—";
+    return p[2] + "." + p[1] + "." + p[0];
+  }
+
   function parseIso(s) {
 
     if (!s) return null;
@@ -503,6 +520,32 @@
 
     var left = parseFloat(state.slot.style.left) || state.origLeft;
     var dates = pctToDates(left, state.widthPct);
+    var prevStart = state.bar.getAttribute("data-start") || "";
+    var prevDue = state.bar.getAttribute("data-due") || "";
+
+    function restoreDrag() {
+      state.slot.style.left = state.origLeft + "%";
+      if (state.children) {
+        state.children.forEach(function (ch) {
+          ch.slot.style.left = ch.origLeft + "%";
+        });
+      }
+      scheduleDraw();
+    }
+
+    if (dates.start === prevStart && dates.due === prevDue) {
+      restoreDrag();
+      return;
+    }
+
+    var title = state.bar.getAttribute("data-title") || "задачу";
+    var ok = await ganttConfirm(
+      "Перенести «" + title + "» на " + ruDate(dates.start) + " — " + ruDate(dates.due) + "?"
+    );
+    if (!ok) {
+      restoreDrag();
+      return;
+    }
 
     try {
       var res = await fetch("/projects/gantt/tasks/" + state.taskId + "/dates", {
@@ -510,10 +553,22 @@
         headers: { "Content-Type": "application/json", "X-CSRFToken": csrf },
         body: JSON.stringify({ start_date: dates.start, due_date: dates.due }),
       });
-      if (res.ok) reloadGantt();
-      else reloadGantt();
+      var data = {};
+      try { data = await res.json(); } catch (errJson) {}
+      if (res.ok) {
+        reloadGantt();
+        return;
+      }
+      restoreDrag();
+      var msg = (data && data.message) || "Не удалось перенести задачу.";
+      if (data && data.error === "non_working") {
+        ganttAlert(msg, "Нерабочий день");
+      } else {
+        ganttAlert(msg);
+      }
     } catch (err) {
-      reloadGantt();
+      restoreDrag();
+      ganttAlert("Ошибка сети при переносе срока.");
     }
   }
 
@@ -844,6 +899,8 @@
   var panelLinksWrap = document.getElementById("gantt-panel-links-wrap");
   var panelLinks = document.getElementById("gantt-panel-links");
   var panelTaskId = null;
+  var panelOrigStart = "";
+  var panelOrigDue = "";
 
   async function deleteGanttLink(linkId) {
     if (!linkId) return;
@@ -925,7 +982,8 @@
     var ticketId = bar.getAttribute("data-ticket-id");
     if (panelTitle) panelTitle.textContent = bar.getAttribute("data-title") || "Задача";
     if (panelStart) {
-      panelStart.value = bar.getAttribute("data-start") || "";
+      panelOrigStart = bar.getAttribute("data-start") || "";
+      panelStart.value = panelOrigStart;
       panelStart.disabled = !canEdit;
       var winMin = bar.getAttribute("data-parent-start") || bar.getAttribute("data-project-start") || "";
       var winMax = bar.getAttribute("data-parent-due") || bar.getAttribute("data-project-deadline") || "";
@@ -933,7 +991,8 @@
       if (winMax) panelStart.max = winMax; else panelStart.removeAttribute("max");
     }
     if (panelDue) {
-      panelDue.value = bar.getAttribute("data-due") || "";
+      panelOrigDue = bar.getAttribute("data-due") || "";
+      panelDue.value = panelOrigDue;
       panelDue.disabled = !canEdit;
       var dueMin = bar.getAttribute("data-parent-start") || bar.getAttribute("data-project-start") || "";
       var dueMax = bar.getAttribute("data-parent-due") || bar.getAttribute("data-project-deadline") || "";
@@ -970,13 +1029,22 @@
   if (panelSave) {
     panelSave.addEventListener("click", async function () {
       if (!panelTaskId) return;
+      var nextStart = panelStart ? panelStart.value : "";
+      var nextDue = panelDue ? panelDue.value : "";
+      if (nextStart !== panelOrigStart || nextDue !== panelOrigDue) {
+        var title = panelTitle ? panelTitle.textContent : "задачу";
+        var okMove = await ganttConfirm(
+          "Перенести «" + title + "» на " + ruDate(nextStart) + " — " + ruDate(nextDue) + "?"
+        );
+        if (!okMove) return;
+      }
       try {
         var res = await fetch("/projects/gantt/tasks/" + panelTaskId + "/panel", {
           method: "POST",
           headers: { "Content-Type": "application/json", "X-CSRFToken": csrf },
           body: JSON.stringify({
-            start_date: panelStart ? panelStart.value : "",
-            due_date: panelDue ? panelDue.value : "",
+            start_date: nextStart,
+            due_date: nextDue,
             stage_id: panelStage ? panelStage.value : "",
             kanban_status: panelStatus ? panelStatus.value : "",
           }),
@@ -989,6 +1057,10 @@
         }
         if (res.status === 409) {
           ganttAlert("Нельзя сменить статус: есть блокирующие связи.");
+          return;
+        }
+        if (data && data.error === "non_working") {
+          ganttAlert(data.message || "Нельзя поставить задачу на нерабочий день.", "Нерабочий день");
           return;
         }
         ganttAlert((data && data.message) || "Не удалось сохранить.");

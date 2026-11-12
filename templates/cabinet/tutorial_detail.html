@@ -2,6 +2,10 @@
 {% block title %}{{ tutorial.title }}{% if current_lesson %} — {{ current_lesson.title }}{% elif current_section %} — {{ current_section.title }}{% endif %}{% endblock %}
 {% block content %}
 <div class="container {% if has_structure %}tutorial-layout-wrap{% else %}prose{% endif %}">
+  <div class="page-header-actions kb-section-nav-wrap">
+    {% set kb_section = 'tutorials' %}
+    {% include "cabinet/_kb_nav.html" %}
+  </div>
   <a href="{{ url_for('cabinet.tutorials') }}" class="back-link">← К базе знаний</a>
   {% if tutorial_preview_unpublished %}
   <p class="hint tutorial-preview-banner">Черновик: материал не опубликован — его видят только сотрудники.</p>
@@ -20,7 +24,7 @@
         <div class="tutorial-nav__title">{{ tutorial.title }}</div>
         {% endif %}
         {% if tutorial.category %}<span class="kb-cat">{{ tutorial.category }}</span>{% endif %}
-        <nav class="tutorial-nav__list" aria-label="Разделы туториала">
+        <nav class="tutorial-nav__list" aria-label="Разделы инструкции">
           {% for sec in section_nav %}
           <div class="tutorial-nav__section">
             {% if sec.has_content %}

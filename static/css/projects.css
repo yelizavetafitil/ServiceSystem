@@ -1,7 +1,7 @@
 .container-wide { max-width: 1280px; }
 .projects-gantt-page.container-wide { max-width: none; }
 .projects-gantt-intro { margin: 0 0 14px; font-size: 13px; line-height: 1.55; max-width: 960px; }
-.projects-arm-header { flex-wrap: wrap; gap: 12px; }
+.projects-arm-header { flex-wrap: nowrap; gap: 12px; align-items: center; }
 .projects-arm-icon-btn {
   display: inline-flex;
   align-items: center;
@@ -17,7 +17,7 @@
   width: 18px;
   height: 18px;
 }
-.projects-view-tabs { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 10px; }
+.projects-view-tabs { display: flex; flex-wrap: nowrap; gap: 6px; margin: 0; }
 .projects-view-tab {
   padding: 6px 14px;
   border-radius: 999px;
@@ -107,6 +107,10 @@
   margin: 0 0 14px;
   align-items: center;
 }
+.projects-kanban-toolbar--header .projects-kanban-toggle {
+  padding: 4px 10px;
+  font-size: 12px;
+}
 .projects-kanban-toggle {
   font-size: 13px;
   font-weight: 600;
@@ -161,21 +165,29 @@
 .projects-arm-header .page-header-actions {
   position: relative;
   z-index: 110;
-  flex-shrink: 1;
+  flex: 1 1 auto;
+  flex-wrap: nowrap;
+  justify-content: flex-end;
+  margin-left: auto;
+  min-width: 0;
   max-width: 100%;
+  overflow-x: auto;
+  scrollbar-width: none;
 }
+.projects-arm-header .page-header-actions::-webkit-scrollbar { display: none; }
 .projects-view-tabs {
   position: relative;
   z-index: 1;
 }
 @media (max-width: 1100px) {
   .projects-arm-header.page-header {
-    flex-direction: column;
-    align-items: stretch;
+    flex-wrap: nowrap;
+    align-items: center;
   }
   .projects-arm-header .page-header-actions {
-    width: 100%;
-    justify-content: flex-start;
+    width: auto;
+    flex: 1 1 auto;
+    justify-content: flex-end;
   }
 }
 .projects-kanban { display: grid; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); gap: 12px; align-items: start; }
@@ -220,6 +232,43 @@
   background: #e8f0fe;
   border-radius: 4px;
   padding: 1px 5px;
+}
+.projects-kanban-who-legend {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px 8px;
+  margin: 0 0 10px;
+  font-size: 12px;
+  color: var(--muted);
+}
+.projects-kanban-who {
+  margin-left: auto;
+  max-width: 9.5rem;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 10px;
+  font-weight: 700;
+  line-height: 1.3;
+  padding: 1px 6px;
+  border-radius: 999px;
+}
+.projects-kanban-who-legend .projects-kanban-who { margin-left: 0; }
+.projects-kanban-who--mine {
+  color: #1d4ed8;
+  background: #dbeafe;
+}
+.projects-kanban-who--other {
+  color: #334155;
+  background: #e2e8f0;
+}
+.projects-kanban-who--none {
+  color: #92400e;
+  background: #fef3c7;
+}
+.projects-kanban-card--mine {
+  background: #f5f9ff;
 }
 .projects-kanban-kind {
   display: inline-block;
@@ -354,7 +403,7 @@ a.is-link-disabled {
   margin: 0;
   line-height: 1.2;
 }
-.projects-gantt-page .projects-view-tabs { margin-top: 4px; }
+.projects-gantt-page .projects-view-tabs { margin-top: 0; }
 .projects-gantt-page .projects-view-tab { padding: 4px 10px; font-size: 12px; }
 .projects-gantt-page .projects-gantt-toolbar {
   flex-shrink: 0;

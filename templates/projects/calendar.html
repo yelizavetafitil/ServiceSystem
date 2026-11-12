@@ -1,7 +1,7 @@
 {% extends "base.html" %}
 {% from "macros/task_link.html" import project_task_link %}
 {% block title %}Проекты — календарь{% endblock %}
-{% block head %}<link rel="stylesheet" href="{{ url_for('static', filename='css/projects.css') }}?v=141">{% endblock %}
+{% block head %}<link rel="stylesheet" href="{{ url_for('static', filename='css/projects.css') }}?v=145">{% endblock %}
 {% block content %}
 {% set cal_date_iso = cal_anchor.isoformat() if cal_anchor is defined and cal_anchor else '' %}
 {% macro cal_href(mode=None, d=None, assignee=None) -%}

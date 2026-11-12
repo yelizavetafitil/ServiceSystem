@@ -8,6 +8,10 @@
       <h1>Новости</h1>
       <p class="page-subtitle">Общие объявления и изменения сервиса — доступны всем пользователям</p>
     </div>
+    <div class="page-header-actions">
+      {% set kb_section = 'news' %}
+      {% include "cabinet/_kb_nav.html" %}
+    </div>
   </div>
   <div class="live-search-root mb-md" data-mode="filter">
     {{ live_search_panel('Поиск по заголовку…') }}

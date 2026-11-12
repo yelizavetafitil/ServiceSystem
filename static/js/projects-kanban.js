@@ -59,6 +59,7 @@
   }
 
   function roleClientOk(from, to, card) {
+    if (from === to) return true;
     if (!adjacentOk(from, to)) return false;
     const key = from + "|" + to;
     const own = isOwnCard(card);
@@ -123,6 +124,8 @@
       }
       const status = zone.dataset.kanbanStatus;
       if (!status || status === "waiting") return;
+      // Отпустили в той же колонке — это отмена, не запрещённый переход.
+      if (fromStatus === status) return;
       if (!adjacentOk(fromStatus, status)) {
         await uiAlert("Нельзя перемещать задачу через шаг. Допустимы только соседние статусы.");
         return;
@@ -135,7 +138,6 @@
         }
         return;
       }
-      if (fromStatus === status) return;
 
       const body = { status: status, sort: 0 };
       const prevParent = card.parentElement;
