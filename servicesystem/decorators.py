@@ -48,7 +48,7 @@ def customer_directory_self_required(fn):
 
 
 def content_cms_required(fn):
-    """Admin, auditor, or executor: tutorials and video CMS (not plugins/contracts/users)."""
+    """Admin, auditor, or executor: news, tutorials and videos CMS (not plugins)."""
     @wraps(fn)
     def wrapper(*args, **kwargs):
         if not current_user.is_authenticated:

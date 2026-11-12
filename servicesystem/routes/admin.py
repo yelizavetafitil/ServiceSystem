@@ -170,11 +170,13 @@ def contracts():
     items = Contract.query.join(Organization).order_by(Contract.number).all()
     orgs = Organization.query.order_by(Organization.name).all()
     org_blockers = {o.id: _organization_delete_blockers(o) for o in orgs}
+    highlight_id = request.args.get("highlight", type=int)
     return render_template(
         "admin/contracts.html",
         contracts=items,
         orgs=orgs,
         org_blockers=org_blockers,
+        highlight_id=highlight_id,
     )
 
 
@@ -343,6 +345,7 @@ def users():
         db.session.commit()
     items = User.query.order_by(User.full_name).all()
     curator_project_tips: dict[int, str] = {}
+    curator_project_ids: dict[int, int] = {}
     curator_ids = [u.id for u in items if u.role == "customer_curator"]
     if curator_ids:
         from servicesystem.project_management.models import Project
@@ -358,6 +361,8 @@ def users():
         ):
             by_curator.setdefault(p.customer_curator_id, []).append(p)
         for uid, projs in by_curator.items():
+            if projs:
+                curator_project_ids[uid] = projs[0].id
             u = next((x for x in items if x.id == uid), None)
             bits = []
             if u and u.contract:
@@ -390,6 +395,7 @@ def users():
         "admin/users.html",
         users=items,
         curator_project_tips=curator_project_tips,
+        curator_project_ids=curator_project_ids,
     )
 
 

@@ -11,7 +11,9 @@
       <thead><tr><th>№</th><th>Организация</th><th>Статус</th><th>Окончание</th><th>Мастер-ключ до</th><th></th></tr></thead>
       <tbody data-live-search-list>
       {% for c in contracts %}
-      <tr class="live-search-item{% if c.is_master_key_expired or c.is_access_disabled %} is-access-disabled{% endif %}" data-search-text="{{ c.number }} {{ c.organization.name }} {{ CONTRACT_STATUSES.get(c.status, c.status) }}">
+      <tr id="contract-{{ c.id }}"
+          class="live-search-item{% if c.is_master_key_expired or c.is_access_disabled %} is-access-disabled{% endif %}{% if highlight_id and highlight_id == c.id %} is-contract-highlight{% endif %}"
+          data-search-text="{{ c.number }} {{ c.organization.name }} {{ CONTRACT_STATUSES.get(c.status, c.status) }}">
         <td>{{ c.number }}</td>
         <td>{{ c.organization.name }}</td>
         <td>
@@ -102,4 +104,15 @@
     </form>
   </div>
 </div>
+{% if highlight_id %}
+<script>
+(function () {
+  var row = document.getElementById("contract-{{ highlight_id }}");
+  if (!row) return;
+  row.scrollIntoView({ behavior: "smooth", block: "center" });
+  row.classList.add("is-contract-highlight");
+  setTimeout(function () { row.classList.add("is-contract-highlight-fade"); }, 2200);
+})();
+</script>
+{% endif %}
 {% endblock %}
