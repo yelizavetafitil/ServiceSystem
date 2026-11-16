@@ -1,9 +1,11 @@
-"""Email notifications (stub with logging; configure SMTP via env)."""
+"""Email notifications (stub with logging; configure SMTP via env) + in-app hooks."""
 import logging
 import smtplib
 from email.mime.text import MIMEText
 
 from flask import current_app
+
+from servicesystem.services.inapp_notify import notify_ticket_event
 
 log = logging.getLogger(__name__)
 
@@ -30,6 +32,7 @@ def send_email(to: str, subject: str, body: str) -> bool:
 
 
 def notify_ticket_created(ticket, author, auditor):
+    notify_ticket_event(ticket, event="created", actor_id=author.id if author else None)
     if author and author.email:
         send_email(
             author.email,
@@ -47,6 +50,7 @@ def notify_ticket_created(ticket, author, auditor):
 
 
 def notify_ticket_resolved(ticket, author):
+    notify_ticket_event(ticket, event="resolved")
     if author and author.email:
         send_email(
             author.email,
@@ -57,6 +61,7 @@ def notify_ticket_resolved(ticket, author):
 
 
 def notify_submitted_for_review(ticket, auditor):
+    notify_ticket_event(ticket, event="review")
     if auditor and auditor.email:
         send_email(
             auditor.email,

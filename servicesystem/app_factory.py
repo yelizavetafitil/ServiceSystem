@@ -37,6 +37,7 @@ def create_app(config_class=Config):
     from servicesystem.routes.admin import bp as admin_bp
     from servicesystem.routes.api import bp as api_bp
     from servicesystem.routes.uploads import bp as uploads_bp
+    from servicesystem.routes.notifications import bp as notifications_bp
     from servicesystem.project_management.routes import bp as projects_bp
     import servicesystem.project_management.models  # noqa: F401 — register tables
 
@@ -46,6 +47,7 @@ def create_app(config_class=Config):
     app.register_blueprint(admin_bp, url_prefix="/admin")
     app.register_blueprint(api_bp, url_prefix="/api/v1")
     app.register_blueprint(uploads_bp)
+    app.register_blueprint(notifications_bp)
     app.register_blueprint(projects_bp, url_prefix="/projects")
 
     from servicesystem.project_management.routes import projects_ui_context
@@ -294,6 +296,26 @@ def _apply_schema_patches():
         "CREATE INDEX IF NOT EXISTS ix_tutorial_lessons_parent_id ON tutorial_lessons (parent_id)",
         "ALTER TABLE tickets ADD COLUMN IF NOT EXISTS is_archived BOOLEAN NOT NULL DEFAULT FALSE",
         "ALTER TABLE tickets ADD COLUMN IF NOT EXISTS archived_at TIMESTAMPTZ",
+        """
+        CREATE TABLE IF NOT EXISTS user_notifications (
+          id SERIAL PRIMARY KEY,
+          user_id INTEGER NOT NULL REFERENCES users(id),
+          category VARCHAR(16) NOT NULL,
+          title VARCHAR(255) NOT NULL,
+          body VARCHAR(512),
+          link_url VARCHAR(512),
+          is_urgent BOOLEAN NOT NULL DEFAULT FALSE,
+          is_read BOOLEAN NOT NULL DEFAULT FALSE,
+          toast_shown BOOLEAN NOT NULL DEFAULT FALSE,
+          entity_type VARCHAR(32),
+          entity_id INTEGER,
+          created_at TIMESTAMPTZ DEFAULT NOW()
+        )
+        """,
+        "CREATE INDEX IF NOT EXISTS ix_user_notifications_user_id ON user_notifications (user_id)",
+        "CREATE INDEX IF NOT EXISTS ix_user_notifications_category ON user_notifications (category)",
+        "CREATE INDEX IF NOT EXISTS ix_user_notifications_is_read ON user_notifications (is_read)",
+        "CREATE INDEX IF NOT EXISTS ix_user_notifications_created_at ON user_notifications (created_at)",
     ]
     for sql in patches:
         try:

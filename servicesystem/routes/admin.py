@@ -515,7 +515,7 @@ def routing():
             route.auditor_id = int(aud_id)
             route.default_executor_id = int(exec_id) if exec_id else None
         db.session.commit()
-        flash("Маршрутизация тикетов обновлена.", "success")
+        flash("Маршрутизация заявок обновлена.", "success")
         return redirect(url_for("admin.routing"))
     routes = {r.object_category_id: r for r in ObjectCategoryRouting.query.all()}
     return render_template("admin/routing.html", objects=objects, auditors=auditors, executors=executors, routes=routes)

@@ -45,8 +45,8 @@
           </select>
           <p class="hint mt-sm">
             {% if contract.status == 'active_warranty' %}Полный доступ ко всем ресурсам.{% endif %}
-            {% if contract.status == 'active_post_warranty' %}Доступ к плагинам, инструкциям и тикетам в рамках SLA.{% endif %}
-            {% if contract.status == 'suspended' %}Только чтение: старые тикеты без скачивания и новых заявок.{% endif %}
+            {% if contract.status == 'active_post_warranty' %}Доступ к плагинам, инструкциям и заявкам в рамках SLA.{% endif %}
+            {% if contract.status == 'suspended' %}Только чтение: старые заявки без скачивания и новых обращений.{% endif %}
             {% if contract.status == 'terminated' %}Полная блокировка входа для всех сотрудников организации.{% endif %}
           </p>
         </div>

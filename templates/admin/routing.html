@@ -1,12 +1,12 @@
 {% extends "base.html" %}
 {% from "macros/forms.html" import csrf_field %}
-{% block title %}Маршрутизация тикетов{% endblock %}
+{% block title %}Маршрутизация заявок{% endblock %}
 {% block content %}
 <div class="container">
   <a href="{{ url_for('admin.dashboard') }}" class="back-link">← Администрирование</a>
   <div class="page-header">
     <div class="page-header-main">
-      <h1>Конструктор маршрутизации тикетов</h1>
+      <h1>Конструктор маршрутизации заявок</h1>
       <p class="page-subtitle">Назначение ролей сотрудников предприятия для обработки входящих заявок (TZ 3.3.7)</p>
     </div>
   </div>

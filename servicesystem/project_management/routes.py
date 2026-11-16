@@ -1123,6 +1123,11 @@ def task_new():
                     sync_calendar_events_for_task(t)
                     created.append(t)
                     stack.append((depth, t))
+                from servicesystem.services.inapp_notify import notify_task_assignee
+
+                for t in created:
+                    if t.assignee_id and t.assignee_id != current_user.id:
+                        notify_task_assignee(t, actor_id=current_user.id, reason="assigned")
                 db.session.commit()
             except Exception:
                 db.session.rollback()
@@ -1221,6 +1226,10 @@ def task_new():
                         )
                         apply_fs_cascade_and_expand(task)
         sync_calendar_events_for_task(task)
+        if task.assignee_id and task.assignee_id != current_user.id:
+            from servicesystem.services.inapp_notify import notify_task_assignee
+
+            notify_task_assignee(task, actor_id=current_user.id, reason="assigned")
         db.session.commit()
         after = (request.form.get("after_create") or "view").strip().lower()
         if after == "another":

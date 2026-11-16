@@ -1,6 +1,6 @@
 from datetime import datetime, timezone
 
-from flask import Blueprint, abort, flash, jsonify, redirect, render_template, request, send_file, url_for
+from flask import Blueprint, abort, flash, jsonify, redirect, render_template, request, send_file, session, url_for
 from flask_login import current_user, login_required
 
 from servicesystem.decorators import contract_access_required, role_required, staff_required, write_access_required
@@ -15,6 +15,7 @@ from servicesystem.models import (
     User,
 )
 from servicesystem.services.audit import log_audit, log_ticket_history
+from servicesystem.services.inapp_notify import notify_ticket_event
 from servicesystem.services.notify import notify_submitted_for_review, notify_ticket_created, notify_ticket_resolved
 from servicesystem.services.routing import resolve_auditor, resolve_default_executor
 from servicesystem.services.storage import get_storage
@@ -97,6 +98,37 @@ def _group_tickets_kanban(tickets, *, show_archived: bool):
     return grouped, columns, closed_for_archive
 
 
+_TICKETS_VIEW_KEY = "tickets_board_view"
+_TICKETS_SHOW_ARCHIVED_KEY = "tickets_show_archived"
+
+
+def _resolve_tickets_board_prefs(*, can_kanban: bool):
+    """Список/канбан и архив общие для «Мои» и «Все заявки» (сессия)."""
+    if not can_kanban:
+        return "list", False
+
+    raw_view = request.args.get("view")
+    if raw_view in ("list", "kanban"):
+        session[_TICKETS_VIEW_KEY] = raw_view
+        view = raw_view
+    else:
+        view = session.get(_TICKETS_VIEW_KEY, "list")
+        if view not in ("list", "kanban"):
+            view = "list"
+
+    if "show_archived" in request.args:
+        show_archived = request.args.get("show_archived") == "1"
+        session[_TICKETS_SHOW_ARCHIVED_KEY] = show_archived
+    else:
+        show_archived = bool(session.get(_TICKETS_SHOW_ARCHIVED_KEY))
+
+    # Архив имеет смысл только на канбане.
+    if view != "kanban":
+        show_archived = False
+
+    return view, show_archived
+
+
 def _next_ticket_number():
     year = datetime.now().year
     prefix = f"Т-{year}-"
@@ -124,10 +156,7 @@ def _can_view(ticket: Ticket) -> bool:
 @login_required
 def list_tickets():
     can_kanban = current_user.is_admin or current_user.is_auditor
-    view = request.args.get("view", "list")
-    if view not in ("list", "kanban") or not can_kanban:
-        view = "list"
-    show_archived = can_kanban and request.args.get("show_archived") == "1"
+    view, show_archived = _resolve_tickets_board_prefs(can_kanban=can_kanban)
 
     tickets = _ticket_list_query().order_by(Ticket.created_at.desc()).all()
     if view != "kanban":
@@ -202,10 +231,7 @@ def archive_selected():
 @staff_required
 def staff_queue():
     can_kanban = current_user.is_admin or current_user.is_auditor
-    view = request.args.get("view", "list")
-    if view not in ("list", "kanban") or not can_kanban:
-        view = "list"
-    show_archived = can_kanban and request.args.get("show_archived") == "1"
+    view, show_archived = _resolve_tickets_board_prefs(can_kanban=can_kanban)
 
     q = _staff_scope_query()
     if view == "kanban" and can_kanban:
@@ -420,6 +446,7 @@ def respond(tid):
                 from servicesystem.project_management.services import on_ticket_assign_hook
 
                 on_ticket_assign_hook(ticket)
+                notify_ticket_event(ticket, event="assigned", actor_id=current_user.id)
                 log_ticket_history(
                     ticket.id,
                     current_user.id,
@@ -434,10 +461,12 @@ def respond(tid):
         elif action == "apply_status" and status_choice in ("ready", "rejected"):
             if status_choice == "ready":
                 wf_details = on_mark_ready(ticket)
+                notify_ticket_event(ticket, event="ready", actor_id=current_user.id)
                 log_ticket_history(ticket.id, current_user.id, "marked_ready", details=wf_details)
                 flash("Заявка отмечена «Готов к выдаче».", "success")
             else:
                 wf_details = on_reject(ticket)
+                notify_ticket_event(ticket, event="rejected", actor_id=current_user.id)
                 log_ticket_history(ticket.id, current_user.id, "rejected", details=wf_details)
                 flash("Заявка отклонена.", "warning")
         elif action == "approve":
@@ -458,10 +487,12 @@ def respond(tid):
             flash("Ответ утверждён и отправлен заказчику.", "success")
         elif status_choice == "ready":
             wf_details = on_mark_ready(ticket)
+            notify_ticket_event(ticket, event="ready", actor_id=current_user.id)
             log_ticket_history(ticket.id, current_user.id, "marked_ready", details=wf_details)
             flash("Заявка отмечена «Готов к выдаче».", "success")
         elif status_choice == "rejected":
             wf_details = on_reject(ticket)
+            notify_ticket_event(ticket, event="rejected", actor_id=current_user.id)
             log_ticket_history(ticket.id, current_user.id, "rejected", details=wf_details)
             flash("Заявка отклонена.", "warning")
 

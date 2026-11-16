@@ -166,6 +166,9 @@ def task_update(tid):
             db.session.add(
                 ProjectTaskComment(task_id=task.id, user_id=current_user.id, body=f"[На доработку] {comment}")
             )
+            from servicesystem.services.inapp_notify import notify_task_assignee
+
+            notify_task_assignee(task, actor_id=current_user.id, reason="rework")
             db.session.commit()
             flash("Задача возвращена в работу как срочная.", "warning")
             return redirect(url_for("projects.task_detail", tid=tid))
@@ -411,12 +414,14 @@ def task_update(tid):
                 return redirect(url_for("projects.task_detail", tid=tid))
             raise
 
+    assignee_changed = False
     if can_plan:
         task.priority = int(request.form.get("priority") or 2)
         assignee_id = request.form.get("assignee_id", type=int) or None
         if assignee_id and not is_project_member(task.project_id, assignee_id):
             flash("Исполнитель должен быть участником проекта.", "warning")
             return redirect(url_for("projects.task_detail", tid=tid))
+        assignee_changed = assignee_id != task.assignee_id
         task.assignee_id = assignee_id
         old_start = task.start_date or task.due_date
         task.due_date = parse_optional_date(request.form.get("due_date"))
@@ -482,6 +487,10 @@ def task_update(tid):
     sync_calendar_events_for_task(task)
     if can_plan:
         cascade_fs_from_task(task)
+    if assignee_changed and task.assignee_id:
+        from servicesystem.services.inapp_notify import notify_task_assignee
+
+        notify_task_assignee(task, actor_id=current_user.id, reason="assigned")
     db.session.commit()
     from servicesystem.project_management.caldav_sync import try_push_task_to_caldav
 

@@ -395,6 +395,27 @@ class TicketHistory(db.Model):
     user = db.relationship("User")
 
 
+class UserNotification(db.Model):
+    """In-app уведомления: отдельно заявки (ticket) и задачи (task)."""
+
+    __tablename__ = "user_notifications"
+
+    id = db.Column(db.Integer, primary_key=True)
+    user_id = db.Column(db.Integer, db.ForeignKey("users.id"), nullable=False, index=True)
+    category = db.Column(db.String(16), nullable=False, index=True)  # ticket | task
+    title = db.Column(db.String(255), nullable=False)
+    body = db.Column(db.String(512))
+    link_url = db.Column(db.String(512))
+    is_urgent = db.Column(db.Boolean, default=False, nullable=False)
+    is_read = db.Column(db.Boolean, default=False, nullable=False, index=True)
+    toast_shown = db.Column(db.Boolean, default=False, nullable=False)
+    entity_type = db.Column(db.String(32))
+    entity_id = db.Column(db.Integer)
+    created_at = db.Column(db.DateTime(timezone=True), default=utcnow, index=True)
+
+    user = db.relationship("User")
+
+
 class Plugin(db.Model):
     __tablename__ = "plugins"
 
