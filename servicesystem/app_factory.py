@@ -292,6 +292,8 @@ def _apply_schema_patches():
         "CREATE INDEX IF NOT EXISTS ix_tutorial_lessons_section_id ON tutorial_lessons (section_id)",
         "ALTER TABLE tutorial_lessons ADD COLUMN IF NOT EXISTS parent_id INTEGER REFERENCES tutorial_lessons(id) ON DELETE CASCADE",
         "CREATE INDEX IF NOT EXISTS ix_tutorial_lessons_parent_id ON tutorial_lessons (parent_id)",
+        "ALTER TABLE tickets ADD COLUMN IF NOT EXISTS is_archived BOOLEAN NOT NULL DEFAULT FALSE",
+        "ALTER TABLE tickets ADD COLUMN IF NOT EXISTS archived_at TIMESTAMPTZ",
     ]
     for sql in patches:
         try:

@@ -8,7 +8,13 @@
       <h1>Мои заявки</h1>
       <p class="page-subtitle">Заявки, требующие реакции или исполнения</p>
     </div>
-    <div class="page-header-actions">
+    <div class="page-header-actions ticket-view-actions">
+      {% if can_kanban|default(false) %}
+      <div class="ticket-view-tabs" role="tablist" aria-label="Режим просмотра">
+        <a class="ticket-view-tab is-active" href="{{ url_for('tickets.staff_queue', view='list') }}">Список</a>
+        <a class="ticket-view-tab" href="{{ url_for('tickets.staff_queue', view='kanban') }}">Канбан</a>
+      </div>
+      {% endif %}
       <a href="{{ url_for('tickets.list_tickets') }}" class="btn btn-outline btn-sm">Все заявки</a>
     </div>
   </div>

@@ -14,14 +14,20 @@
     <div class="page-header-main">
       {% if current_user.is_staff %}
       <h1>Все заявки</h1>
-      <p class="page-subtitle">Полный список, включая закрытые и архивные по статусу</p>
+      <p class="page-subtitle">Полный список, включая закрытые{% if can_kanban|default(false) %} и архивные{% endif %}</p>
       {% else %}
       <h1>Мои заявки</h1>
       <p class="page-subtitle">Все обращения по вашему договору</p>
       {% endif %}
     </div>
 
-    <div class="page-header-actions">
+    <div class="page-header-actions ticket-view-actions">
+      {% if can_kanban|default(false) %}
+      <div class="ticket-view-tabs" role="tablist" aria-label="Режим просмотра">
+        <a class="ticket-view-tab is-active" href="{{ url_for('tickets.list_tickets', view='list') }}">Список</a>
+        <a class="ticket-view-tab" href="{{ url_for('tickets.list_tickets', view='kanban') }}">Канбан</a>
+      </div>
+      {% endif %}
       {% if current_user.is_staff %}
       <a href="{{ url_for('tickets.staff_queue') }}" class="btn btn-outline btn-sm">← Мои заявки</a>
       {% elif current_user.is_customer %}
@@ -45,6 +51,9 @@
         {% endif %}
       {% else %}
         {% set meta = t.created_at.strftime('%d.%m.%Y %H:%M') if t.created_at else '—' %}
+        {% if t.is_archived %}
+          {% set meta = meta ~ ' · архив' %}
+        {% endif %}
       {% endif %}
       {{ ticket_list_item(
         t,
@@ -66,4 +75,3 @@
 </div>
 
 {% endblock %}
-

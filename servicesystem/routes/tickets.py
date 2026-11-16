@@ -38,6 +38,64 @@ from servicesystem.services.sla import (
 
 bp = Blueprint("tickets", __name__, url_prefix="/tickets")
 
+# Канбан для админа/аудитора: сортировка по этапам (без drag-and-drop).
+TICKET_KANBAN_COLUMNS = ("new", "assigned", "on_review", "ready")
+TICKET_KANBAN_LABELS = {
+    "new": "Новые",
+    "assigned": "Назначенные",
+    "on_review": "На верификации",
+    "ready": "К выдаче",
+    "archived": "Архив",
+}
+_TICKET_STATUS_TO_KANBAN = {
+    "new": "new",
+    "in_progress": "assigned",
+    "on_review": "on_review",
+    "ready": "ready",
+}
+_TICKET_CLOSED_STATUSES = ("resolved", "rejected")
+
+
+def _ticket_list_query():
+    q = Ticket.query
+    if current_user.is_customer:
+        q = q.filter_by(author_id=current_user.id)
+    elif current_user.is_auditor:
+        q = q.filter((Ticket.auditor_id == current_user.id) | (Ticket.status == "new"))
+    elif current_user.is_executor:
+        q = q.filter_by(executor_id=current_user.id)
+    return q
+
+
+def _staff_scope_query():
+    q = Ticket.query
+    if current_user.is_auditor:
+        q = q.filter((Ticket.auditor_id == current_user.id) | (Ticket.status == "new"))
+    elif current_user.is_executor:
+        q = q.filter_by(executor_id=current_user.id)
+    return q
+
+
+def _group_tickets_kanban(tickets, *, show_archived: bool):
+    grouped = {col: [] for col in TICKET_KANBAN_COLUMNS}
+    if show_archived:
+        grouped["archived"] = []
+    closed_for_archive = []
+    for t in tickets:
+        if t.is_archived:
+            if show_archived:
+                grouped["archived"].append(t)
+            continue
+        col = _TICKET_STATUS_TO_KANBAN.get(t.status)
+        if col:
+            grouped[col].append(t)
+        elif t.status in _TICKET_CLOSED_STATUSES:
+            closed_for_archive.append(t)
+    columns = list(TICKET_KANBAN_COLUMNS)
+    if show_archived:
+        columns.append("archived")
+    return grouped, columns, closed_for_archive
+
 
 def _next_ticket_number():
     year = datetime.now().year
@@ -65,28 +123,124 @@ def _can_view(ticket: Ticket) -> bool:
 @bp.route("/")
 @login_required
 def list_tickets():
-    q = Ticket.query
-    if current_user.is_customer:
-        q = q.filter_by(author_id=current_user.id)
-    elif current_user.is_auditor:
-        q = q.filter((Ticket.auditor_id == current_user.id) | (Ticket.status == "new"))
-    elif current_user.is_executor:
-        q = q.filter_by(executor_id=current_user.id)
-    tickets = q.order_by(Ticket.created_at.desc()).all()
-    return render_template("tickets/list.html", tickets=tickets)
+    can_kanban = current_user.is_admin or current_user.is_auditor
+    view = request.args.get("view", "list")
+    if view not in ("list", "kanban") or not can_kanban:
+        view = "list"
+    show_archived = can_kanban and request.args.get("show_archived") == "1"
+
+    tickets = _ticket_list_query().order_by(Ticket.created_at.desc()).all()
+    if view != "kanban":
+        return render_template(
+            "tickets/list.html",
+            tickets=tickets,
+            view=view,
+            can_kanban=can_kanban,
+            show_archived=show_archived,
+        )
+
+    grouped, columns, closed_for_archive = _group_tickets_kanban(tickets, show_archived=show_archived)
+    return render_template(
+        "tickets/kanban.html",
+        tickets=tickets,
+        grouped=grouped,
+        columns=columns,
+        kanban_labels=TICKET_KANBAN_LABELS,
+        closed_for_archive=closed_for_archive,
+        view="kanban",
+        can_kanban=True,
+        show_archived=show_archived,
+        kanban_scope="all",
+    )
+
+
+@bp.route("/archive", methods=["POST"])
+@login_required
+@role_required("admin", "auditor")
+def archive_selected():
+    """Перенос закрытых заявок в архив по чекбоксам (канбан)."""
+    raw_ids = request.form.getlist("ticket_ids")
+    ids = []
+    for raw in raw_ids:
+        try:
+            ids.append(int(raw))
+        except (TypeError, ValueError):
+            continue
+    scope = request.form.get("scope") or "all"
+    if scope not in ("all", "mine"):
+        scope = "all"
+    show_archived = request.form.get("show_archived") == "1"
+    redirect_endpoint = "tickets.staff_queue" if scope == "mine" else "tickets.list_tickets"
+    redirect_kwargs = {"view": "kanban", "show_archived": "1" if show_archived else None}
+
+    if not ids:
+        flash("Выберите хотя бы одну закрытую заявку.", "warning")
+        return redirect(url_for(redirect_endpoint, **redirect_kwargs))
+
+    q = (_staff_scope_query() if scope == "mine" else _ticket_list_query()).filter(
+        Ticket.id.in_(ids),
+        Ticket.status.in_(_TICKET_CLOSED_STATUSES),
+        Ticket.is_archived.is_(False),
+    )
+    now = datetime.now(timezone.utc)
+    n = 0
+    for ticket in q.all():
+        ticket.is_archived = True
+        ticket.archived_at = now
+        log_ticket_history(ticket.id, current_user.id, "archived", details="Перенесено в архив с канбана")
+        n += 1
+    db.session.commit()
+    if n:
+        flash(f"В архив перенесено заявок: {n}.", "success")
+    else:
+        flash("Подходящих закрытых заявок среди выбранных нет.", "warning")
+    return redirect(url_for(redirect_endpoint, **redirect_kwargs))
 
 
 @bp.route("/staff")
 @login_required
 @staff_required
 def staff_queue():
-    q = Ticket.query
-    if current_user.is_auditor:
-        q = q.filter((Ticket.auditor_id == current_user.id) | (Ticket.status == "new"))
-    elif current_user.is_executor:
-        q = q.filter_by(executor_id=current_user.id)
-    tickets = q.filter(Ticket.status.in_(["new", "in_progress", "on_review", "ready"])).order_by(Ticket.priority.desc(), Ticket.created_at).all()
-    return render_template("tickets/staff_queue.html", tickets=tickets)
+    can_kanban = current_user.is_admin or current_user.is_auditor
+    view = request.args.get("view", "list")
+    if view not in ("list", "kanban") or not can_kanban:
+        view = "list"
+    show_archived = can_kanban and request.args.get("show_archived") == "1"
+
+    q = _staff_scope_query()
+    if view == "kanban" and can_kanban:
+        tickets = q.order_by(Ticket.priority.desc(), Ticket.created_at).all()
+        grouped, columns, closed_for_archive = _group_tickets_kanban(
+            tickets, show_archived=show_archived
+        )
+        return render_template(
+            "tickets/kanban.html",
+            tickets=tickets,
+            grouped=grouped,
+            columns=columns,
+            kanban_labels=TICKET_KANBAN_LABELS,
+            closed_for_archive=closed_for_archive,
+            view="kanban",
+            can_kanban=True,
+            show_archived=show_archived,
+            kanban_scope="mine",
+        )
+
+    tickets = (
+        q.filter(
+            Ticket.status.in_(["new", "in_progress", "on_review", "ready"]),
+            Ticket.is_archived.is_(False),
+        )
+        .order_by(Ticket.priority.desc(), Ticket.created_at)
+        .all()
+    )
+    return render_template(
+        "tickets/staff_queue.html",
+        tickets=tickets,
+        view=view,
+        can_kanban=can_kanban,
+        show_archived=show_archived,
+    )
 
 
 @bp.route("/new", methods=["GET", "POST"])

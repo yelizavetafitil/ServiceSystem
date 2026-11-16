@@ -738,6 +738,147 @@ td { word-break: break-word; }
 .status-suspended { background: #fff8e6; color: #92400e; }
 .status-terminated { background: #fee2e2; color: #991b1b; }
 
+.ticket-view-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; }
+.ticket-view-tabs {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  padding: 3px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: var(--surface-muted);
+}
+.ticket-view-tab {
+  display: inline-flex;
+  align-items: center;
+  padding: 6px 12px;
+  border-radius: 8px;
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--muted);
+  text-decoration: none;
+}
+.ticket-view-tab:hover { color: var(--primary-dark); }
+.ticket-view-tab.is-active {
+  background: #fff;
+  color: var(--primary-dark);
+  box-shadow: 0 1px 2px rgba(15, 23, 42, .08);
+}
+.ticket-kanban-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 10px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--muted);
+  text-decoration: none;
+  background: #fff;
+}
+.ticket-kanban-toggle:hover { color: var(--primary-dark); border-color: #b8d4f5; }
+.ticket-kanban-toggle.is-on { color: var(--primary-dark); border-color: #b8d4f5; background: var(--primary-muted); }
+.ticket-kanban-toggle-box {
+  width: 14px;
+  height: 14px;
+  border-radius: 4px;
+  border: 1.5px solid #94a3b8;
+  background: #fff;
+  box-sizing: border-box;
+}
+.ticket-kanban-toggle.is-on .ticket-kanban-toggle-box {
+  border-color: var(--primary);
+  background: var(--primary);
+  box-shadow: inset 0 0 0 2px #fff;
+}
+.ticket-kanban {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  gap: 12px;
+  align-items: start;
+  margin-bottom: 16px;
+}
+.ticket-kanban-col {
+  background: #f4f7fb;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 10px;
+  min-height: 280px;
+}
+.ticket-kanban-col--archived { background: #f8fafc; border-style: dashed; }
+.ticket-kanban-col-title {
+  margin: 0 0 10px;
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--primary-dark);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+.ticket-kanban-col-count {
+  font-size: 11px;
+  font-weight: 700;
+  color: var(--muted);
+  background: #fff;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  padding: 1px 7px;
+}
+.ticket-kanban-drop { display: flex; flex-direction: column; gap: 8px; min-height: 160px; }
+.ticket-kanban-card {
+  background: #fff;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 10px 12px;
+}
+.ticket-kanban-card--high { border-left: 3px solid #d97706; }
+.ticket-kanban-card--critical { border-left: 3px solid #dc2626; }
+.ticket-kanban-card-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin-bottom: 6px;
+}
+.ticket-kanban-num {
+  font-size: 12px;
+  font-weight: 800;
+  color: var(--primary);
+  text-decoration: none;
+}
+.ticket-kanban-num:hover { text-decoration: underline; }
+.ticket-kanban-title {
+  display: block;
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--primary-dark);
+  text-decoration: none;
+  line-height: 1.35;
+}
+.ticket-kanban-title:hover { text-decoration: underline; }
+.ticket-kanban-meta { margin: 6px 0 0; font-size: 11px; color: var(--muted); }
+.ticket-kanban-empty { margin: 8px 0 0; font-size: 12px; }
+.ticket-kanban-closed { padding: 16px 18px; }
+.ticket-kanban-closed-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 12px;
+}
+.ticket-kanban-closed-title { margin: 0 0 4px; font-size: 16px; }
+.ticket-kanban-closed-hint { margin: 0; font-size: 13px; }
+.ticket-archive-check-col { width: 36px; text-align: center; }
+@media (max-width: 900px) {
+  .ticket-kanban { grid-template-columns: 1fr 1fr; }
+}
+@media (max-width: 560px) {
+  .ticket-kanban { grid-template-columns: 1fr; }
+}
+
 .users-access-cell {
   white-space: nowrap;
 }

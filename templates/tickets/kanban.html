@@ -1,0 +1,145 @@
+{% extends "base.html" %}
+{% from "macros/forms.html" import csrf_field %}
+{% set scope = kanban_scope|default('all') %}
+{% set is_mine = scope == 'mine' %}
+{% set list_endpoint = 'tickets.staff_queue' if is_mine else 'tickets.list_tickets' %}
+{% block title %}{% if is_mine %}Мои заявки — канбан{% else %}Все заявки — канбан{% endif %}{% endblock %}
+{% block content %}
+<div class="container">
+  <div class="page-header">
+    <div class="page-header-main">
+      <h1>{% if is_mine %}Мои заявки{% else %}Все заявки{% endif %}</h1>
+      <p class="page-subtitle">{% if is_mine %}Канбан по этапам — заявки, требующие реакции или исполнения{% else %}Канбан по этапам — без перетаскивания, для обзора и сортировки{% endif %}</p>
+    </div>
+    <div class="page-header-actions ticket-view-actions">
+      <div class="ticket-view-tabs" role="tablist" aria-label="Режим просмотра">
+        <a class="ticket-view-tab" href="{{ url_for(list_endpoint, view='list') }}">Список</a>
+        <a class="ticket-view-tab is-active" href="{{ url_for(list_endpoint, view='kanban', show_archived='1' if show_archived else None) }}">Канбан</a>
+      </div>
+      <a class="ticket-kanban-toggle{% if show_archived %} is-on{% endif %}"
+         href="{{ url_for(list_endpoint, view='kanban', show_archived=None if show_archived else '1') }}">
+        <span class="ticket-kanban-toggle-box" aria-hidden="true"></span>
+        Архив
+      </a>
+      {% if is_mine %}
+      <a href="{{ url_for('tickets.list_tickets') }}" class="btn btn-outline btn-sm">Все заявки</a>
+      {% else %}
+      <a href="{{ url_for('tickets.staff_queue') }}" class="btn btn-outline btn-sm">← Мои заявки</a>
+      {% endif %}
+    </div>
+  </div>
+
+  <div class="ticket-kanban" data-ticket-kanban>
+    {% for col in columns %}
+    <section class="ticket-kanban-col{% if col == 'archived' %} ticket-kanban-col--archived{% endif %}">
+      <h2 class="ticket-kanban-col-title">
+        {{ kanban_labels[col] }}
+        <span class="ticket-kanban-col-count">{{ grouped[col]|length }}</span>
+      </h2>
+      <div class="ticket-kanban-drop">
+        {% for t in grouped[col] %}
+        <article class="ticket-kanban-card{% if t.priority >= 4 %} ticket-kanban-card--critical{% elif t.priority >= 3 %} ticket-kanban-card--high{% endif %}">
+          <div class="ticket-kanban-card-head">
+            <a class="ticket-kanban-num" href="{{ url_for('tickets.detail', tid=t.id) }}">{{ t.number }}</a>
+            <span class="priority p{{ t.priority }}" style="--pc:{{ SLA_PRIORITIES[t.priority].color }}">{{ SLA_PRIORITIES[t.priority].name }}</span>
+          </div>
+          <a class="ticket-kanban-title" href="{{ url_for('tickets.detail', tid=t.id) }}">{{ t.subject }}</a>
+          <p class="ticket-kanban-meta">
+            {% if t.executor %}{{ t.executor.full_name }}{% elif t.author %}{{ t.author.full_name }}{% else %}—{% endif %}
+            · {{ t.created_at.strftime('%d.%m.%Y') if t.created_at else '—' }}
+          </p>
+          {% if col == 'archived' %}
+          <span class="badge status-{{ t.status }}">{{ TICKET_STATUSES.get(t.status, t.status) }}</span>
+          {% endif %}
+        </article>
+        {% else %}
+        <p class="ticket-kanban-empty muted">Пусто</p>
+        {% endfor %}
+      </div>
+    </section>
+    {% endfor %}
+  </div>
+
+  <section class="card ticket-kanban-closed" data-ticket-archive>
+    <div class="ticket-kanban-closed-head">
+      <div>
+        <h2 class="ticket-kanban-closed-title">Закрытые (не в архиве){% if closed_for_archive %} · {{ closed_for_archive|length }}{% endif %}</h2>
+        <p class="muted ticket-kanban-closed-hint">Выберите решённые или отклонённые заявки и перенесите в архив.</p>
+      </div>
+      {% if closed_for_archive %}
+      <button type="submit" form="ticket-archive-selected" class="btn btn-primary btn-sm" id="ticket-archive-bulk" disabled>
+        В архив по выбранным
+      </button>
+      {% endif %}
+    </div>
+    {% if closed_for_archive %}
+    <form method="post"
+          id="ticket-archive-selected"
+          action="{{ url_for('tickets.archive_selected') }}"
+          class="ticket-kanban-archive-form">
+      {{ csrf_field() }}
+      <input type="hidden" name="scope" value="{{ scope }}">
+      {% if show_archived %}<input type="hidden" name="show_archived" value="1">{% endif %}
+      <div class="table-wrap">
+        <table class="table">
+          <thead>
+            <tr>
+              <th class="ticket-archive-check-col">
+                <input type="checkbox" id="ticket-archive-check-all" title="Выбрать все" aria-label="Выбрать все">
+              </th>
+              <th>Номер</th>
+              <th>Тема</th>
+              <th>Статус</th>
+              <th>Закрыта</th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for t in closed_for_archive %}
+            <tr>
+              <td class="ticket-archive-check-col">
+                <input type="checkbox" class="ticket-archive-check" name="ticket_ids" value="{{ t.id }}" aria-label="Выбрать {{ t.number }}">
+              </td>
+              <td><a href="{{ url_for('tickets.detail', tid=t.id) }}">{{ t.number }}</a></td>
+              <td>{{ t.subject }}</td>
+              <td><span class="badge status-{{ t.status }}">{{ TICKET_STATUSES.get(t.status, t.status) }}</span></td>
+              <td>{{ t.resolved_at.strftime('%d.%m.%Y %H:%M') if t.resolved_at else (t.updated_at.strftime('%d.%m.%Y %H:%M') if t.updated_at else '—') }}</td>
+            </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    </form>
+    {% else %}
+    <p class="muted">Закрытых заявок вне архива нет.</p>
+    {% endif %}
+  </section>
+</div>
+{% if closed_for_archive %}
+<script>
+(function () {
+  var root = document.querySelector("[data-ticket-archive]");
+  if (!root) return;
+  var all = document.getElementById("ticket-archive-check-all");
+  var boxes = root.querySelectorAll(".ticket-archive-check");
+  var bulk = document.getElementById("ticket-archive-bulk");
+  function sync() {
+    var n = 0;
+    boxes.forEach(function (c) { if (c.checked) n += 1; });
+    if (bulk) bulk.disabled = n === 0;
+    if (all) {
+      all.checked = n > 0 && n === boxes.length;
+      all.indeterminate = n > 0 && n < boxes.length;
+    }
+  }
+  if (all) {
+    all.addEventListener("change", function () {
+      boxes.forEach(function (c) { c.checked = all.checked; });
+      sync();
+    });
+  }
+  boxes.forEach(function (c) { c.addEventListener("change", sync); });
+  sync();
+})();
+</script>
+{% endif %}
+{% endblock %}

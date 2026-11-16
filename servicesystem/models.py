@@ -332,6 +332,8 @@ class Ticket(db.Model):
     timer2_stopped_at = db.Column(db.DateTime(timezone=True))
     timer2_total_seconds = db.Column(db.Integer, default=0)
     resolved_at = db.Column(db.DateTime(timezone=True))
+    is_archived = db.Column(db.Boolean, default=False, nullable=False)
+    archived_at = db.Column(db.DateTime(timezone=True))
 
     @property
     def timer_total_seconds(self) -> int:
