@@ -3,7 +3,7 @@
 {% from "macros/tickets.html" import ticket_list_item with context %}
 {% from "macros/live_search.html" import live_search_panel %}
 
-{% block title %}Заявки{% endblock %}
+{% block title %}{% if current_user.is_staff %}Все заявки{% else %}Мои заявки{% endif %}{% endblock %}
 
 {% block content %}
 
@@ -12,22 +12,22 @@
   <div class="page-header">
 
     <div class="page-header-main">
-
+      {% if current_user.is_staff %}
+      <h1>Все заявки</h1>
+      <p class="page-subtitle">Полный список, включая закрытые и архивные по статусу</p>
+      {% else %}
       <h1>Мои заявки</h1>
-
       <p class="page-subtitle">Все обращения по вашему договору</p>
-
+      {% endif %}
     </div>
-
-    {% if current_user.is_customer %}
 
     <div class="page-header-actions">
-
+      {% if current_user.is_staff %}
+      <a href="{{ url_for('tickets.staff_queue') }}" class="btn btn-outline btn-sm">← Мои заявки</a>
+      {% elif current_user.is_customer %}
       <a href="{{ url_for('tickets.create') }}" class="btn btn-primary">+ Новая заявка</a>
-
+      {% endif %}
     </div>
-
-    {% endif %}
 
   </div>
 

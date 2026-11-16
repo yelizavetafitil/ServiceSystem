@@ -1,0 +1,24 @@
+{# Выход из CMS обратно в раздел базы знаний #}
+{% if cms_exit_section == 'news' %}
+  {% set cms_exit_url = url_for('cabinet.news_list') %}
+  {% set cms_exit_title = 'Выйти из редактора новостей' %}
+{% elif cms_exit_section == 'videos' %}
+  {% set cms_exit_url = url_for('cabinet.videos') %}
+  {% set cms_exit_title = 'Выйти из редактора видео' %}
+{% elif cms_exit_section == 'plugins' %}
+  {% set cms_exit_url = url_for('cabinet.plugins') %}
+  {% set cms_exit_title = 'Выйти из редактора плагинов' %}
+{% else %}
+  {% set cms_exit_url = url_for('cabinet.tutorials') %}
+  {% set cms_exit_title = 'Выйти из редактора инструкций' %}
+{% endif %}
+<a href="{{ cms_exit_url }}"
+   class="cms-exit-editor-btn"
+   title="{{ cms_exit_title }}"
+   aria-label="{{ cms_exit_title }}">
+  <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+    <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/>
+    <polyline points="16 17 21 12 16 7"/>
+    <line x1="21" y1="12" x2="9" y2="12"/>
+  </svg>
+</a>

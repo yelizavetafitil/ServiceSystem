@@ -1,7 +1,7 @@
 {% extends "base.html" %}
 {% from "macros/task_link.html" import project_task_link %}
 {% block title %}Проекты — календарь{% endblock %}
-{% block head %}<link rel="stylesheet" href="{{ url_for('static', filename='css/projects.css') }}?v=150">{% endblock %}
+{% block head %}<link rel="stylesheet" href="{{ url_for('static', filename='css/projects.css') }}?v=151">{% endblock %}
 {% block content %}
 {% set cal_date_iso = cal_anchor.isoformat() if cal_anchor is defined and cal_anchor else '' %}
 {% macro cal_href(mode=None, d=None, assignee=None) -%}
@@ -16,7 +16,6 @@
   {% set can_team = can_view_team_load if can_view_team_load is defined else (current_user.is_admin or current_user.is_auditor) %}
   <div class="projects-gantt-toolbar projects-calendar-toolbar">
     {% set cal_modes = [('month','Месяц'),('workweek','Рабочая неделя'),('day','День')] %}
-    {% if can_team %}{% set cal_modes = cal_modes + [('team','Расписание команды')] %}{% endif %}
     {% for m, lbl in cal_modes %}
     <a class="projects-view-tab{% if cal_mode == m %} is-active{% endif %}"
        href="{{ cal_href(mode=m) }}">{{ lbl }}</a>

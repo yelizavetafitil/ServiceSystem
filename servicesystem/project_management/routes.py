@@ -342,13 +342,14 @@ def arm():
         allowed=("month", "workweek", "day", "team"),
         default="month",
     )
+    # Режим «Расписание команды» убран из UI — сводим к месяцу (загрузка остаётся в чипах).
+    if cal_mode == "team":
+        cal_mode = "month"
     filter_assignee = _arm_filter_assignee()
     can_view_team_load = user_can_view_others_time_logs(current_user)
     # Исполнитель видит только свою загрузку и свой календарь — без чужих чипов/фильтра.
     if view == "calendar" and not can_view_team_load:
         filter_assignee = current_user.id
-        if cal_mode == "team":
-            cal_mode = "month"
     include_done = view in ("kanban", "gantt")
     if current_user.is_admin or current_user.is_auditor:
         tasks_q = ProjectTask.query
@@ -570,7 +571,9 @@ def _arm_back_url(*, project_id: int | None = None) -> str:
             kwargs["subtasks"] = subtasks
     elif view == "calendar":
         cal_mode = session.get(_ARM_FILTER_CAL_MODE_KEY)
-        if cal_mode not in ("month", "workweek", "day", "team"):
+        if cal_mode == "team":
+            cal_mode = "month"
+        if cal_mode not in ("month", "workweek", "day"):
             cal_mode = (
                 "workweek" if session.get(_ARM_BACK_VIEW_KEY) == "week" else None
             )

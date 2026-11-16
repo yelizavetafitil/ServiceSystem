@@ -10,11 +10,8 @@
       <p class="page-subtitle">Потоковое видео с тайм-кодами и описаниями глав для заказчиков и API</p>
     </div>
     <div class="page-header-actions">
-      <a href="{{ url_for('admin.news') }}" class="btn btn-outline btn-sm">Новости</a>
-      <a href="{{ url_for('admin.tutorials') }}" class="btn btn-outline btn-sm">Инструкции</a>
-      {% if current_user.is_admin %}
-      <a href="{{ url_for('admin.dashboard') }}" class="btn btn-outline btn-sm">Админ-панель</a>
-      {% endif %}
+      {% set cms_exit_section = 'videos' %}
+      {% include "admin/cms_exit.html" %}
     </div>
   </div>
   <div class="live-search-root mb-md" data-mode="filter">

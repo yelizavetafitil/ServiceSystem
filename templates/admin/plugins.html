@@ -9,6 +9,10 @@
       <h1>Репозиторий плагинов</h1>
       <p class="page-subtitle">Внутренний реестр модулей ЭМСТПН (TZ 3.8.1)</p>
     </div>
+    <div class="page-header-actions">
+      {% set cms_exit_section = 'plugins' %}
+      {% include "admin/cms_exit.html" %}
+    </div>
   </div>
   <div class="card live-search-root" data-mode="filter">
     {{ live_search_panel('Поиск по названию, slug…') }}
