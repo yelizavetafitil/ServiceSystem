@@ -37,13 +37,13 @@ def feed():
     recent_ticket = (
         UserNotification.query.filter_by(user_id=current_user.id, category="ticket")
         .order_by(UserNotification.id.desc())
-        .limit(12)
+        .limit(40)
         .all()
     )
     recent_task = (
         UserNotification.query.filter_by(user_id=current_user.id, category="task")
         .order_by(UserNotification.id.desc())
-        .limit(12)
+        .limit(40)
         .all()
     )
 
@@ -95,6 +95,25 @@ def mark_read():
     q.update({"is_read": True, "toast_shown": True}, synchronize_session=False)
     db.session.commit()
     return jsonify({"ok": True})
+
+
+@bp.route("/delete", methods=["POST"])
+@login_required
+def delete_notifications():
+    """Удалить уведомления из ленты (по id или всю категорию)."""
+    data = request.get_json(silent=True) or {}
+    category = data.get("category")
+    ids = _parse_ids(request)
+    q = UserNotification.query.filter_by(user_id=current_user.id)
+    if ids:
+        q = q.filter(UserNotification.id.in_(ids))
+    elif category in ("ticket", "task"):
+        q = q.filter_by(category=category)
+    else:
+        return jsonify({"ok": False, "error": "nothing"}), 400
+    deleted = q.delete(synchronize_session=False)
+    db.session.commit()
+    return jsonify({"ok": True, "deleted": deleted})
 
 
 def _parse_ids(req):

@@ -124,6 +124,18 @@ def notify_ticket_event(ticket, *, event: str, actor_id: int | None = None) -> N
         )
 
 
+def task_notification_link(task) -> str:
+    """Куда вести из уведомления: зеркало заявки → карточка заявки, иначе задача."""
+    try:
+        if getattr(task, "ticket_id", None):
+            return url_for("tickets.detail", tid=task.ticket_id)
+        return url_for("projects.task_detail", tid=task.id)
+    except RuntimeError:
+        if getattr(task, "ticket_id", None):
+            return f"/tickets/{task.ticket_id}"
+        return f"/projects/tasks/{task.id}"
+
+
 def notify_task_assignee(task, *, actor_id: int | None = None, reason: str = "assigned") -> None:
     """Уведомление исполнителю задачи; тост — для срочных (priority ≥ 3)."""
     if not task or not task.assignee_id:
@@ -131,13 +143,7 @@ def notify_task_assignee(task, *, actor_id: int | None = None, reason: str = "as
     priority = int(task.priority or 0)
     urgent = priority >= 3
     # Обычные назначения без срочности — только в ленту, без агрессивного тоста.
-    try:
-        if task.ticket_id:
-            link = url_for("tickets.detail", tid=task.ticket_id)
-        else:
-            link = url_for("projects.task_detail", tid=task.id)
-    except RuntimeError:
-        link = f"/projects/tasks/{task.id}" if not task.ticket_id else f"/tickets/{task.ticket_id}"
+    link = task_notification_link(task)
 
     if reason == "rework":
         title = f"Срочная доработка: {task.title}"
@@ -163,13 +169,38 @@ def notify_task_assignee(task, *, actor_id: int | None = None, reason: str = "as
     )
 
 
+def resolve_notification_link(n: UserNotification) -> str | None:
+    """Актуальная ссылка: для task с ticket_id всегда ведём в заявку."""
+    link = n.link_url
+    if n.category == "task" and n.entity_type == "task" and n.entity_id:
+        try:
+            from servicesystem.project_management.models import ProjectTask
+
+            task = ProjectTask.query.get(n.entity_id)
+            if task:
+                return task_notification_link(task)
+        except Exception:
+            pass
+    if link and link.startswith("/projects/tasks/"):
+        try:
+            tid = int(link.rstrip("/").split("/")[-1])
+            from servicesystem.project_management.models import ProjectTask
+
+            task = ProjectTask.query.get(tid)
+            if task and task.ticket_id:
+                return f"/tickets/{task.ticket_id}"
+        except Exception:
+            pass
+    return link
+
+
 def notification_to_dict(n: UserNotification) -> dict:
     return {
         "id": n.id,
         "category": n.category,
         "title": n.title,
         "body": n.body or "",
-        "link_url": n.link_url,
+        "link_url": resolve_notification_link(n),
         "is_urgent": bool(n.is_urgent),
         "is_read": bool(n.is_read),
         "toast_shown": bool(n.toast_shown),
