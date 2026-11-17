@@ -5,7 +5,17 @@
 <div class="container">
   <a href="{{ url_for('admin.videos') }}" class="back-link">← Видеоуроки</a>
   <div class="card">
-    <h2>{{ video.title }}</h2>
+    <div class="page-header">
+      <h2>{{ video.title }}</h2>
+      <form method="post" action="{{ url_for('admin.video_delete', vid=video.id) }}" class="inline-form"
+            data-confirm="Удалить видео «{{ video.title }}» вместе с тайм-кодами? Доступ в договорах будет снят."
+            data-confirm-title="Удаление видео"
+            data-confirm-ok="Удалить"
+            data-confirm-danger>
+        {{ csrf_field() }}
+        <button type="submit" class="btn btn-outline btn-sm btn-danger-text">Удалить</button>
+      </form>
+    </div>
     <form method="post" enctype="multipart/form-data">
       {{ csrf_field() }}
       <div class="form-row">

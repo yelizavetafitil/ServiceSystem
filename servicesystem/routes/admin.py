@@ -561,6 +561,30 @@ def plugin_edit(pid):
     return render_template("admin/plugin_edit.html", plugin=plugin, versions=versions)
 
 
+@bp.route("/plugins/<int:pid>/delete", methods=["POST"])
+@login_required
+@admin_required
+def plugin_delete(pid):
+    plugin = db.session.get(Plugin, pid) or abort(404)
+    name = (plugin.name or "")[:255]
+    files = [v.stored_name for v in plugin.versions.all() if v.stored_name]
+    PluginVersion.query.filter_by(plugin_id=plugin.id).delete(synchronize_session=False)
+    ContractContentAccess.query.filter_by(content_type="plugin", content_id=plugin.id).delete(
+        synchronize_session=False
+    )
+    db.session.delete(plugin)
+    db.session.commit()
+    storage = get_storage()
+    for stored in files:
+        try:
+            storage.delete(f"plugins/{stored}")
+        except OSError:
+            pass
+    log_audit(current_user.id, "plugin_delete", "plugin", pid, name)
+    flash(f"Плагин «{name}» удалён.", "success")
+    return redirect(url_for("admin.plugins"))
+
+
 def _wants_structure_ajax() -> bool:
     return request.headers.get("X-Structure-Ajax") == "1"
 
@@ -944,6 +968,29 @@ def video_edit(vid):
     return render_template("admin/video_edit.html", video=v, chapters=chapters)
 
 
+@bp.route("/videos/<int:vid>/delete", methods=["POST"])
+@login_required
+@content_cms_required
+def video_delete(vid):
+    v = db.session.get(VideoTutorial, vid) or abort(404)
+    title = (v.title or "")[:512]
+    stored = (v.video_file or "").strip()
+    VideoChapter.query.filter_by(video_id=v.id).delete(synchronize_session=False)
+    ContractContentAccess.query.filter_by(content_type="video", content_id=v.id).delete(
+        synchronize_session=False
+    )
+    db.session.delete(v)
+    db.session.commit()
+    if stored:
+        try:
+            get_storage().delete(f"videos/{stored}")
+        except OSError:
+            pass
+    log_audit(current_user.id, "video_delete", "video", vid, title)
+    flash(f"Видео «{title}» удалено.", "success")
+    return redirect(url_for("admin.videos"))
+
+
 @bp.route("/categories")
 @login_required
 @admin_required
@@ -1201,6 +1248,19 @@ def news_edit(nid):
         flash("Новость обновлена.", "success")
         return redirect(url_for("admin.news"))
     return render_template("admin/news_edit.html", item=post)
+
+
+@bp.route("/news/<int:nid>/delete", methods=["POST"])
+@login_required
+@content_cms_required
+def news_delete(nid):
+    post = db.session.get(NewsPost, nid) or abort(404)
+    title = (post.title or "")[:512]
+    db.session.delete(post)
+    db.session.commit()
+    log_audit(current_user.id, "news_delete", "news", nid, title)
+    flash(f"Новость «{title}» удалена.", "success")
+    return redirect(url_for("admin.news"))
 
 
 def _directory_form_context(org_id: int | None = None) -> dict:

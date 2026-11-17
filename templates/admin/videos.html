@@ -24,7 +24,17 @@
         <strong>{{ v.title }}</strong>
         <span class="muted"> — {{ v.category or 'Без категории' }} · {{ v.chapters.count() }} тайм-кодов</span>
       </div>
-      <a href="{{ url_for('admin.video_edit', vid=v.id) }}" class="btn btn-outline btn-sm">Изменить</a>
+      <div class="list-row-actions">
+        <a href="{{ url_for('admin.video_edit', vid=v.id) }}" class="btn btn-outline btn-sm">Изменить</a>
+        <form method="post" action="{{ url_for('admin.video_delete', vid=v.id) }}" class="inline-form"
+              data-confirm="Удалить видео «{{ v.title }}» вместе с тайм-кодами? Доступ в договорах будет снят."
+              data-confirm-title="Удаление видео"
+              data-confirm-ok="Удалить"
+              data-confirm-danger>
+          {{ csrf_field() }}
+          <button type="submit" class="btn btn-outline btn-sm btn-danger-text">Удалить</button>
+        </form>
+      </div>
     </div>
   </div>
   {% else %}

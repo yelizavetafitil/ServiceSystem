@@ -6,7 +6,17 @@
 <div class="container cms-page">
   <a href="{{ url_for('admin.news') }}" class="back-link">← Новости</a>
   <div class="card cms-editor-card">
-    <h1 class="section-title">{{ item.title }}</h1>
+    <div class="page-header">
+      <h1 class="section-title">{{ item.title }}</h1>
+      <form method="post" action="{{ url_for('admin.news_delete', nid=item.id) }}" class="inline-form"
+            data-confirm="Удалить новость «{{ item.title }}»? Она пропадёт у всех пользователей."
+            data-confirm-title="Удаление новости"
+            data-confirm-ok="Удалить"
+            data-confirm-danger>
+        {{ csrf_field() }}
+        <button type="submit" class="btn btn-outline btn-sm btn-danger-text">Удалить</button>
+      </form>
+    </div>
     <form method="post">
       {{ csrf_field() }}
       <div class="cms-meta-grid">

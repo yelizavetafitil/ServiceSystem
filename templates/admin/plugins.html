@@ -26,7 +26,17 @@
           <span class="muted">Ядро {{ p.min_core_version or '—' }} — {{ p.max_core_version or '—' }} · текущая <strong>v{{ p.current_version or '—' }}</strong></span>
           {% if not p.is_active %}<span class="badge status-rejected">Скрыт</span>{% endif %}
         </div>
-        <a href="{{ url_for('admin.plugin_edit', pid=p.id) }}" class="btn btn-primary btn-sm">Управление версиями</a>
+        <div class="list-row-actions">
+          <a href="{{ url_for('admin.plugin_edit', pid=p.id) }}" class="btn btn-primary btn-sm">Управление версиями</a>
+          <form method="post" action="{{ url_for('admin.plugin_delete', pid=p.id) }}" class="inline-form"
+                data-confirm="Удалить плагин «{{ p.name }}» вместе со всеми версиями? Доступ в договорах будет снят."
+                data-confirm-title="Удаление плагина"
+                data-confirm-ok="Удалить"
+                data-confirm-danger>
+            {{ csrf_field() }}
+            <button type="submit" class="btn btn-outline btn-sm btn-danger-text">Удалить</button>
+          </form>
+        </div>
       </div>
     </div>
     {% else %}
