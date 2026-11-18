@@ -110,6 +110,9 @@
         var cls = "ss-notify-item" + (n.is_read ? "" : " is-unread") + (n.is_urgent ? " is-urgent" : "");
         var href = absUrl(n.link_url || "#");
         var body = n.body ? '<span class="ss-notify-item-body">' + escapeHtml(n.body) + "</span>" : "";
+        var del = n.pinned
+          ? ""
+          : '<button type="button" class="ss-notify-item-del" title="Удалить" aria-label="Удалить">&times;</button>';
         return (
           '<li class="' +
           cls +
@@ -121,7 +124,9 @@
           escapeHtml(n.title) +
           "</strong>" +
           body +
-          '</a><button type="button" class="ss-notify-item-del" title="Удалить" aria-label="Удалить">&times;</button></li>'
+          "</a>" +
+          del +
+          "</li>"
         );
       })
       .join("");

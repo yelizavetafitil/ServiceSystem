@@ -133,29 +133,7 @@ def create_app(config_class=Config):
 
     @app.context_processor
     def inject_globals():
-        banner = None
-        auditor_alerts = []
         maintenance_banner = app.config.get("MAINTENANCE_MESSAGE") or None
-        if current_user.is_authenticated and current_user.is_customer and current_user.contract:
-            days = current_user.contract.days_until_expiry
-            if days is not None and days <= 30:
-                banner = (
-                    f"Внимание: срок обслуживания по договору {current_user.contract.number} "
-                    f"истекает {current_user.contract.service_end_date.strftime('%d.%m.%Y')}. "
-                    "Для сохранения доступа к обновлениям плагинов необходимо продление договора."
-                )
-        if current_user.is_authenticated and current_user.is_auditor:
-            from servicesystem.models import Contract
-            expiring = Contract.query.filter(
-                Contract.service_end_date.isnot(None),
-                Contract.status.in_(["active_warranty", "active_post_warranty"]),
-            ).all()
-            for c in expiring:
-                if c.days_until_expiry is not None and c.days_until_expiry <= 60:
-                    auditor_alerts.append(
-                        f"Договор {c.number} ({c.organization.name}) — осталось {c.days_until_expiry} дн. "
-                        f"(рекомендуется инициировать переговоры о пролонгации техподдержки)"
-                    )
         from servicesystem.services.sla import format_duration, sla_status
         return {
             "APP_NAME": app.config["APP_NAME"],
@@ -167,8 +145,6 @@ def create_app(config_class=Config):
             "CUSTOMER_TICKET_STATUSES": app.config.get("CUSTOMER_TICKET_STATUSES", {}),
             "ROLES": app.config["ROLES"],
             "HISTORY_ACTION_LABELS": app.config.get("HISTORY_ACTION_LABELS", {}),
-            "expiry_banner": banner,
-            "auditor_alerts": auditor_alerts,
             "maintenance_banner": maintenance_banner,
             "MAINTENANCE_AT": app.config.get("MAINTENANCE_AT", ""),
             "MAX_UPLOAD_MB": app.config.get("MAX_UPLOAD_MB", 100),

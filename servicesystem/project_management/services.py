@@ -382,8 +382,8 @@ def sync_calendar_events_for_task(task: ProjectTask) -> None:
         ev.ends_at = ends_at
 
 
-def task_is_completion_blocked(task: ProjectTask) -> bool:
-    """ТЗ 1.7: блокирующие связи."""
+def _task_has_open_fs_predecessor(task: ProjectTask) -> bool:
+    """Незавершённый предшественник «выполнить после» именно у этой задачи."""
     for link in ProjectTaskLink.query.filter_by(to_task_id=task.id, link_type="blocks"):
         src = db.session.get(ProjectTask, link.from_task_id)
         if src and src.kanban_status != "done":
@@ -392,6 +392,23 @@ def task_is_completion_blocked(task: ProjectTask) -> bool:
         src = db.session.get(ProjectTask, link.to_task_id)
         if src and src.kanban_status != "done":
             return True
+    return False
+
+
+def task_is_completion_blocked(task: ProjectTask) -> bool:
+    """ТЗ 1.7: блокирующие связи. Подзадача ждёт, пока не закрыты предшественники родителя."""
+    seen: set[int] = set()
+    current: ProjectTask | None = task
+    while current is not None and current.id not in seen:
+        seen.add(current.id)
+        if _task_has_open_fs_predecessor(current):
+            return True
+        if not current.parent_id:
+            return False
+        parent = current.parent
+        if parent is None:
+            parent = db.session.get(ProjectTask, current.parent_id)
+        current = parent
     return False
 
 
@@ -1429,6 +1446,15 @@ def stage_attachment_path(att) -> str:
     return f"project_stages/{att.stage_id}/{att.stored_name}"
 
 
+def delete_stage_attachment(att) -> None:
+    rel = stage_attachment_path(att)
+    try:
+        get_storage().delete(rel)
+    except Exception:
+        pass
+    db.session.delete(att)
+
+
 def user_can_create_task(user: User, *, parent_id: int | None) -> bool:
     """ТЗ 1.5–1.6: верхний уровень — только аудитор; исполнитель — подзадачи."""
     if not parent_id:
@@ -1736,20 +1762,37 @@ def apply_kanban_move(
 
 
 def build_task_blockers_map(tasks: list[ProjectTask]) -> dict[int, list[ProjectTask]]:
-    """Незавершённые FS-предшественники («выполнить после») для карточек канбана."""
+    """Незавершённые FS-предшественники («выполнить после») для карточек канбана.
+
+    Подзадача наследует незакрытых предшественников родителя и предков.
+    """
     ids = {t.id for t in tasks if t and t.id}
     if not ids:
         return {}
     from sqlalchemy import and_
 
+    by_id = {t.id: t for t in tasks if t and t.id}
+    while True:
+        missing = {
+            t.parent_id for t in by_id.values() if t.parent_id and t.parent_id not in by_id
+        }
+        if not missing:
+            break
+        loaded = ProjectTask.query.filter(ProjectTask.id.in_(missing)).all()
+        if not loaded:
+            break
+        for parent in loaded:
+            by_id[parent.id] = parent
+    scope_ids = set(by_id)
+
     links = ProjectTaskLink.query.filter(
         or_(
             and_(
-                ProjectTaskLink.to_task_id.in_(ids),
+                ProjectTaskLink.to_task_id.in_(scope_ids),
                 ProjectTaskLink.link_type == "blocks",
             ),
             and_(
-                ProjectTaskLink.from_task_id.in_(ids),
+                ProjectTaskLink.from_task_id.in_(scope_ids),
                 ProjectTaskLink.link_type == "blocked_by",
             ),
         )
@@ -1767,43 +1810,59 @@ def build_task_blockers_map(tasks: list[ProjectTask]) -> dict[int, list[ProjectT
         p.id: p
         for p in ProjectTask.query.filter(ProjectTask.id.in_(pred_ids)).all()
     } if pred_ids else {}
-    out: dict[int, list[ProjectTask]] = {i: [] for i in ids}
-    seen: dict[int, set[int]] = {i: set() for i in ids}
+    direct: dict[int, list[ProjectTask]] = {i: [] for i in scope_ids}
+    direct_seen: dict[int, set[int]] = {i: set() for i in scope_ids}
     for succ_id, pred_id in pairs:
-        if succ_id not in out:
+        if succ_id not in direct:
             continue
         p = preds.get(pred_id)
         if not p or p.kanban_status == "done":
             continue
-        if pred_id in seen[succ_id]:
+        if pred_id in direct_seen[succ_id]:
             continue
-        seen[succ_id].add(pred_id)
-        out[succ_id].append(p)
+        direct_seen[succ_id].add(pred_id)
+        direct[succ_id].append(p)
+    out: dict[int, list[ProjectTask]] = {i: list(direct.get(i, [])) for i in ids}
+    seen: dict[int, set[int]] = {i: {p.id for p in out[i]} for i in ids}
+    for task in tasks:
+        if not task or not task.id or not task.parent_id:
+            continue
+        cur_id = task.parent_id
+        guard: set[int] = set()
+        while cur_id and cur_id not in guard:
+            guard.add(cur_id)
+            for pred in direct.get(cur_id, []):
+                if pred.id in seen[task.id] or pred.kanban_status == "done":
+                    continue
+                seen[task.id].add(pred.id)
+                out[task.id].append(pred)
+            parent = by_id.get(cur_id)
+            cur_id = parent.parent_id if parent else None
     return out
 
 
 def build_tasks_wbs_map(
     tasks: list[ProjectTask],
     *,
-    include_archived: bool = False,
+    include_archived: bool = True,
 ) -> dict[int, str]:
-    """Единый WBS проекта (1, 1.1, 2…) — один и тот же на Ганте и канбане.
+    """Единый WBS проекта (1, 1.1, 2…) — Гант, канбан, дерево и архив.
 
-    Берёт все задачи проектов из выборки (не только видимый срез канбана),
-    по gantt_sort. Архив по умолчанию не участвует в нумерации — как на Ганте.
+    Номер считается по всем задачам проекта, включая архив, в порядке gantt_sort.
+    Архив только скрывает строку: номера остальных не сдвигаются, в архиве
+    остаётся тот же номер. Параметр include_archived сохранён для вызовов
+    и на нумерацию не влияет.
     """
+    del include_archived
     by_project: dict[int | None, list[ProjectTask]] = {}
     project_ids = {t.project_id for t in tasks if t.project_id}
     if project_ids:
         q = ProjectTask.query.filter(ProjectTask.project_id.in_(project_ids))
-        if not include_archived:
-            q = q.filter(ProjectTask.kanban_status != "archived")
         for t in q.all():
             by_project.setdefault(t.project_id, []).append(t)
     for t in tasks:
         if not t.project_id:
-            if include_archived or t.kanban_status != "archived":
-                by_project.setdefault(None, []).append(t)
+            by_project.setdefault(None, []).append(t)
     out: dict[int, str] = {}
     for _pid, group in by_project.items():
         by_id = {t.id: t for t in group}

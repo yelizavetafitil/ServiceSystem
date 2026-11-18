@@ -1,7 +1,36 @@
 <div class="page-header projects-arm-header">
   <div class="projects-arm-header-top">
-    <div class="page-header-main">
-      <h1>Управление проектами</h1>
+    {% if view in ('kanban', 'calendar', 'week') %}
+    <h1 class="projects-arm-title">Управление проектами</h1>
+    {% endif %}
+    <div class="projects-arm-views">
+      <div class="projects-view-tabs" role="tablist">
+        {% if current_user.is_admin or current_user.is_auditor %}
+        <a class="projects-view-tab{% if view == 'gantt' %} is-active{% endif %}" href="{{ url_for('projects.arm', view='gantt', project=filter_project) }}" title="Диаграмма Ганта">Гант</a>
+        {% endif %}
+        <a class="projects-view-tab{% if view == 'kanban' %} is-active{% endif %}" href="{{ url_for('projects.arm', view='kanban', project=filter_project) }}">Канбан</a>
+        {% if current_user.is_admin or current_user.is_auditor or current_user.is_executor %}
+        <a class="projects-view-tab{% if view == 'calendar' or view == 'week' %} is-active{% endif %}" href="{{ url_for('projects.arm', view='calendar', project=filter_project) }}">Календарь</a>
+        {% endif %}
+      </div>
+      {% if view == 'kanban' %}
+      {% set kanban_rejected_url = url_for('projects.arm', view='kanban', project=filter_project or none, show_rejected=(0 if show_rejected else 1), show_archived=(1 if show_archived else 0)) %}
+      {% set kanban_archived_url = url_for('projects.arm', view='kanban', project=filter_project or none, show_rejected=(1 if show_rejected else 0), show_archived=(0 if show_archived else 1)) %}
+      <div class="projects-kanban-toolbar projects-kanban-toolbar--header" role="group" aria-label="Доп. колонки канбана">
+        <a class="projects-kanban-toggle{% if show_rejected %} is-on{% endif %}"
+           href="{{ kanban_rejected_url }}"
+           title="Показать или скрыть колонку «Отклонено» (по умолчанию скрыта)">
+          <span class="projects-kanban-toggle-box" aria-hidden="true"></span>
+          Отклонено
+        </a>
+        <a class="projects-kanban-toggle{% if show_archived %} is-on{% endif %}"
+           href="{{ kanban_archived_url }}"
+           title="Показать или скрыть колонку «Архив» (по умолчанию скрыта)">
+          <span class="projects-kanban-toggle-box" aria-hidden="true"></span>
+          Архив
+        </a>
+      </div>
+      {% endif %}
     </div>
     <div class="page-header-actions">
     {% set fp_name = (projects|selectattr('id', 'equalto', filter_project)|map(attribute='name')|first) if filter_project else none %}
@@ -114,7 +143,7 @@
 
     {% if current_user.is_auditor or current_user.is_admin %}
     <a href="{{ url_for('projects.archive_hub', project=filter_project) }}"
-       class="btn btn-outline btn-sm{% if archive_pending_count|default(0) %} btn-primary{% endif %}"
+       class="btn btn-sm{% if archive_pending_count|default(0) %} btn-primary{% else %} btn-outline{% endif %}"
        title="Архив задач и приёмка этапов">Архив{% if archive_pending_count|default(0) %} · {{ archive_pending_count }}{% endif %}</a>
     <a href="{{ url_for('projects.manage_list') }}" class="btn btn-outline btn-sm">Управление проектами</a>
     {% if view == 'gantt' and filter_project %}
@@ -149,35 +178,6 @@
     </a>
     {% endif %}
     </div>
-  </div>
-  <div class="projects-arm-views">
-    <div class="projects-view-tabs" role="tablist">
-      {% if current_user.is_admin or current_user.is_auditor %}
-      <a class="projects-view-tab{% if view == 'gantt' %} is-active{% endif %}" href="{{ url_for('projects.arm', view='gantt', project=filter_project) }}" title="Диаграмма Ганта">Гант</a>
-      {% endif %}
-      <a class="projects-view-tab{% if view == 'kanban' %} is-active{% endif %}" href="{{ url_for('projects.arm', view='kanban', project=filter_project) }}">Канбан</a>
-      {% if current_user.is_admin or current_user.is_auditor or current_user.is_executor %}
-      <a class="projects-view-tab{% if view == 'calendar' or view == 'week' %} is-active{% endif %}" href="{{ url_for('projects.arm', view='calendar', project=filter_project) }}">Календарь</a>
-      {% endif %}
-    </div>
-    {% if view == 'kanban' %}
-    {% set kanban_rejected_url = url_for('projects.arm', view='kanban', project=filter_project or none, show_rejected=(0 if show_rejected else 1), show_archived=(1 if show_archived else 0)) %}
-    {% set kanban_archived_url = url_for('projects.arm', view='kanban', project=filter_project or none, show_rejected=(1 if show_rejected else 0), show_archived=(0 if show_archived else 1)) %}
-    <div class="projects-kanban-toolbar projects-kanban-toolbar--header" role="group" aria-label="Доп. колонки канбана">
-      <a class="projects-kanban-toggle{% if show_rejected %} is-on{% endif %}"
-         href="{{ kanban_rejected_url }}"
-         title="Показать или скрыть колонку «Отклонено» (по умолчанию скрыта)">
-        <span class="projects-kanban-toggle-box" aria-hidden="true"></span>
-        Отклонено
-      </a>
-      <a class="projects-kanban-toggle{% if show_archived %} is-on{% endif %}"
-         href="{{ kanban_archived_url }}"
-         title="Показать или скрыть колонку «Архив» (по умолчанию скрыта)">
-        <span class="projects-kanban-toggle-box" aria-hidden="true"></span>
-        Архив
-      </a>
-    </div>
-    {% endif %}
   </div>
 </div>
 <script>

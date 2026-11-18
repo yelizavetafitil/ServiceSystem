@@ -2588,6 +2588,7 @@ a.directory-contact-title:hover {
 .EasyMDEContainer.cms-rich-toolbar .editor-toolbar .cms-tb-lbl-image-url::after { content: 'URL'; }
 .EasyMDEContainer.cms-rich-toolbar .editor-toolbar .cms-tb-lbl-upload-image::after { content: 'Файл'; }
 .EasyMDEContainer.cms-rich-toolbar .editor-toolbar .cms-tb-lbl-import-docx::after { content: 'DOCX'; }
+.EasyMDEContainer.cms-rich-toolbar .editor-toolbar .cms-tb-lbl-table-nowrap::after { content: 'Не переносить'; }
 .EasyMDEContainer.cms-rich-toolbar .editor-toolbar .cms-tb-lbl-exit-modes::after { content: 'Закр'; }
 .cms-preview-loading { margin: 12px; }
 .markdown-body .cms-center img,
@@ -2682,6 +2683,28 @@ a.directory-contact-title:hover {
   text-transform: uppercase;
   letter-spacing: .06em;
   white-space: normal;
+}
+.markdown-body .cms-table-nowrap,
+.article-body .cms-table-nowrap,
+.EasyMDEContainer .editor-preview .cms-table-nowrap,
+.EasyMDEContainer .editor-preview-side .cms-table-nowrap {
+  overflow-x: auto;
+  max-width: 100%;
+}
+.markdown-body .cms-table-nowrap table,
+.article-body .cms-table-nowrap table,
+.EasyMDEContainer .editor-preview .cms-table-nowrap table,
+.EasyMDEContainer .editor-preview-side .cms-table-nowrap table {
+  width: max-content;
+  min-width: 100%;
+}
+.markdown-body .cms-table-nowrap th,
+.article-body .cms-table-nowrap th,
+.EasyMDEContainer .editor-preview .cms-table-nowrap th,
+.EasyMDEContainer .editor-preview-side .cms-table-nowrap th {
+  white-space: nowrap;
+  word-break: normal;
+  overflow-wrap: normal;
 }
 .markdown-body tbody tr:nth-child(even) td,
 .article-body tbody tr:nth-child(even) td,
@@ -3220,6 +3243,24 @@ body.cms-editor-immersive .EasyMDEContainer.cms-rich-toolbar.sided {
 .consent-label input { margin-top: 3px; flex-shrink: 0; }
 .contract-ref { font-size: 14px; line-height: 1.5; margin: 0; }
 
+@media (max-width: 980px) {
+  .topbar {
+    flex-wrap: wrap;
+    height: auto;
+    min-height: var(--topbar-h);
+    padding-top: 8px;
+    padding-bottom: 8px;
+    row-gap: 6px;
+  }
+  .topbar-left { max-width: none; }
+  .topbar-right { margin-left: auto; flex-shrink: 0; }
+  .topbar-nav {
+    order: 3;
+    flex: 1 1 100%;
+    width: 100%;
+    justify-content: flex-start;
+  }
+}
 @media (max-width: 768px) {
   .main-content {
     padding: 16px max(14px, env(safe-area-inset-left)) 28px max(14px, env(safe-area-inset-right));

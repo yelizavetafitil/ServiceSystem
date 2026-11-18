@@ -1842,9 +1842,13 @@
     scheduleDraw();
   });
 
+  function wantsToday() {
+    return /(?:\?|&)focus=today(?:&|$)/.test(window.location.search);
+  }
+
   function initGanttScroll() {
     syncTopSizerWidth();
-    if (!restoreGanttScroll()) setGanttScrollLeft(todayScrollLeft(), false);
+    if (wantsToday() || !restoreGanttScroll()) setGanttScrollLeft(todayScrollLeft(), false);
     else if (topHost) topHost.scrollLeft = host.scrollLeft;
     scheduleDraw();
   }
@@ -1861,7 +1865,7 @@
   });
   window.addEventListener("load", function () {
     syncTopSizerWidth();
-    restoreGanttScroll();
+    if (!wantsToday()) restoreGanttScroll();
     syncTopScroll();
     scheduleDraw();
   }, { once: true });

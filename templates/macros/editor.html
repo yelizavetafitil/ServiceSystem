@@ -44,6 +44,72 @@ document.addEventListener('DOMContentLoaded', function() {
     cm.focus();
   }
 
+  function looksLikeTableRow(line) {
+    var s = (line || '').trim();
+    if (!s || s.indexOf('```') === 0) return false;
+    if (/^<\/?(table|thead|tbody|tfoot|tr|th|td|colgroup|col)\b/i.test(s)) return true;
+    return s.charAt(0) === '|' && s.indexOf('|', 1) !== -1;
+  }
+
+  function lineIsNowrapOpen(line) {
+    return /<div\b[^>]*\bcms-table-nowrap\b[^>]*>/i.test(line || '');
+  }
+
+  function toggleTableHeaderNowrap(ed) {
+    var cm = ed.codemirror;
+    var n = cm.lineCount();
+    var line = cm.getCursor().line;
+    var span = null;
+
+    if (lineIsNowrapOpen(cm.getLine(line))) {
+      var i = line + 1;
+      while (i < n && cm.getLine(i).trim() === '') i++;
+      if (i < n && looksLikeTableRow(cm.getLine(i))) {
+        var end = i;
+        while (end + 1 < n && looksLikeTableRow(cm.getLine(end + 1))) end++;
+        span = { start: i, end: end, openLine: line };
+      }
+    } else if (looksLikeTableRow(cm.getLine(line))) {
+      var start = line;
+      var end2 = line;
+      while (start > 0 && looksLikeTableRow(cm.getLine(start - 1))) start--;
+      while (end2 + 1 < n && looksLikeTableRow(cm.getLine(end2 + 1))) end2++;
+      var j = start - 1;
+      while (j >= 0 && cm.getLine(j).trim() === '') j--;
+      span = {
+        start: start,
+        end: end2,
+        openLine: (j >= 0 && lineIsNowrapOpen(cm.getLine(j))) ? j : null
+      };
+    }
+
+    if (!span) {
+      cmsNotify('Поставьте курсор в таблицу, у которой нужно включить или выключить перенос заголовков.', 'Заголовки таблицы');
+      return;
+    }
+
+    var tableLines = [];
+    for (var t = span.start; t <= span.end; t++) tableLines.push(cm.getLine(t));
+
+    if (span.openLine != null) {
+      var k = span.end + 1;
+      while (k < n && cm.getLine(k).trim() === '') k++;
+      if (k < n && cm.getLine(k).trim() === '</div>') {
+        var from = { line: span.openLine, ch: 0 };
+        var to = k + 1 < n ? { line: k + 1, ch: 0 } : { line: k, ch: cm.getLine(k).length };
+        cm.replaceRange(tableLines.join('\n') + (k + 1 < n ? '\n' : ''), from, to);
+        cm.setCursor({ line: span.openLine, ch: 0 });
+        cm.focus();
+        return;
+      }
+    }
+
+    var block = '<div class="cms-table-nowrap" markdown="1">\n\n' + tableLines.join('\n') + '\n\n</div>';
+    cm.replaceRange(block, { line: span.start, ch: 0 }, { line: span.end, ch: cm.getLine(span.end).length });
+    cm.setCursor({ line: span.start + 2, ch: 0 });
+    cm.focus();
+  }
+
   function wrapAlignBlock(ed, align) {
     var extra = align === 'center' ? ' cms-center' : '';
     wrapSelection(
@@ -264,7 +330,11 @@ document.addEventListener('DOMContentLoaded', function() {
         }
         cm.focus();
       }),
-      'table', 'horizontal-rule', '|',
+      'table',
+      cmsLabeledBtn('table-nowrap', 'fa fa-text-width', 'Не переносить заголовки этой таблицы', function (ed) {
+        toggleTableHeaderNowrap(ed);
+      }),
+      'horizontal-rule', '|',
       cmsLabeledBtn('line-break', 'fa fa-level-down', 'Перенос строки', function (ed) {
         ed.codemirror.replaceSelection('<br>\n');
         ed.codemirror.focus();

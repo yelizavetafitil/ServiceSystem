@@ -1,10 +1,11 @@
 {% extends "base.html" %}
 {% from "macros/forms.html" import csrf_field %}
 {% block title %}{% if parent_task %}Подзадача{% else %}Новая задача{% endif %}{% endblock %}
+{% block body_class %}{% if request.args.get('popup') == '1' %} projects-task-popup{% endif %}{% endblock %}
 {% block head %}
-<link rel="stylesheet" href="{{ url_for('static', filename='css/projects.css') }}?v=99">
+<link rel="stylesheet" href="{{ url_for('static', filename='css/projects.css') }}?v=155">
 <script src="{{ url_for('static', filename='js/task-date-duration.js') }}?v=1"></script>
-<script src="{{ url_for('static', filename='js/task-project-tree-nav.js') }}?v=5"></script>
+<script src="{{ url_for('static', filename='js/task-project-tree-nav.js') }}?v=12"></script>
 {% endblock %}
 {% block content %}
 <div class="container cms-page projects-cms projects-task-create">
@@ -18,7 +19,8 @@
   <a href="{{ url_for('projects.arm') }}" class="back-link">← К модулю проектов</a>
   {% endif %}
 
-  <div class="projects-task-create-layout">
+  <div class="projects-task-create-layout{% if not current_user.is_admin %} projects-task-create-layout--solo{% endif %}">
+    {% if current_user.is_admin %}
     <aside class="card projects-cms-card projects-task-tree-panel" aria-label="Иерархия проекта">
       <h2 class="projects-task-tree-heading">Структура проекта</h2>
       <div id="task-project-tree" class="projects-task-tree"
@@ -29,6 +31,7 @@
            data-default-start="{{ default_start.isoformat() if default_start else '' }}"
            data-default-due="{{ default_due.isoformat() if default_due else '' }}"></div>
     </aside>
+    {% endif %}
 
     <div class="card projects-cms-card projects-task-create-form-card">
       <h1 class="projects-cms-title">
@@ -46,10 +49,46 @@
       {% elif preset_project_id %}
       <p class="projects-cms-hint muted">Задача <strong>верхнего уровня</strong> в выбранном проекте (не подзадача).</p>
       {% endif %}
-      <form method="post" class="projects-cms-form" id="task-create-form">
+      <form method="post" class="projects-cms-form" id="task-create-form" enctype="multipart/form-data">
         {{ csrf_field() }}
+        {% if request.args.get('popup') == '1' %}<input type="hidden" name="popup" value="1">{% endif %}
         <input type="hidden" name="parent_id" value="{{ parent_task.id if parent_task else '' }}">
         {% if arm_view %}<input type="hidden" name="arm_view" value="{{ arm_view }}">{% endif %}
+
+        <div class="projects-task-create-panels" id="task-create-panels" data-create-mode="single">
+          <div class="projects-task-single-panel" id="task-single-panel">
+            <div class="projects-task-single-head">
+              <h2 class="projects-task-single-title">Одна задача с названием и описанием</h2>
+              <button type="button"
+                      class="btn btn-outline btn-sm projects-task-mode-toggle"
+                      id="task-mode-to-batch"
+                      title="Добавить несколько задач"
+                      aria-label="Добавить несколько задач">
+                <span class="projects-task-mode-toggle-plus" aria-hidden="true">＋</span>
+                <span>Добавить несколько задач</span>
+              </button>
+            </div>
+            <div class="projects-task-single-fields">
+              <div class="form-group"><label>Название</label><input name="title" id="task-title-input" class="form-control"></div>
+              <div class="form-group"><label>Описание</label><textarea name="description" class="form-control" rows="3"></textarea></div>
+            </div>
+          </div>
+
+          <div class="projects-task-batch" id="task-batch" data-batch hidden>
+            <div class="projects-task-batch-head">
+              <div class="projects-task-batch-head-text">
+                <h2 class="projects-task-batch-title">Список задач</h2>
+                <p class="muted projects-cms-hint">Несколько строк сразу. Со второй строки ← / → — уровень (вложить / поднять). В строке — начало, дней и дедлайн.</p>
+              </div>
+              <button type="button" class="btn btn-outline btn-sm" id="task-mode-to-single" title="Вернуться к одной задаче">← Одна задача</button>
+            </div>
+            <div class="projects-task-batch-rows" id="task-batch-rows"></div>
+            <div class="projects-task-batch-toolbar">
+              <button type="button" class="btn btn-outline btn-sm" id="task-batch-add">＋ Строка</button>
+            </div>
+          </div>
+        </div>
+
         {% if parent_task %}
         <input type="hidden" name="project_id" id="task-project-id" value="{{ parent_task.project_id }}">
         <p class="projects-cms-hint muted">Проект: <strong>{{ parent_task.project.name if parent_task.project else '—' }}</strong> (родитель задан автоматически)</p>
@@ -82,12 +121,23 @@
         </div>
         <div class="form-row">
           <div class="form-group"><label>Критичность (по умолчанию)</label><select name="priority" class="form-control">{% for n, lbl in project_priority_labels.items() %}<option value="{{ n }}">{{ lbl }}</option>{% endfor %}</select></div>
-          <div class="form-group"><label>Исполнитель (по умолчанию)</label>
+          <div class="form-group"><label for="task-assignee-id">Исполнитель (ответственный)</label>
             <select name="assignee_id" id="task-assignee-id" class="form-control">
               <option value="">—</option>
               {% for u in executors %}<option value="{{ u.id }}">{{ u.full_name }}</option>{% endfor %}
             </select>
           </div>
+        </div>
+        <div class="form-group" id="task-collaborators">
+          <label for="task-collaborator-pick">Соисполнители</label>
+          <div class="projects-task-collab-add">
+            <select id="task-collaborator-pick" class="form-control">
+              <option value="">— выбрать —</option>
+              {% for u in executors %}<option value="{{ u.id }}">{{ u.full_name }}</option>{% endfor %}
+            </select>
+            <button type="button" class="btn btn-outline btn-sm" id="task-collaborator-add">Добавить</button>
+          </div>
+          <ul class="projects-task-collab-list" id="task-collaborator-list"></ul>
         </div>
         {% if project_start or project_deadline %}
         <p class="muted projects-cms-hint">
@@ -102,9 +152,8 @@
              data-skip-weekends="{{ '1' if proj_for_form and proj_for_form.skip_weekends else '0' }}"
              data-skip-holidays="{{ '1' if proj_for_form and proj_for_form.skip_public_holidays else '0' }}">
           <div class="form-group projects-pred-dropzone" id="task-pred-dropzone">
-            <label for="task-pred-filter">Выполнить после</label>
-            <input type="search" id="task-pred-filter" class="form-control" placeholder="Поиск по названию…" autocomplete="off" enterkeyhint="search">
-            <select name="predecessor_task_id" id="task-predecessor-id" class="form-control projects-pred-select" size="6">
+            <label for="task-predecessor-id">Выполнить после</label>
+            <select name="predecessor_task_id" id="task-predecessor-id" class="form-control projects-pred-select">
               <option value="">— нет —</option>
               {% if parent_task %}
                 {% for t in tasks_by_project.get(parent_task.project_id, []) %}
@@ -129,7 +178,8 @@
                 {% endfor %}
               {% endif %}
             </select>
-            <p class="muted projects-cms-hint" id="task-pred-hint">Поиск по буквам или перетащите задачу из дерева слева → сюда. Начало = окончание предшественника + 1 день.</p>
+            <div class="projects-pred-drop-catch" id="task-pred-drop-catch" hidden>Отпустите, чтобы назначить предшественника</div>
+            <p class="muted projects-cms-hint" id="task-pred-hint">Выберите предшественника в списке или перетащите задачу из дерева слева. Начало = окончание предшественника + 1 день.</p>
           </div>
           <div class="form-row projects-task-date-row">
             <div class="form-group"><label for="task-start-date">Начало</label>
@@ -150,6 +200,12 @@
                      {% if parent_window_start %}min="{{ parent_window_start.isoformat() }}"{% endif %}
                      {% if parent_window_due %}max="{{ parent_window_due.isoformat() }}"{% endif %}>
             </div>
+          </div>
+          <div class="form-group projects-task-attach">
+            <label for="task-attach-btn">Вложение</label>
+            <input type="file" name="attachments" id="task-attachments" class="projects-task-attach-input" multiple>
+            <button type="button" class="btn btn-outline btn-sm" id="task-attach-btn">Добавить вложение</button>
+            <ul class="projects-task-attach-list" id="task-attach-list"></ul>
           </div>
           <div class="muted projects-task-date-row-hints">
             {% if proj_for_form and (proj_for_form.skip_weekends or proj_for_form.skip_public_holidays) %}
@@ -174,42 +230,11 @@
           </div>
         </div>
 
-        <div class="projects-task-create-panels" id="task-create-panels" data-create-mode="single">
-          <div class="projects-task-single-panel" id="task-single-panel">
-            <div class="projects-task-single-head">
-              <h2 class="projects-task-single-title">Одна задача с названием и описанием</h2>
-              <button type="button"
-                      class="btn btn-outline btn-sm projects-task-mode-toggle"
-                      id="task-mode-to-batch"
-                      title="Добавить несколько задач"
-                      aria-label="Добавить несколько задач">
-                <span class="projects-task-mode-toggle-plus" aria-hidden="true">＋</span>
-                <span>Добавить несколько задач</span>
-              </button>
-            </div>
-            <div class="projects-task-single-fields">
-              <div class="form-group"><label>Название</label><input name="title" id="task-title-input" class="form-control"></div>
-              <div class="form-group"><label>Описание</label><textarea name="description" class="form-control" rows="3"></textarea></div>
-              <div class="form-actions projects-task-create-actions">
-                <button type="submit" name="after_create" value="view" class="btn btn-primary">Создать</button>
-              </div>
-            </div>
-          </div>
-
-          <div class="projects-task-batch" id="task-batch" data-batch hidden>
-            <div class="projects-task-batch-head">
-              <div class="projects-task-batch-head-text">
-                <h2 class="projects-task-batch-title">Список задач</h2>
-                <p class="muted projects-cms-hint">Несколько строк сразу. Со второй строки ← / → — уровень (вложить / поднять). В строке — начало, дней и дедлайн.</p>
-              </div>
-              <button type="button" class="btn btn-outline btn-sm" id="task-mode-to-single" title="Вернуться к одной задаче">← Одна задача</button>
-            </div>
-            <div class="projects-task-batch-rows" id="task-batch-rows"></div>
-            <div class="projects-task-batch-toolbar">
-              <button type="button" class="btn btn-outline btn-sm" id="task-batch-add">＋ Строка</button>
-              <button type="submit" name="create_mode" value="batch" class="btn btn-primary" formnovalidate>Создать все</button>
-            </div>
-          </div>
+        <div class="form-actions projects-task-create-actions" id="task-single-actions">
+          <button type="submit" name="after_create" value="view" class="btn btn-primary">Создать</button>
+        </div>
+        <div class="form-actions projects-task-create-actions" id="task-batch-actions" hidden>
+          <button type="submit" name="create_mode" value="batch" class="btn btn-primary" formnovalidate>Создать все</button>
         </div>
       </form>
     </div>
@@ -226,6 +251,7 @@
   var predSel = document.getElementById("task-predecessor-id");
   var predFilter = document.getElementById("task-pred-filter");
   var predDrop = document.getElementById("task-pred-dropzone");
+  var predCatch = document.getElementById("task-pred-drop-catch");
   var startInp = document.getElementById("task-start-date");
   var dueInp = document.getElementById("task-due-date");
   var durationInp = document.getElementById("task-duration-days");
@@ -246,6 +272,8 @@
   var batchPanel = document.getElementById("task-batch");
   var modeToBatch = document.getElementById("task-mode-to-batch");
   var modeToSingle = document.getElementById("task-mode-to-single");
+  var singleActions = document.getElementById("task-single-actions");
+  var batchActions = document.getElementById("task-batch-actions");
   if (!sel || !stageSel || !dataEl) return;
   var skipWeekends = predBox && predBox.getAttribute("data-skip-weekends") === "1";
   var holidaySet = {
@@ -329,7 +357,6 @@
       o.hidden = !show;
       if (show) visible += 1;
     }
-    predSel.size = Math.max(4, Math.min(10, visible + 1));
   }
 
   function setPredecessorById(taskId, meta) {
@@ -465,6 +492,19 @@
     }
   }
 
+  var collabPick = document.getElementById("task-collaborator-pick");
+  var collabAdd = document.getElementById("task-collaborator-add");
+  var collabList = document.getElementById("task-collaborator-list");
+  var collabIds = {};
+  var attachInput = document.getElementById("task-attachments");
+  var attachBtn = document.getElementById("task-attach-btn");
+  var attachList = document.getElementById("task-attach-list");
+
+  function currentExecutors() {
+    var pid = projectId();
+    return execMap[pid] || execMap[String(pid)] || [];
+  }
+
   function fillAssignees() {
     if (!assigneeSel) return;
     var pid = projectId();
@@ -478,6 +518,94 @@
       if (String(u.id) === String(cur)) o.selected = true;
       assigneeSel.appendChild(o);
     });
+    syncCollaborators();
+  }
+
+  function renderCollaborators() {
+    if (!collabList || !collabPick) return;
+    var assignee = assigneeSel ? String(assigneeSel.value || "") : "";
+    var people = currentExecutors();
+    var byId = {};
+    people.forEach(function (u) { byId[String(u.id)] = u; });
+    Object.keys(collabIds).forEach(function (id) {
+      if (id === assignee || !byId[id]) delete collabIds[id];
+    });
+    collabList.innerHTML = "";
+    Object.keys(collabIds).forEach(function (id) {
+      var li = document.createElement("li");
+      li.className = "projects-task-collab-item";
+      var name = document.createElement("span");
+      name.textContent = byId[id].name;
+      var rm = document.createElement("button");
+      rm.type = "button";
+      rm.className = "btn btn-outline btn-sm";
+      rm.textContent = "Убрать";
+      rm.addEventListener("click", function () {
+        delete collabIds[id];
+        renderCollaborators();
+      });
+      var hidden = document.createElement("input");
+      hidden.type = "hidden";
+      hidden.name = "collaborator_ids";
+      hidden.value = id;
+      li.appendChild(name);
+      li.appendChild(rm);
+      li.appendChild(hidden);
+      collabList.appendChild(li);
+    });
+    var cur = collabPick.value;
+    collabPick.innerHTML = '<option value="">— выбрать —</option>';
+    people.forEach(function (u) {
+      var id = String(u.id);
+      if (id === assignee || collabIds[id]) return;
+      var o = document.createElement("option");
+      o.value = id;
+      o.textContent = u.name;
+      if (id === cur) o.selected = true;
+      collabPick.appendChild(o);
+    });
+  }
+
+  function syncCollaborators() {
+    renderCollaborators();
+  }
+
+  function renderAttachments() {
+    if (!attachInput || !attachList) return;
+    attachList.innerHTML = "";
+    Array.prototype.forEach.call(attachInput.files || [], function (file, idx) {
+      var url = URL.createObjectURL(file);
+      var li = document.createElement("li");
+      li.className = "projects-task-attach-item";
+      var link = document.createElement("a");
+      link.href = url;
+      link.target = "_blank";
+      link.rel = "noopener";
+      link.textContent = file.name;
+      var rm = document.createElement("button");
+      rm.type = "button";
+      rm.className = "btn btn-outline btn-sm";
+      rm.textContent = "Убрать";
+      rm.addEventListener("click", function () {
+        var next = [];
+        Array.prototype.forEach.call(attachInput.files, function (f, i) {
+          if (i !== idx) next.push(f);
+        });
+        URL.revokeObjectURL(url);
+        setAttachmentFiles(next);
+      });
+      li.appendChild(link);
+      li.appendChild(rm);
+      attachList.appendChild(li);
+    });
+  }
+
+  function setAttachmentFiles(files) {
+    if (!attachInput || typeof DataTransfer === "undefined") return;
+    var dt = new DataTransfer();
+    files.forEach(function (f) { dt.items.add(f); });
+    attachInput.files = dt.files;
+    renderAttachments();
   }
 
   function renderTree() {
@@ -595,6 +723,8 @@
     if (createPanels) createPanels.setAttribute("data-create-mode", isBatch ? "batch" : "single");
     if (singlePanel) singlePanel.hidden = isBatch;
     if (batchPanel) batchPanel.hidden = !isBatch;
+    if (singleActions) singleActions.hidden = isBatch;
+    if (batchActions) batchActions.hidden = !isBatch;
     if (isBatch && batchRows && !batchRows.children.length) addBatchRow();
     if (isBatch && batchRows) {
       var firstTitle = batchRows.querySelector('[name="batch_title"]');
@@ -688,9 +818,47 @@
   if (predFilter) {
     predFilter.addEventListener("input", filterPredecessors);
   }
+  if (assigneeSel) {
+    assigneeSel.addEventListener("change", renderCollaborators);
+  }
+  if (collabAdd && collabPick) {
+    collabAdd.addEventListener("click", function () {
+      var id = collabPick.value;
+      if (!id || (assigneeSel && String(assigneeSel.value) === String(id))) return;
+      collabIds[String(id)] = 1;
+      renderCollaborators();
+    });
+  }
+  renderCollaborators();
+  if (attachBtn && attachInput) {
+    attachBtn.addEventListener("click", function () {
+      var picker = document.createElement("input");
+      picker.type = "file";
+      picker.multiple = true;
+      picker.addEventListener("change", function () {
+        var merged = [];
+        Array.prototype.forEach.call(attachInput.files || [], function (f) { merged.push(f); });
+        Array.prototype.forEach.call(picker.files || [], function (f) { merged.push(f); });
+        setAttachmentFiles(merged);
+      });
+      picker.click();
+    });
+    attachInput.addEventListener("change", renderAttachments);
+  }
   if (treeEl) {
+    function topLevelCreateHref(stageIdAttr) {
+      var href = "/projects/tasks/new?project=" + encodeURIComponent(projectId());
+      if (stageIdAttr) href += "&stage=" + encodeURIComponent(stageIdAttr);
+      if (armView) href += "&arm_view=" + encodeURIComponent(armView);
+      return href;
+    }
+
     function selectStageForCreate(stageIdAttr, opts) {
       opts = opts || {};
+      if (highlightParentId) {
+        window.location.href = topLevelCreateHref(stageIdAttr);
+        return;
+      }
       stageSel.value = stageIdAttr || "";
       renderTree();
       var lit = treeEl.querySelector(".projects-task-tree-add--stage.is-lit");
@@ -718,6 +886,19 @@
       if (!btn) return;
       selectStageForCreate(btn.getAttribute("data-stage-id") || "", { openForm: true });
     });
+    function placePredCatch() {
+      if (!predCatch || !predDrop || !predSel) return;
+      var zone = predDrop.getBoundingClientRect();
+      var sel = predSel.getBoundingClientRect();
+      predCatch.style.top = (sel.top - zone.top) + "px";
+      predCatch.style.left = (sel.left - zone.left) + "px";
+      predCatch.style.width = sel.width + "px";
+      predCatch.style.height = Math.max(sel.height, 38) + "px";
+      predCatch.hidden = false;
+    }
+    function hidePredCatch() {
+      if (predCatch) predCatch.hidden = true;
+    }
     treeEl.addEventListener("dragstart", function (e) {
       var taskLink = e.target.closest("a.projects-task-tree-link");
       if (!taskLink || !e.dataTransfer) return;
@@ -728,11 +909,13 @@
       e.dataTransfer.effectAllowed = "copy";
       taskLink.classList.add("is-dragging");
       if (predDrop) predDrop.classList.add("is-drop-ready");
+      placePredCatch();
     });
     treeEl.addEventListener("dragend", function (e) {
       var taskLink = e.target.closest("a.projects-task-tree-link");
       if (taskLink) taskLink.classList.remove("is-dragging");
       if (predDrop) predDrop.classList.remove("is-drop-ready", "is-drag-over");
+      hidePredCatch();
     });
   }
   if (predDrop) {
@@ -748,6 +931,7 @@
     predDrop.addEventListener("drop", function (e) {
       e.preventDefault();
       predDrop.classList.remove("is-drag-over", "is-drop-ready");
+      if (predCatch) predCatch.hidden = true;
       var tid = (e.dataTransfer && (e.dataTransfer.getData("text/task-id") || e.dataTransfer.getData("text/plain"))) || "";
       if (!tid) return;
       var link = treeEl && treeEl.querySelector('a.projects-task-tree-link[data-task-id="' + tid + '"]');

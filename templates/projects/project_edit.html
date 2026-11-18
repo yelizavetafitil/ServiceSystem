@@ -1,7 +1,7 @@
 {% extends "base.html" %}
 {% from "macros/forms.html" import csrf_field %}
 {% block title %}{{ project.name }}{% endblock %}
-{% block head %}<link rel="stylesheet" href="{{ url_for('static', filename='css/projects.css') }}?v=51">{% endblock %}
+{% block head %}<link rel="stylesheet" href="{{ url_for('static', filename='css/projects.css') }}?v=157">{% endblock %}
 {% block content %}
 <div class="container cms-page projects-cms projects-project-edit">
   <a href="{{ url_for('projects.manage_list') }}" class="back-link">← Проекты</a>
@@ -12,7 +12,7 @@
       <p class="muted projects-cms-hint">Навигация по этапам проекта</p>
       <nav class="projects-stages-nav-list">
         <a class="projects-stages-nav-link" href="#project-main" data-stage-nav="main">Карточка проекта</a>
-        <a class="projects-stages-nav-link" href="#project-tasks" data-stage-nav="tasks">Задачи</a>
+        <a class="projects-stages-nav-link" href="#project-team" data-stage-nav="team">Команда</a>
         {% for s in project.stages %}
         <a class="projects-stages-nav-link" href="#stage-{{ s.id }}" data-stage-nav="{{ s.id }}" data-stage-nav-label>
           <span class="projects-stages-nav-title">{{ s.title }}</span>
@@ -31,10 +31,13 @@
 
     <div class="projects-project-edit-main">
       <div class="card projects-cms-card" id="project-main">
-        <h1 class="projects-cms-title">
-          {{ project.name }}
-          {% if project.is_template %}<span class="badge badge-info">Шаблон</span>{% endif %}
-        </h1>
+        <div class="projects-cms-title-row">
+          <h1 class="projects-cms-title">
+            {{ project.name }}
+            {% if project.is_template %}<span class="badge badge-info">Шаблон</span>{% endif %}
+          </h1>
+          <a href="{{ url_for('projects.task_new', project=project.id) }}" class="btn btn-primary">Новая задача</a>
+        </div>
         {% if project.is_template %}
         <p class="projects-cms-hint muted">
           Шаблон не показывается в ARM как рабочий проект. Добавьте этапы и задачи здесь, затем
@@ -102,21 +105,51 @@
         </form>
       </div>
 
-      <div class="card projects-cms-card" id="project-tasks">
-        <h2 class="projects-cms-section-title">{% if project.is_template %}Задачи шаблона{% else %}Задачи проекта{% endif %}</h2>
-        {% if project.is_template %}
-        <p class="muted">Эти задачи копируются при развёртывании (статус сбрасывается в «К выполнению»).</p>
+      <div class="card projects-cms-card" id="project-team">
+        <h2 class="projects-cms-section-title">Команда</h2>
+        <p class="muted">Исполнители рабочей группы. Их можно назначить на задачи этого проекта.</p>
         <ul class="projects-cms-list">
-          {% for t in template_tasks %}
-          <li><a href="{{ url_for('projects.task_detail', tid=t.id) }}">{{ t.title }}</a></li>
+          {% for m in members %}
+          <li class="projects-team-row">
+            <span>{{ m.user.full_name }}{% if m.user.position %} <span class="muted">· {{ m.user.position }}</span>{% endif %}</span>
+            <form method="post" class="inline-form"
+                  data-confirm="Убрать {{ m.user.full_name }} из команды проекта?"
+                  data-confirm-title="Участник команды"
+                  data-confirm-ok="Убрать"
+                  data-confirm-danger>
+              {{ csrf_field() }}
+              <input type="hidden" name="action" value="member_remove">
+              <input type="hidden" name="member_id" value="{{ m.id }}">
+              <button type="submit" class="btn btn-outline btn-sm btn-danger-text">Удалить</button>
+            </form>
+          </li>
           {% else %}
-          <li class="muted">Задач нет — добавьте типовой набор.</li>
+          <li class="muted">В команде пока никого нет.</li>
           {% endfor %}
         </ul>
+        {% if team_candidates %}
+        <form method="post" class="projects-cms-inline-form">
+          {{ csrf_field() }}
+          <input type="hidden" name="action" value="member_add">
+          <div class="form-row form-row--align-end">
+            <div class="form-group">
+              <label>Добавить участника</label>
+              <select name="member_user_id" class="form-control" required>
+                <option value="">— выберите —</option>
+                {% for u in team_candidates %}
+                <option value="{{ u.id }}">{{ u.full_name }}{% if u.position %} — {{ u.position }}{% endif %}</option>
+                {% endfor %}
+              </select>
+            </div>
+            <div class="form-group form-group--shrink">
+              <label class="projects-cms-action-label" aria-hidden="true">Добавить</label>
+              <button type="submit" class="btn btn-outline btn-sm">Добавить</button>
+            </div>
+          </div>
+        </form>
         {% else %}
-        <p class="muted">Новая задача будет сразу привязана к этому проекту.</p>
+        <p class="muted">Все активные исполнители уже в команде.</p>
         {% endif %}
-        <p><a href="{{ url_for('projects.task_new', project=project.id) }}" class="btn btn-outline btn-sm">{% if project.is_template %}Добавить задачу в шаблон{% else %}Добавить задачу{% endif %}</a></p>
       </div>
 
       <div class="card projects-cms-card" id="project-stages">
@@ -143,11 +176,26 @@
             </div>
           </div>
           {% if s.release_notes %}<p class="projects-stage-notes">{{ s.release_notes }}</p>{% endif %}
-          {% for a in s.attachments %}
-          {% if loop.first %}<ul class="projects-stage-files">{% endif %}
-          <li>{{ a.original_name }}</li>
-          {% if loop.last %}</ul>{% endif %}
-          {% endfor %}
+          {% if s.attachments.count() %}
+          <ul class="projects-stage-files">
+            {% for a in s.attachments %}
+            <li class="projects-stage-file">
+              <a href="{{ url_for('projects.stage_file', pid=project.id, sid=s.id, aid=a.id) }}">{{ a.original_name }}</a>
+              <form method="post" class="inline-form"
+                    data-confirm="Удалить файл «{{ a.original_name }}»?"
+                    data-confirm-title="Файл этапа"
+                    data-confirm-ok="Удалить"
+                    data-confirm-danger>
+                {{ csrf_field() }}
+                <input type="hidden" name="action" value="stage_file_delete">
+                <input type="hidden" name="stage_id" value="{{ s.id }}">
+                <input type="hidden" name="attachment_id" value="{{ a.id }}">
+                <button type="submit" class="btn btn-outline btn-sm btn-danger-text">Удалить</button>
+              </form>
+            </li>
+            {% endfor %}
+          </ul>
+          {% endif %}
           <form method="post" class="projects-cms-inline-form projects-stage-edit" data-stage-edit>
             {{ csrf_field() }}
             <input type="hidden" name="action" value="stage_update">
@@ -169,7 +217,12 @@
                 <label>Ответственный</label>
                 <select name="stage_responsible_id" class="form-control">
                   <option value="">—</option>
-                  {% for u in staff %}<option value="{{ u.id }}" {% if s.responsible_id == u.id %}selected{% endif %}>{{ u.full_name }}</option>{% endfor %}
+                  {% for u in team_users %}
+                  <option value="{{ u.id }}" {% if s.responsible_id == u.id %}selected{% endif %}>{{ u.full_name }}</option>
+                  {% endfor %}
+                  {% if s.responsible and s.responsible_id not in team_user_ids %}
+                  <option value="{{ s.responsible_id }}" selected>{{ s.responsible.full_name }} (не в команде)</option>
+                  {% endif %}
                 </select>
               </div>
               <div class="form-group form-group--shrink">
@@ -223,7 +276,9 @@
               <label>Ответственный</label>
               <select name="stage_responsible_id" class="form-control">
                 <option value="">—</option>
-                {% for u in staff %}<option value="{{ u.id }}">{{ u.full_name }}</option>{% endfor %}
+                {% for u in team_users %}
+                <option value="{{ u.id }}">{{ u.full_name }}</option>
+                {% endfor %}
               </select>
             </div>
             <div class="form-group form-group--shrink">
@@ -300,7 +355,7 @@
   if ("IntersectionObserver" in window) {
     var map = {
       "project-main": "main",
-      "project-tasks": "tasks",
+      "project-team": "team",
       "stage-add": "add",
       "project-fields": "fields"
     };

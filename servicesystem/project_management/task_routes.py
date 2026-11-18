@@ -63,7 +63,21 @@ def task_update(tid):
         if task.ticket_id:
             flash("Задача-зеркало заявки не удаляется здесь — закройте или удалите заявку.", "warning")
             return redirect(url_for("tickets.detail", tid=task.ticket_id))
-        project_id = task.project_id
+        from servicesystem.project_management.routes import (
+            _points_at_task,
+            _safe_projects_path,
+            _with_back_flag,
+            task_return_url,
+        )
+
+        dest = None
+        for key in ("next", "return_to"):
+            cand = _safe_projects_path(request.form.get(key))
+            if cand and not _points_at_task(cand, tid):
+                dest = _with_back_flag(cand)
+                break
+        if dest is None:
+            dest = task_return_url(task, skip_task_id=tid)
         try:
             delete_project_task(task)
             db.session.commit()
@@ -73,9 +87,7 @@ def task_update(tid):
             flash("Не удалось удалить задачу (связи или календарь). Попробуйте ещё раз.", "danger")
             return redirect(url_for("projects.task_detail", tid=tid))
         flash("Задача удалена.", "success")
-        if project_id:
-            return redirect(url_for("projects.arm", view="gantt", project=project_id))
-        return redirect(url_for("projects.arm"))
+        return redirect(dest)
     if action in ("complete", "verify", "rework", "reject", "reopen_review", "uncomplete"):
         report = (request.form.get("completion_report") or "").strip()
         if "completion_report" in request.form:
@@ -389,6 +401,15 @@ def task_update(tid):
 
     from servicesystem.project_management.models import TASK_KANBAN_COLUMNS
 
+    delete_aid = request.form.get("delete_attachment_id", type=int)
+    if delete_aid:
+        att = db.session.get(ProjectTaskAttachment, delete_aid)
+        if att and att.task_id == task.id and user_can_delete_task_attachment(current_user, task, att):
+            delete_task_attachment(att)
+            db.session.commit()
+            flash("Вложение удалено.", "success")
+        return redirect(url_for("projects.task_detail", tid=tid))
+
     # Контент карточки — исполнитель и ГИП
     task.title = request.form["title"].strip()
     can_plan = user_can_edit_task_plan(current_user, task)
@@ -398,8 +419,9 @@ def task_update(tid):
     if "completion_report" in request.form:
         task.completion_report = (request.form.get("completion_report") or "").strip() or None
 
+    plan_form = request.form.get("plan_form") == "1"
     new_status = request.form.get("kanban_status") or task.kanban_status
-    if can_plan and new_status in TASK_KANBAN_COLUMNS and new_status != task.kanban_status:
+    if can_plan and plan_form and new_status in TASK_KANBAN_COLUMNS and new_status != task.kanban_status:
         try:
             move_task_kanban(
                 task,
@@ -415,7 +437,7 @@ def task_update(tid):
             raise
 
     assignee_changed = False
-    if can_plan:
+    if can_plan and plan_form:
         task.priority = int(request.form.get("priority") or 2)
         assignee_id = request.form.get("assignee_id", type=int) or None
         if assignee_id and not is_project_member(task.project_id, assignee_id):
@@ -474,16 +496,50 @@ def task_update(tid):
         elif "stage_id" in request.form:
             task.stage_id = None
 
-    if user_can_manage_collaborators(current_user, task):
+    if user_can_manage_collaborators(current_user, task) and request.form.get("collaborators_form") == "1":
         from servicesystem.project_management.models import ProjectTaskCollaborator
 
         ProjectTaskCollaborator.query.filter_by(task_id=task.id).delete()
         for uid in request.form.getlist("collaborator_ids"):
-            uid_i = int(uid)
-            if uid_i == task.assignee_id:
+            try:
+                uid_i = int(uid)
+            except (TypeError, ValueError):
+                continue
+            if not uid_i or uid_i == task.assignee_id:
                 continue
             if is_project_member(task.project_id, uid_i):
                 db.session.add(ProjectTaskCollaborator(task_id=task.id, user_id=uid_i))
+    if can_plan and "predecessor_task_id" in request.form:
+        from servicesystem.project_management.services import tasks_hierarchically_related
+
+        pred_id = request.form.get("predecessor_task_id", type=int)
+        existing = ProjectTaskLink.query.filter_by(to_task_id=task.id, link_type="blocks").all()
+        kept = False
+        for link in existing:
+            if pred_id and link.from_task_id == pred_id and not kept:
+                kept = True
+            else:
+                db.session.delete(link)
+        if pred_id and not kept:
+            pred = db.session.get(ProjectTask, pred_id)
+            if (
+                pred
+                and pred.project_id == task.project_id
+                and pred.id != task.id
+                and not tasks_hierarchically_related(pred, task)
+            ):
+                db.session.add(
+                    ProjectTaskLink(from_task_id=pred.id, to_task_id=task.id, link_type="blocks")
+                )
+            elif pred:
+                flash("Эту задачу нельзя поставить предшественником.", "warning")
+    for upload in request.files.getlist("attachments"):
+        if not upload or not upload.filename:
+            continue
+        try:
+            db.session.add(save_task_attachment(task, upload, current_user.id))
+        except ValueError:
+            flash(f"«{upload.filename}» превышает 100 Мб и не прикреплён.", "warning")
     sync_calendar_events_for_task(task)
     if can_plan:
         cascade_fs_from_task(task)

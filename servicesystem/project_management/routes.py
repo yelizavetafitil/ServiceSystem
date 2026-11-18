@@ -80,6 +80,7 @@ from servicesystem.project_management.services import (
 
 bp = Blueprint("projects", __name__)
 
+
 _ARM_FILTER_PROJECT_KEY = "projects_arm_filter_project"
 _ARM_FILTER_SCALE_KEY = "projects_arm_filter_scale"
 _ARM_FILTER_GROUP_KEY = "projects_arm_filter_group"
@@ -87,6 +88,7 @@ _ARM_FILTER_SUBTASKS_KEY = "projects_arm_filter_subtasks"
 _ARM_FILTER_CAL_MODE_KEY = "projects_arm_filter_cal_mode"
 _ARM_FILTER_ASSIGNEE_KEY = "projects_arm_filter_assignee"
 _ARM_BACK_VIEW_KEY = "projects_arm_back_view"
+_TASK_RETURN_KEY = "projects_task_return"
 _ARM_VIEWS = ("kanban", "week", "calendar", "gantt")
 
 
@@ -185,10 +187,25 @@ def _project_task_tree_payload(project_id: int) -> list[dict]:
         .limit(400)
         .all()
     )
-    # Та же сквозная WBS, что на Ганте/канбане (архив в дереве тоже нумеруем)
-    wbs_map = build_tasks_wbs_map(tasks, include_archived=True)
+    # Сквозной WBS с учётом архива: скрытые задачи держат номер, видимые не сдвигаются.
+    wbs_map = build_tasks_wbs_map(tasks)
+    by_id = {t.id: t for t in tasks}
+
+    def _visible_parent_id(task: ProjectTask):
+        pid = task.parent_id
+        seen: set[int] = set()
+        while pid and pid not in seen:
+            seen.add(pid)
+            parent = by_id.get(pid)
+            if not parent or parent.kanban_status != "archived":
+                return pid if parent else None
+            pid = parent.parent_id
+        return None
+
     out: list[dict] = []
     for t in tasks:
+        if t.kanban_status == "archived":
+            continue
         s, e = t.start_date, t.due_date
         if s and e:
             dates_label = (
@@ -206,7 +223,7 @@ def _project_task_tree_payload(project_id: int) -> list[dict]:
                 "id": t.id,
                 "title": t.title,
                 "stage_id": t.stage_id,
-                "parent_id": t.parent_id,
+                "parent_id": _visible_parent_id(t),
                 "start": s.isoformat() if s else "",
                 "due": e.isoformat() if e else "",
                 "dates_label": dates_label,
@@ -443,10 +460,7 @@ def arm():
         ctx["kanban_labels"] = KANBAN_LABELS
         ctx["show_rejected"] = show_rejected
         ctx["show_archived"] = show_archived
-        ctx["wbs_by_id"] = build_tasks_wbs_map(
-            tasks,
-            include_archived=show_archived,
-        )
+        ctx["wbs_by_id"] = build_tasks_wbs_map(tasks)
         ctx["blockers_by_id"] = build_task_blockers_map(tasks)
         ctx["parents_by_id"] = parents
         if current_user.is_admin:
@@ -580,6 +594,97 @@ def _arm_back_url(*, project_id: int | None = None) -> str:
         if cal_mode:
             kwargs["cal_mode"] = cal_mode
     return url_for("projects.arm", **kwargs)
+
+
+def _safe_projects_path(raw: str | None) -> str | None:
+    """Свой путь внутри /projects/ — без чужих хостов и открытых редиректов."""
+    from urllib.parse import urlparse
+
+    if not raw:
+        return None
+    raw = raw.strip()
+    if not raw or "\\" in raw:
+        return None
+    if raw.startswith(("http://", "https://")):
+        parts = urlparse(raw)
+        if parts.netloc and parts.netloc != request.host:
+            return None
+        path = parts.path or ""
+        query = parts.query
+    else:
+        if not raw.startswith("/") or raw.startswith("//"):
+            return None
+        path, _, query = raw.partition("?")
+    if not path.startswith("/projects/"):
+        return None
+    if "/files/" in path:
+        return None
+    return path + (("?" + query) if query else "")
+
+
+def _same_resource(a: str, b: str) -> bool:
+    return a.split("?", 1)[0].rstrip("/") == b.split("?", 1)[0].rstrip("/")
+
+
+def _points_at_task(path: str, tid: int) -> bool:
+    return _same_resource(path, f"/projects/tasks/{tid}")
+
+
+def _with_back_flag(path: str) -> str:
+    """Возврат на карточку задачи не должен затирать, откуда пришли раньше."""
+    base = path.split("?", 1)[0].rstrip("/")
+    if not base.startswith("/projects/tasks/") or base.endswith("/new"):
+        return path
+    if "back=1" in path:
+        return path
+    return path + ("&" if "?" in path else "?") + "back=1"
+
+
+def _return_stack() -> list[str]:
+    raw = session.get(_TASK_RETURN_KEY)
+    if isinstance(raw, str):
+        raw = [raw]
+    if not isinstance(raw, list):
+        return []
+    out: list[str] = []
+    for item in raw:
+        path = _safe_projects_path(item) if isinstance(item, str) else None
+        if path:
+            out.append(path)
+    return out
+
+
+def _remember_task_return(task_id: int | None = None) -> None:
+    """Цепочка «откуда пришли». «Назад» снимает текущую карточку и не затирает предыдущий шаг."""
+    if request.args.get("popup") == "1":
+        return
+    stack = _return_stack()
+    if request.args.get("back") == "1":
+        if task_id:
+            while stack and _points_at_task(stack[-1], task_id):
+                stack.pop()
+        session[_TASK_RETURN_KEY] = stack
+        return
+    path = _safe_projects_path(request.referrer)
+    if not path or _same_resource(path, request.path) or "popup=1" in path:
+        return
+    if not stack or not _same_resource(stack[-1], path):
+        stack.append(path)
+    session[_TASK_RETURN_KEY] = stack[-8:]
+
+
+def task_return_url(task: ProjectTask | None = None, *, skip_task_id: int | None = None) -> str:
+    """Куда вернуть после ухода с карточки: предыдущий шаг, иначе родитель, иначе тот же раздел ARM."""
+    for origin in reversed(_return_stack()):
+        if skip_task_id and _points_at_task(origin, skip_task_id):
+            continue
+        if task and _points_at_task(origin, task.id):
+            continue
+        return _with_back_flag(origin)
+    if task and task.parent_id and task.parent_id != skip_task_id:
+        return _with_back_flag(url_for("projects.task_detail", tid=task.parent_id))
+    pid = task.project_id if task else None
+    return _arm_back_url(project_id=pid)
 
 
 def _arm_view_from_request() -> str | None:
@@ -802,12 +907,17 @@ def manage_edit(pid):
     if request.method == "POST":
         action = request.form.get("action")
         if action == "stage_add":
+            responsible_id = request.form.get("stage_responsible_id", type=int)
+            team_ids = {u.id for u in executors_for_project(proj.id)}
+            if responsible_id and responsible_id not in team_ids:
+                flash("Ответственным этапа можно назначить только участника команды.", "warning")
+                responsible_id = None
             st = ProjectStage(
                 project_id=proj.id,
                 title=request.form["stage_title"].strip(),
                 deadline=_parse_form_date(request.form.get("stage_deadline")),
                 cost=_parse_stage_cost(request.form.get("stage_cost")),
-                responsible_id=request.form.get("stage_responsible_id", type=int),
+                responsible_id=responsible_id,
                 sort_order=proj.stages.count(),
             )
             db.session.add(st)
@@ -835,7 +945,15 @@ def manage_edit(pid):
                     if "stage_cost" in request.form:
                         st.cost = _parse_stage_cost(request.form.get("stage_cost"))
                     if "stage_responsible_id" in request.form:
-                        st.responsible_id = request.form.get("stage_responsible_id", type=int) or None
+                        raw_resp = request.form.get("stage_responsible_id", type=int) or None
+                        team_ids = {u.id for u in executors_for_project(proj.id)}
+                        if raw_resp and raw_resp not in team_ids and raw_resp != st.responsible_id:
+                            msg = "Ответственным этапа можно назначить только участника команды."
+                            if wants_json:
+                                return jsonify({"ok": False, "error": msg}), 400
+                            flash(msg, "warning")
+                        else:
+                            st.responsible_id = raw_resp
                     db.session.commit()
                     if wants_json:
                         cost_val = float(st.cost) if st.cost is not None else None
@@ -867,6 +985,20 @@ def manage_edit(pid):
                 db.session.delete(st)
                 db.session.commit()
                 flash("Этап удалён.", "success")
+        elif action == "stage_file_delete":
+            from servicesystem.project_management.models import ProjectStageAttachment
+            from servicesystem.project_management.services import delete_stage_attachment
+
+            sid = request.form.get("stage_id", type=int)
+            aid = request.form.get("attachment_id", type=int)
+            att = db.session.get(ProjectStageAttachment, aid) if aid else None
+            st = att.stage if att else None
+            if not att or not st or st.project_id != proj.id or (sid and st.id != sid):
+                flash("Файл не найден.", "warning")
+            else:
+                delete_stage_attachment(att)
+                db.session.commit()
+                flash("Файл удалён.", "success")
         elif action == "stage_release":
             from datetime import datetime, timezone
 
@@ -893,6 +1025,36 @@ def manage_edit(pid):
                     )
                 db.session.commit()
                 flash("Этап выпущен, материалы направлены куратору-заказчику.", "success")
+        elif action == "member_add":
+            uid = request.form.get("member_user_id", type=int)
+            user = db.session.get(User, uid) if uid else None
+            if not user or not user.is_active or user.role != "executor":
+                flash("Выберите активного исполнителя.", "warning")
+            elif ProjectMember.query.filter_by(project_id=proj.id, user_id=user.id).first():
+                flash(f"{user.full_name} уже в команде.", "info")
+            else:
+                db.session.add(ProjectMember(project_id=proj.id, user_id=user.id, role="executor"))
+                db.session.commit()
+                flash(f"{user.full_name} добавлен в команду.", "success")
+        elif action == "member_remove":
+            mid = request.form.get("member_id", type=int)
+            member = db.session.get(ProjectMember, mid) if mid else None
+            if not member or member.project_id != proj.id:
+                flash("Участник не найден.", "warning")
+            else:
+                name = member.user.full_name if member.user else "Участник"
+                assigned = ProjectTask.query.filter_by(
+                    project_id=proj.id, assignee_id=member.user_id
+                ).count()
+                db.session.delete(member)
+                db.session.commit()
+                flash(f"{name} убран из команды.", "success")
+                if assigned:
+                    flash(
+                        f"На {name} ещё назначено задач: {assigned}. "
+                        "Переназначьте их другому участнику.",
+                        "info",
+                    )
         elif action == "field_add":
             from servicesystem.project_management.models import ProjectCustomField
 
@@ -942,18 +1104,58 @@ def manage_edit(pid):
     contracts = Contract.query.order_by(Contract.number).all()
     staff = User.query.filter(User.role.in_(("auditor", "executor")), User.is_active.is_(True)).all()
     customers = User.query.filter(User.role.in_(("customer", "customer_curator")), User.is_active.is_(True)).all()
-    template_tasks = (
-        ProjectTask.query.filter_by(project_id=proj.id, parent_id=None).order_by(ProjectTask.id).all()
-        if proj.is_template
-        else []
+    members = (
+        ProjectMember.query.filter_by(project_id=proj.id)
+        .join(User, ProjectMember.user_id == User.id)
+        .order_by(User.full_name)
+        .all()
     )
+    member_ids = {m.user_id for m in members}
+    team_users = [
+        m.user for m in members if m.user and m.user.is_active and m.user.role == "executor"
+    ]
+    team_candidates = [
+        u for u in staff if u.role == "executor" and u.id not in member_ids
+    ]
     return render_template(
         "projects/project_edit.html",
         project=proj,
         contracts=contracts,
         staff=staff,
         customers=customers,
-        template_tasks=template_tasks,
+        members=members,
+        team_users=team_users,
+        team_user_ids={u.id for u in team_users},
+        team_candidates=team_candidates,
+    )
+
+
+@bp.route("/manage/<int:pid>/stages/<int:sid>/files/<int:aid>")
+@login_required
+@staff_required
+def stage_file(pid, sid, aid):
+    """Скачивание файла отчётного этапа."""
+    from flask import send_file
+
+    from servicesystem.project_management.models import ProjectStageAttachment
+    from servicesystem.project_management.services import stage_attachment_path
+    from servicesystem.services.storage import get_storage
+
+    proj = db.session.get(Project, pid) or abort(404)
+    if not user_can_manage_project(current_user, proj) and not current_user.is_admin:
+        abort(403)
+    att = db.session.get(ProjectStageAttachment, aid) or abort(404)
+    if att.stage_id != sid or not att.stage or att.stage.project_id != proj.id:
+        abort(404)
+    storage = get_storage()
+    rel = stage_attachment_path(att)
+    if not storage.exists(rel):
+        abort(404)
+    return send_file(
+        storage.read_path(rel),
+        as_attachment=True,
+        download_name=att.original_name,
+        mimetype=att.mime_type or "application/octet-stream",
     )
 
 
@@ -1199,9 +1401,26 @@ def task_new():
         )
         db.session.add(task)
         db.session.flush()
+        seen_collab: set[int] = set()
         for uid in request.form.getlist("collaborator_ids"):
-            if is_project_member(project_id, int(uid)):
-                db.session.add(ProjectTaskCollaborator(task_id=task.id, user_id=int(uid)))
+            try:
+                uid_i = int(uid)
+            except (TypeError, ValueError):
+                continue
+            if not uid_i or uid_i == assignee_id or uid_i in seen_collab:
+                continue
+            if is_project_member(project_id, uid_i):
+                db.session.add(ProjectTaskCollaborator(task_id=task.id, user_id=uid_i))
+                seen_collab.add(uid_i)
+        from servicesystem.project_management.services import save_task_attachment
+
+        for upload in request.files.getlist("attachments"):
+            if not upload or not upload.filename:
+                continue
+            try:
+                db.session.add(save_task_attachment(task, upload, current_user.id))
+            except ValueError:
+                flash(f"«{upload.filename}» превышает 100 Мб и не прикреплён.", "warning")
         pred_id = request.form.get("predecessor_task_id", type=int) or None
         if pred_id:
             pred = db.session.get(ProjectTask, pred_id)
@@ -1328,6 +1547,10 @@ def task_new():
 @bp.route("/tasks/<int:tid>", methods=["GET"])
 @login_required
 def task_detail(tid):
+    if request.args.get("popup") == "1":
+        clean = request.args.to_dict(flat=True)
+        clean.pop("popup", None)
+        return redirect(url_for("projects.task_detail", tid=tid, **clean))
     task = db.session.get(ProjectTask, tid) or abort(404)
     if not user_can_view_task(current_user, task):
         abort(403)
@@ -1336,6 +1559,7 @@ def task_detail(tid):
     arm_view = _arm_view_from_request()
     if arm_view:
         _remember_arm_back(arm_view, task.project_id)
+    _remember_task_return(task.id)
     tab = request.args.get("tab", "main")
     if tab != "main":
         anchor_map = {
@@ -1467,6 +1691,7 @@ def task_detail(tid):
         project_deadline=project_latest_due(task.project),
         arm_back_url=_arm_back_url(project_id=task.project_id),
         arm_back_view=session.get(_ARM_BACK_VIEW_KEY),
+        back_url=task_return_url(task),
         collaborator_ids=collaborator_ids,
         time_logs=time_logs,
         checklist_items=checklist_items,
@@ -1840,7 +2065,7 @@ def archive_hub():
         "projects/archive.html",
         archive_prompts=prompts,
         archived_tasks=archived_tasks,
-        wbs_by_id=build_tasks_wbs_map(archived_tasks, include_archived=True),
+        wbs_by_id=build_tasks_wbs_map(archived_tasks),
         filter_project=project_id,
         projects=projects,
         kanban_labels=KANBAN_LABELS,
@@ -2760,7 +2985,12 @@ def _gantt_layout(
     projects=None,
     include_archived: bool = False,
 ) -> dict:
-    """Данные для диаграммы Gantt — стратегическое планирование (ТЗ 2.1)."""
+    """Данные для диаграммы Gantt — стратегическое планирование (ТЗ 2.1).
+
+    include_archived здесь не меняет номера: список tasks уже без архива,
+    а WBS считается по всему проекту, включая скрытые задачи.
+    """
+    del include_archived
     today = date.today()
     projects = _gantt_projects_for_span(projects, tasks)
     span_start, span_end = _gantt_span_for_scale(
@@ -2777,8 +3007,8 @@ def _gantt_layout(
     task_list = [it[0] for it in dated]
     links = _gantt_links(task_list)
     waits_for, blocks, related_with = _gantt_task_relations(task_list, links)
-    # Тот же WBS, что на канбане (все неархивные задачи проекта)
-    wbs_map = build_tasks_wbs_map(list(tasks), include_archived=include_archived)
+    # Тот же WBS, что в дереве и архиве: архивные задачи номер не отдают.
+    wbs_map = build_tasks_wbs_map(list(tasks))
 
     groups: list[dict] = []
     if group_by == "project" and not project_filter:

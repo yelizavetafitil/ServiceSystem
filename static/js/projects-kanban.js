@@ -7,6 +7,45 @@
   let dragId = null;
   let dragFromStatus = null;
   let dragCard = null;
+  let dragScrollX = 0;
+  let dragScrollY = 0;
+  let dragScrollTimer = null;
+
+  function applyDragScroll() {
+    if (!dragId) return;
+    const edge = 140;
+    const maxStep = 42;
+    const y = dragScrollY;
+    let dy = 0;
+    if (y < edge) dy = -Math.ceil(((edge - y) / edge) * maxStep);
+    else if (y > window.innerHeight - 48) dy = Math.ceil(((y - (window.innerHeight - 48)) / 48) * 18);
+    if (!dy) return;
+    const node = document.scrollingElement || document.documentElement;
+    node.scrollTop += dy;
+  }
+
+  function startDragScroll(x, y) {
+    dragScrollX = x;
+    dragScrollY = y;
+    if (dragScrollTimer) return;
+    dragScrollTimer = setInterval(applyDragScroll, 16);
+  }
+
+  function stopDragScroll() {
+    if (dragScrollTimer) clearInterval(dragScrollTimer);
+    dragScrollTimer = null;
+  }
+
+  function trackDragPoint(e) {
+    if (!dragId) return;
+    if (e.clientX || e.clientY) {
+      dragScrollX = e.clientX;
+      dragScrollY = e.clientY;
+    }
+    applyDragScroll();
+    e.preventDefault();
+  }
+  document.addEventListener("dragover", trackDragPoint);
 
   function uiAlert(message, title) {
     if (typeof window.ssAlert === "function") {
@@ -25,17 +64,24 @@
 
   root.querySelectorAll("[data-task-id][draggable='true']").forEach((card) => {
     card.addEventListener("dragstart", (e) => {
+      if (e.target.closest && e.target.closest(".projects-kanban-edit")) {
+        e.preventDefault();
+        return;
+      }
       dragId = card.dataset.taskId;
       dragFromStatus = card.dataset.kanbanStatus;
       dragCard = card;
       e.dataTransfer.effectAllowed = "move";
+      try { e.dataTransfer.setData("text/plain", String(dragId)); } catch (err) { /* IE */ }
       card.classList.add("is-dragging");
+      startDragScroll(e.clientX, e.clientY);
     });
     card.addEventListener("dragend", () => {
       card.classList.remove("is-dragging");
       dragId = null;
       dragFromStatus = null;
       dragCard = null;
+      stopDragScroll();
     });
   });
 
@@ -102,6 +148,14 @@
     };
     return !!allowedExec[key];
   }
+
+  root.addEventListener("click", (e) => {
+    const btn = e.target.closest && e.target.closest(".projects-kanban-edit");
+    if (!btn || !root.contains(btn)) return;
+    e.preventDefault();
+    e.stopPropagation();
+    if (window.openTaskEditor) window.openTaskEditor(btn.getAttribute("data-task-id"));
+  });
 
   root.querySelectorAll(".projects-kanban-drop").forEach((zone) => {
     zone.addEventListener("dragover", (e) => {

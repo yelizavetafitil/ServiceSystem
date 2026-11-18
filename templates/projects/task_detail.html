@@ -4,14 +4,15 @@
 {% from "macros/task_link.html" import project_task_link %}
 
 {% block title %}{{ task.title }}{% endblock %}
+{% block body_class %}{% endblock %}
 
 {% block head %}
-<link rel="stylesheet" href="{{ url_for('static', filename='css/projects.css') }}?v=138">
+<link rel="stylesheet" href="{{ url_for('static', filename='css/projects.css') }}?v=163">
 <script src="{{ url_for('static', filename='js/task-date-duration.js') }}?v=1"></script>
 {% if can_plan_task is defined and can_plan_task %}
-<script src="{{ url_for('static', filename='js/task-project-tree-nav.js') }}?v=5"></script>
+<script src="{{ url_for('static', filename='js/task-project-tree-nav.js') }}?v=12"></script>
 {% elif can_plan_task is not defined and (current_user.is_admin or current_user.is_auditor) %}
-<script src="{{ url_for('static', filename='js/task-project-tree-nav.js') }}?v=5"></script>
+<script src="{{ url_for('static', filename='js/task-project-tree-nav.js') }}?v=12"></script>
 {% endif %}
 {% endblock %}
 
@@ -19,53 +20,53 @@
 
 <div class="container container-wide cms-page">
 
-  {% set can_plan = can_plan_task if can_plan_task is defined else (current_user.is_admin or current_user.is_auditor) %}
+  {% set can_plan_user = can_plan_task if can_plan_task is defined else (current_user.is_admin or current_user.is_auditor) %}
+  {# Редактирование плана — на этой же странице, без всплывающего окна. #}
+  {% set can_plan = can_plan_user %}
+  {% set can_review = can_plan_user %}
 
   <div class="projects-task-topbar">
-    <a href="{{ arm_back_url or url_for('projects.arm') }}" class="back-link">← К модулю проектов</a>
-    {% if task.project_id and can_plan %}
-    <div class="projects-task-topbar-actions">
-      {% if task.parent_id %}
-      <a href="{% if arm_back_view %}{{ url_for('projects.task_new', parent=task.parent_id, project=task.project_id, arm_view=arm_back_view) }}{% else %}{{ url_for('projects.task_new', parent=task.parent_id, project=task.project_id) }}{% endif %}"
-         class="btn btn-outline btn-sm"
-         title="Ещё одна подзадача к тому же родителю (тот же уровень)">Ещё к родителю</a>
-      {% endif %}
-      <a href="{% if arm_back_view %}{{ url_for('projects.task_new', parent=task.id, project=task.project_id, arm_view=arm_back_view) }}{% else %}{{ url_for('projects.task_new', parent=task.id, project=task.project_id) }}{% endif %}"
-         class="btn btn-outline btn-sm"
-         title="Подзадача уровнем ниже">Подзадача</a>
-      <a href="{% if arm_back_view %}{{ url_for('projects.task_new', project=task.project_id, arm_view=arm_back_view) }}{% else %}{{ url_for('projects.task_new', project=task.project_id) }}{% endif %}"
-         class="btn btn-primary btn-sm projects-task-topbar-new"
-         title="Задача верхнего уровня в проекте">Новая задача</a>
-    </div>
-    {% endif %}
+    <a href="{{ back_url or arm_back_url or url_for('projects.arm') }}" class="back-link">← Назад</a>
   </div>
 
-  <div class="projects-task-detail-layout{% if not can_plan or not task.project_id %} projects-task-detail-layout--solo{% endif %}">
-    {% if task.project_id and can_plan %}
+  <div class="projects-task-detail-layout{% if not current_user.is_admin %} projects-task-detail-layout--solo{% endif %}">
+    {% if current_user.is_admin and task.project_id %}
     <aside class="card projects-cms-card projects-task-tree-panel" aria-label="Структура проекта">
       <h2 class="projects-task-tree-heading">Структура проекта</h2>
-      <script type="application/json" id="task-tree-stages-json">{{ task_tree_stages|default([])|tojson }}</script>
-      <script type="application/json" id="task-tree-tasks-json">{{ task_tree_tasks|default([])|tojson }}</script>
-      <script type="application/json" id="task-tree-project-json">{{ task_tree_project|default({'name': 'Проект', 'dates_label': ''})|tojson }}</script>
       <div id="task-project-tree-nav" class="projects-task-tree"
            data-current-task-id="{{ task.id }}"
            data-project-id="{{ task.project_id }}"
            data-arm-view="{{ arm_back_view or '' }}"
            data-can-create="1"></div>
     </aside>
+    <script type="application/json" id="task-tree-stages-json">{{ task_tree_stages|tojson }}</script>
+    <script type="application/json" id="task-tree-tasks-json">{{ task_tree_tasks|tojson }}</script>
+    <script type="application/json" id="task-tree-project-json">{{ task_tree_project|tojson }}</script>
     {% endif %}
 
     <div class="projects-task-detail-main projects-task-card-layout">
+    {% if not can_plan_user %}
+    <div class="projects-task-split">
+      <div class="projects-task-split-main">
+    {% endif %}
 
-  {% if current_user.is_staff %}<div class="projects-task-split"><div class="projects-task-split-main">{% endif %}
-
-  <div class="card projects-task-main-card">
+  <div class="card projects-task-main-card{% if can_plan %} projects-task-main-card--plan{% endif %}">
 
     {% if current_user.is_staff %}
-    <form method="post" action="{{ url_for('projects.task_update', tid=task.id) }}" class="projects-task-brief">
+    <form method="post" enctype="multipart/form-data" action="{{ url_for('projects.task_update', tid=task.id) }}" class="projects-task-brief">
       {{ csrf_field() }}
+      {% if can_plan %}<input type="hidden" name="plan_form" value="1">{% endif %}
 
       <input name="title" class="projects-task-title-input{% if task.priority >= 4 %} is-urgent{% endif %}" required value="{{ task.title }}" placeholder="Название задачи" aria-label="Название">
+
+      <div class="projects-task-desc">
+        <label for="task-edit-description" class="projects-task-desc-label">Описание</label>
+        {% if can_plan %}
+        <textarea name="description" id="task-edit-description" class="form-control projects-task-desc-input" rows="2" placeholder="Постановка задачи…">{{ task.description or '' }}</textarea>
+        {% else %}
+        <div class="hint projects-task-desc-input" id="task-edit-description">{% if task.description %}{{ task.description|markdown|safe }}{% else %}<span class="muted">Нет описания</span>{% endif %}</div>
+        {% endif %}
+      </div>
 
       <div class="projects-task-meta">
         <div class="projects-task-meta-item">
@@ -94,7 +95,7 @@
           {% endif %}
         </div>
         <div class="projects-task-meta-item projects-task-meta-item--grow">
-          <label for="task-edit-assignee">Исполнитель</label>
+          <label for="task-edit-assignee">Исполнитель (ответственный)</label>
           {% if can_plan %}
           <select name="assignee_id" id="task-edit-assignee" class="form-control form-control--compact">
             <option value="">—</option>
@@ -122,6 +123,21 @@
                    {% if not can_plan %}readonly disabled{% endif %}>
           </div>
         </div>
+        {% set pred_ns = namespace(id=None) %}
+        {% for l in link_rows_in if l.link_type == 'blocks' and pred_ns.id is none %}
+          {% set pred_ns.id = l.from_task_id %}
+        {% endfor %}
+        {% if can_plan %}
+        <div class="projects-task-meta-item projects-task-meta-pred">
+          <label for="task-predecessor-id">Выполнить после</label>
+          <select name="predecessor_task_id" id="task-predecessor-id" class="form-control form-control--compact">
+            <option value="">— нет —</option>
+            {% for ot in sibling_tasks %}
+            <option value="{{ ot.id }}" {% if pred_ns.id == ot.id %}selected{% endif %}>{{ ot.title }}</option>
+            {% endfor %}
+          </select>
+        </div>
+        {% endif %}
         <div class="projects-task-meta-item">
           <label for="task-edit-stage">Этап</label>
           {% if can_plan %}
@@ -137,26 +153,53 @@
         </div>
       </div>
 
-      <div class="projects-task-desc">
-        <label for="task-edit-description" class="projects-task-desc-label">Описание</label>
-        {% if can_plan %}
-        <textarea name="description" id="task-edit-description" class="form-control projects-task-desc-input" rows="2" placeholder="Постановка задачи…">{{ task.description or '' }}</textarea>
-        {% else %}
-        <div class="hint projects-task-desc-input" id="task-edit-description">{% if task.description %}{{ task.description|markdown|safe }}{% else %}<span class="muted">Нет описания</span>{% endif %}</div>
+      {% if can_plan %}
+      <div class="projects-task-plan-split">
+      <div class="form-group projects-task-attach">
+        <label for="task-attach-btn">Вложение</label>
+        {% if task_files %}
+        <ul class="projects-task-attach-list">
+          {% for f in task_files %}
+          <li class="projects-task-attach-item">
+            <a href="{{ url_for('projects.task_file_view', tid=task.id, aid=f.id, download=1) }}">{{ f.original_name }}</a>
+            {% if f.id in deletable_file_ids %}
+            <button type="submit" class="btn btn-outline btn-sm" name="delete_attachment_id" value="{{ f.id }}" formnovalidate>Убрать</button>
+            {% endif %}
+          </li>
+          {% endfor %}
+        </ul>
+        {% endif %}
+        {% if current_user.is_staff %}
+        <input type="file" name="attachments" id="task-attachments" class="projects-task-attach-input" multiple>
+        <button type="button" class="btn btn-outline btn-sm" id="task-attach-btn">Добавить вложение</button>
+        <ul class="projects-task-attach-list" id="task-attach-list"></ul>
         {% endif %}
       </div>
-
       {% if can_manage_collaborators %}
-      <details class="projects-task-more">
-        <summary>Соисполнители{% if collaborator_ids %} ({{ collaborator_ids|length }}){% endif %} · только ГИП</summary>
-        <select name="collaborator_ids" class="form-control" multiple size="3">
-          {% for u in executors %}
-          {% if u.id != task.assignee_id %}
-          <option value="{{ u.id }}" {% if u.id in collaborator_ids %}selected{% endif %}>{{ u.full_name }}</option>
-          {% endif %}
+      <div class="form-group" id="task-collaborators">
+        <label for="task-collaborator-pick">Соисполнители</label>
+        <div class="projects-task-collab-add">
+          <select id="task-collaborator-pick" class="form-control">
+            <option value="">— выбрать —</option>
+            {% for u in executors if u.id != task.assignee_id and u.id not in collaborator_ids %}
+            <option value="{{ u.id }}">{{ u.full_name }}</option>
+            {% endfor %}
+          </select>
+          <button type="button" class="btn btn-outline btn-sm" id="task-collaborator-add">Добавить</button>
+        </div>
+        <input type="hidden" name="collaborators_form" value="1">
+        <ul class="projects-task-collab-list" id="task-collaborator-list">
+          {% for u in executors if u.id in collaborator_ids and u.id != task.assignee_id %}
+          <li class="projects-task-collab-item">
+            <span>{{ u.full_name }}</span>
+            <button type="button" class="btn btn-outline btn-sm" data-collab-remove>Убрать</button>
+            <input type="hidden" name="collaborator_ids" value="{{ u.id }}">
+          </li>
           {% endfor %}
-        </select>
-      </details>
+        </ul>
+      </div>
+      {% endif %}
+      </div>
       {% else %}
       <p class="projects-task-collab-readonly">
         <span class="projects-task-desc-label">Соисполнители</span>
@@ -170,7 +213,7 @@
 
       <div class="projects-task-desc" id="task-report">
         <label for="task-completion-report" class="projects-task-desc-label">Отчёт о выполнении задачи</label>
-        <textarea name="completion_report" id="task-completion-report" class="form-control projects-task-desc-input{% if request.args.get('highlight')=='report' %} is-invalid{% endif %}" rows="3" placeholder="Что сделано / причина отклонения…">{{ task.completion_report or '' }}</textarea>
+        <textarea name="completion_report" id="task-completion-report" class="form-control projects-task-desc-input{% if request.args.get('highlight')=='report' %} is-invalid{% endif %}" rows="2" placeholder="Что сделано / причина отклонения…">{{ task.completion_report or '' }}</textarea>
       </div>
 
       {# Под отчётом: все действия в одной сетке без наложений #}
@@ -179,14 +222,14 @@
           <button type="submit" class="btn btn-primary btn-sm" name="action" value="save">Сохранить</button>
 
           {% if task.kanban_status == 'review' %}
-          <button type="submit" class="btn btn-outline btn-sm" name="action" value="uncomplete" formnovalidate title="Вернуть в работу">Отменить выполнение — принять в работу</button>
+          <button type="submit" class="btn btn-outline btn-sm" name="action" value="uncomplete" formnovalidate title="Вернуть в работу">В работу</button>
           {% elif task.kanban_status not in ('done', 'rejected', 'archived') %}
           <button type="submit" class="btn btn-outline btn-sm" name="action" value="complete" formnovalidate {% if blocked %}disabled{% endif %}
                   data-require-report="1"
                   title="{% if blocked %}Сначала завершите блокирующие задачи{% else %}Отправить на верификацию{% endif %}">Выполнить</button>
           {% endif %}
 
-          {% if can_plan %}
+          {% if can_review %}
             {% if task.kanban_status == 'review' %}
             <button type="submit" class="btn btn-primary btn-sm" name="action" value="verify">Проверено</button>
             <button type="submit" class="btn btn-outline btn-sm" name="action" value="rework" data-require-rework-comment="1">На доработку</button>
@@ -196,6 +239,8 @@
             {% if task.kanban_status not in ('rejected', 'archived') %}
             <button type="submit" class="btn btn-outline btn-sm btn-danger-text" name="action" value="reject" data-require-report="1">Отклонить задачу</button>
             {% endif %}
+          {% endif %}
+          {% if can_plan %}
             {% if task.parent_id %}
             <a href="{{ url_for('projects.task_new', parent=task.parent_id, project=task.project_id) }}" class="btn btn-outline btn-sm">Ещё к родителю</a>
             {% endif %}
@@ -242,6 +287,7 @@
       </p>
       {% endif %}
     </form>
+
     {% if can_plan %}
     <div class="projects-task-actions-bar projects-task-actions-bar--secondary">
       <form method="post" action="{{ url_for('projects.task_duplicate', tid=task.id) }}" class="projects-task-actions-bar__form">
@@ -249,11 +295,12 @@
         <button type="submit" class="btn btn-outline btn-sm">Дублировать</button>
       </form>
       <form method="post" action="{{ url_for('projects.task_update', tid=task.id) }}" class="projects-task-actions-bar__form"
-            data-confirm="Удалить задачу безвозвратно?"
+            data-confirm="Удалить задачу «{{ task.title }}»? Подзадачи останутся в проекте отдельными задачами."
             data-confirm-title="Удаление задачи"
             data-confirm-ok="Удалить"
             data-confirm-danger>
         {{ csrf_field() }}<input type="hidden" name="action" value="delete">
+        <input type="hidden" name="return_to" value="{{ back_url or '' }}">
         <button type="submit" class="btn btn-danger btn-sm">Удалить</button>
       </form>
     </div>
@@ -272,7 +319,25 @@
 
       <h3 class="projects-task-subtasks-title">Подзадачи</h3>
 
-      <ul class="projects-task-subtasks-list">{% for s in subtasks %}<li>{{ project_task_link(s) }}</li>{% endfor %}</ul>
+      <ul class="projects-task-subtasks-list">
+        {% for s in subtasks %}
+        <li class="projects-task-subtask-row">
+          {{ project_task_link(s) }}
+          {% if can_plan_user %}
+          <form method="post" action="{{ url_for('projects.task_update', tid=s.id) }}" class="projects-task-subtask-delete"
+                data-confirm="Удалить подзадачу «{{ s.title }}»?"
+                data-confirm-title="Удаление подзадачи"
+                data-confirm-ok="Удалить"
+                data-confirm-danger>
+            {{ csrf_field() }}
+            <input type="hidden" name="action" value="delete">
+            <input type="hidden" name="next" value="{{ url_for('projects.task_detail', tid=task.id) }}">
+            <button type="submit" class="btn btn-outline btn-xs btn-danger-text">Удалить</button>
+          </form>
+          {% endif %}
+        </li>
+        {% endfor %}
+      </ul>
 
     </section>
 
@@ -283,117 +348,8 @@
     {% if task.overdue_days %}<p class="projects-overdue">Просрочка: {{ task.overdue_days }} д.</p>{% endif %}
 
   </div>
-
-  {% if current_user.is_staff %}
-  <div class="projects-task-split-footer">
-  <section id="task-comments" class="card projects-task-section projects-task-panel projects-task-panel--footer">
-
-    <h2 class="projects-task-section-title">Комментарии</h2>
-
-    <ul class="projects-task-comments">{% for c in task.comments %}<li><strong>{{ c.user.full_name }}</strong> <span class="muted">{{ c.created_at.strftime('%d.%m.%Y %H:%M') }}</span> — {{ c.body }}</li>{% else %}<li class="muted">Пока нет</li>{% endfor %}</ul>
-
-    <form method="post" action="{{ url_for('projects.task_update', tid=task.id) }}" class="projects-task-comment-form">
-
-      {{ csrf_field() }}<input type="hidden" name="action" value="comment">
-
-      <textarea name="body" class="form-control form-control--compact" rows="2" required placeholder="Комментарий…"></textarea>
-
-      <button type="submit" class="btn btn-outline btn-sm">Отправить</button>
-
-    </form>
-
-  </section>
-
-  <section id="task-custom" class="card projects-task-section projects-task-panel projects-task-panel--footer">
-
-    <h2 class="projects-task-section-title">Дополнительные поля</h2>
-
-    <form method="post" action="{{ url_for('projects.task_update', tid=task.id) }}">
-
-      {{ csrf_field() }}<input type="hidden" name="action" value="custom_save">
-
-      {% for field in custom_fields %}
-
-      {% set val = task.custom_values.filter_by(field_id=field.id).first() %}
-
-      <div class="form-group"><label>{{ field.name }}</label>
-
-        <input name="cf_{{ field.id }}" class="form-control" value="{{ val.value_text if val else '' }}">
-
+    {% if not can_plan_user %}
       </div>
-
-      {% else %}<p class="muted">Поля задаются в карточке проекта (раздел «Управление»).</p>{% endfor %}
-
-      {% if custom_fields %}<button type="submit" class="btn btn-primary btn-sm">Сохранить</button>{% endif %}
-
-    </form>
-
-  </section>
-
-  {% if can_plan %}
-  <section id="task-links" class="card projects-task-section projects-task-panel projects-task-panel--footer projects-task-panel--footer-wide projects-task-links-panel">
-
-    <h2 class="projects-task-section-title">Связи задач</h2>
-
-    <h3 class="projects-cms-subheading">Эта задача предшествует</h3>
-    <ul class="projects-link-list">{% for l in link_rows %}
-      <li>
-        <span>{{ project_link_labels.get(l.link_type, l.link_type) }} →
-          {{ project_task_link(l.to_task, text=(l.to_task.title if l.to_task else ('№' ~ l.to_task_id))) }}
-        </span>
-        <form method="post" action="{{ url_for('projects.task_update', tid=task.id) }}" class="inline-form">
-          {{ csrf_field() }}<input type="hidden" name="action" value="link_remove"><input type="hidden" name="link_id" value="{{ l.id }}">
-          <button type="submit" class="btn btn-outline btn-icon-xs" title="Удалить связь" aria-label="Удалить связь">×</button>
-        </form>
-      </li>
-    {% else %}<li class="muted">Нет</li>{% endfor %}</ul>
-
-    <h3 class="projects-cms-subheading">Выполнить после (предшествующие задачи)</h3>
-    <ul class="projects-link-list">{% for l in link_rows_in %}
-      <li>
-        <span>
-          {{ project_task_link(l.from_task, text=(l.from_task.title if l.from_task else ('№' ~ l.from_task_id))) }}
-          → {{ project_link_labels.get(l.link_type, l.link_type) }}
-        </span>
-        <form method="post" action="{{ url_for('projects.task_update', tid=task.id) }}" class="inline-form">
-          {{ csrf_field() }}<input type="hidden" name="action" value="link_remove"><input type="hidden" name="link_id" value="{{ l.id }}">
-          <button type="submit" class="btn btn-outline btn-icon-xs" title="Удалить связь" aria-label="Удалить связь">×</button>
-        </form>
-      </li>
-    {% else %}<li class="muted">Нет</li>{% endfor %}</ul>
-
-    <form method="post" action="{{ url_for('projects.task_update', tid=task.id) }}" class="form-row form-row--align-end projects-cms-inline-form">
-
-      {{ csrf_field() }}<input type="hidden" name="action" value="link_add">
-
-      <div class="form-group">
-        <label>Задача</label>
-        <select name="other_task_id" class="form-control form-control--compact" required>
-          <option value="">— выберите —</option>
-          {% for ot in sibling_tasks %}
-          <option value="{{ ot.id }}">{{ ot.title }}</option>
-          {% endfor %}
-        </select>
-      </div>
-
-      <div class="form-group">
-        <label>Тип</label>
-        <select name="link_type" class="form-control form-control--compact">{% for key, lbl in link_type_choices %}<option value="{{ key }}">{{ lbl }}</option>{% endfor %}</select>
-      </div>
-
-      <div class="form-group form-group--shrink">
-        <label class="projects-cms-action-label" aria-hidden="true">Добавить</label>
-        <button type="submit" class="btn btn-outline btn-sm">Добавить</button>
-      </div>
-
-    </form>
-
-  </section>
-  {% endif %}
-
-  </div>
-
-  </div>
   <aside class="projects-task-split-side" aria-label="Файлы, чек-лист и время">
   <div class="projects-task-side-stack">
   <section id="task-files" class="card projects-task-section projects-task-panel projects-files-block">
@@ -549,8 +505,8 @@
 
   </div>
   </aside>
-  </div>
-  {% endif %}
+    </div>
+    {% endif %}
 
     </div>
   </div>
@@ -565,6 +521,121 @@
   var treeRoot = document.getElementById("task-project-tree-nav");
   if (treeRoot && typeof window.renderProjectTreeNav === "function") {
     window.renderProjectTreeNav(treeRoot);
+  }
+})();
+</script>
+<script>
+(function () {
+  var pick = document.getElementById("task-collaborator-pick");
+  var addBtn = document.getElementById("task-collaborator-add");
+  var list = document.getElementById("task-collaborator-list");
+  var assignee = document.getElementById("task-edit-assignee");
+  function takenIds() {
+    var ids = {};
+    if (!list) return ids;
+    list.querySelectorAll('input[name="collaborator_ids"]').forEach(function (inp) {
+      ids[inp.value] = 1;
+    });
+    return ids;
+  }
+  function refreshPick() {
+    if (!pick) return;
+    var assigneeId = assignee ? String(assignee.value || "") : "";
+    var taken = takenIds();
+    Array.prototype.forEach.call(pick.options, function (opt) {
+      if (!opt.value) return;
+      opt.hidden = opt.value === assigneeId || !!taken[opt.value];
+    });
+    if (pick.selectedOptions[0] && pick.selectedOptions[0].hidden) pick.value = "";
+  }
+  if (addBtn && pick && list) {
+    addBtn.addEventListener("click", function () {
+      var id = pick.value;
+      var opt = pick.selectedOptions[0];
+      if (!id || !opt || opt.hidden) return;
+      var li = document.createElement("li");
+      li.className = "projects-task-collab-item";
+      var name = document.createElement("span");
+      name.textContent = opt.textContent;
+      var rm = document.createElement("button");
+      rm.type = "button";
+      rm.className = "btn btn-outline btn-sm";
+      rm.textContent = "Убрать";
+      rm.addEventListener("click", function () {
+        li.remove();
+        refreshPick();
+      });
+      var hidden = document.createElement("input");
+      hidden.type = "hidden";
+      hidden.name = "collaborator_ids";
+      hidden.value = id;
+      li.appendChild(name);
+      li.appendChild(rm);
+      li.appendChild(hidden);
+      list.appendChild(li);
+      pick.value = "";
+      refreshPick();
+    });
+    list.addEventListener("click", function (e) {
+      var btn = e.target.closest("[data-collab-remove]");
+      if (!btn || !list.contains(btn)) return;
+      var li = btn.closest("li");
+      if (li) li.remove();
+      refreshPick();
+    });
+  }
+  if (assignee) assignee.addEventListener("change", refreshPick);
+  refreshPick();
+
+  var attachInput = document.getElementById("task-attachments");
+  var attachBtn = document.getElementById("task-attach-btn");
+  var attachList = document.getElementById("task-attach-list");
+  function renderAttachments() {
+    if (!attachInput || !attachList) return;
+    attachList.innerHTML = "";
+    Array.prototype.forEach.call(attachInput.files || [], function (file, idx) {
+      var url = URL.createObjectURL(file);
+      var li = document.createElement("li");
+      li.className = "projects-task-attach-item";
+      var link = document.createElement("a");
+      link.href = url;
+      link.target = "_blank";
+      link.rel = "noopener";
+      link.textContent = file.name;
+      var rm = document.createElement("button");
+      rm.type = "button";
+      rm.className = "btn btn-outline btn-sm";
+      rm.textContent = "Убрать";
+      rm.addEventListener("click", function () {
+        var next = [];
+        Array.prototype.forEach.call(attachInput.files, function (f, i) {
+          if (i !== idx) next.push(f);
+        });
+        URL.revokeObjectURL(url);
+        var dt = new DataTransfer();
+        next.forEach(function (f) { dt.items.add(f); });
+        attachInput.files = dt.files;
+        renderAttachments();
+      });
+      li.appendChild(link);
+      li.appendChild(rm);
+      attachList.appendChild(li);
+    });
+  }
+  if (attachBtn && attachInput) {
+    attachBtn.addEventListener("click", function () {
+      var picker = document.createElement("input");
+      picker.type = "file";
+      picker.multiple = true;
+      picker.addEventListener("change", function () {
+        var dt = new DataTransfer();
+        Array.prototype.forEach.call(attachInput.files || [], function (f) { dt.items.add(f); });
+        Array.prototype.forEach.call(picker.files || [], function (f) { dt.items.add(f); });
+        attachInput.files = dt.files;
+        renderAttachments();
+      });
+      picker.click();
+    });
   }
 })();
 </script>

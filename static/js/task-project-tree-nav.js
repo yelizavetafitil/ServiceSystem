@@ -3,6 +3,10 @@
  * mode=nav — двойной клик открывает; mode=create — выбор этапа, DnD в «Выполнить после».
  */
 (function (global) {
+  var staleModal = document.getElementById("task-editor-modal");
+  if (staleModal) staleModal.remove();
+  if (document.body) document.body.classList.remove("projects-task-editor-open");
+
   function esc(s) {
     return String(s || "")
       .replace(/&/g, "&amp;")
@@ -94,6 +98,21 @@
         html += '<span class="projects-task-tree-dates">' + esc(t.dates_label) + "</span>";
       }
       html += "</a>";
+      if (canCreate) {
+        html +=
+          '<button type="button" class="projects-task-tree-edit" data-task-id="' +
+          esc(String(t.id)) +
+          '" title="Редактировать" aria-label="Редактировать задачу">' +
+          '<svg viewBox="0 0 24 24" width="14" height="14" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 20h9"/><path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4z"/></svg>' +
+          "</button>" +
+          '<button type="button" class="projects-task-tree-delete" data-task-id="' +
+          esc(String(t.id)) +
+          '" data-task-title="' +
+          esc(t.title) +
+          '" title="Удалить" aria-label="Удалить задачу">' +
+          '<svg viewBox="0 0 24 24" width="14" height="14" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 6h18"/><path d="M8 6V4h8v2"/><path d="M19 6l-1 14H6L5 6"/><path d="M10 11v6"/><path d="M14 11v6"/></svg>' +
+          "</button>";
+      }
       if (canCreate && projectId) {
         html +=
           '<a class="projects-task-tree-add" href="' +
@@ -240,6 +259,61 @@
 
     html += "</ul></li></ul>";
     rootEl.innerHTML = html;
+    bindTaskEditor(rootEl);
+  }
+
+  function openTaskEditor(taskId) {
+    if (!taskId) return;
+    window.location.assign("/projects/tasks/" + encodeURIComponent(taskId));
+  }
+
+  function deleteTreeTask(taskId, title) {
+    if (!taskId) return;
+    var message = "Удалить задачу «" + title + "»? Подзадачи останутся в проекте отдельными задачами.";
+    var run = function () {
+      var tokenEl = document.querySelector('input[name="csrf_token"]');
+      var body = new URLSearchParams();
+      if (tokenEl) body.set("csrf_token", tokenEl.value);
+      body.set("action", "delete");
+      fetch("/projects/tasks/" + encodeURIComponent(taskId), {
+        method: "POST",
+        body: body,
+        credentials: "same-origin",
+        redirect: "follow",
+      }).then(function () {
+        window.location.reload();
+      });
+    };
+    if (window.ssConfirm) {
+      window.ssConfirm(message, {
+        title: "Удаление задачи",
+        confirmLabel: "Удалить",
+        danger: true,
+      }).then(function (ok) {
+        if (ok) run();
+      });
+      return;
+    }
+    if (window.confirm(message)) run();
+  }
+
+  function bindTaskEditor(rootEl) {
+    if (!rootEl || rootEl.getAttribute("data-task-editor") === "1") return;
+    rootEl.setAttribute("data-task-editor", "1");
+    rootEl.addEventListener("click", function (e) {
+      var del = e.target.closest && e.target.closest(".projects-task-tree-delete");
+      if (del && rootEl.contains(del)) {
+        e.preventDefault();
+        e.stopPropagation();
+        deleteTreeTask(del.getAttribute("data-task-id"), del.getAttribute("data-task-title") || "");
+        return;
+      }
+      var btn = e.target.closest && e.target.closest(".projects-task-tree-edit");
+      if (!btn || !rootEl.contains(btn)) return;
+      e.preventDefault();
+      e.stopPropagation();
+      openTaskEditor(btn.getAttribute("data-task-id"));
+    });
   }
 
   function readJsonScript(id) {
@@ -258,6 +332,8 @@
     rootEl.addEventListener("click", function (e) {
       if (e.target.closest && e.target.closest("a.projects-task-tree-add")) return;
       if (e.target.closest && e.target.closest("button.projects-task-tree-add")) return;
+      if (e.target.closest && e.target.closest("button.projects-task-tree-edit")) return;
+      if (e.target.closest && e.target.closest("button.projects-task-tree-delete")) return;
       var link = e.target.closest && e.target.closest("a.projects-task-tree-link");
       if (!link || !rootEl.contains(link)) return;
       e.preventDefault();
@@ -297,4 +373,5 @@
   global.renderProjectTree = renderProjectTree;
   global.renderProjectTreeNav = renderProjectTreeNav;
   global.bindProjectTreeDblClick = bindDoubleClickNav;
+  global.openTaskEditor = openTaskEditor;
 })(window);
