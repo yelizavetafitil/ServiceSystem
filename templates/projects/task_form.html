@@ -19,8 +19,8 @@
   <a href="{{ url_for('projects.arm') }}" class="back-link">← К модулю проектов</a>
   {% endif %}
 
-  <div class="projects-task-create-layout{% if not current_user.is_admin %} projects-task-create-layout--solo{% endif %}">
-    {% if current_user.is_admin %}
+  <div class="projects-task-create-layout{% if not (current_user.is_admin or current_user.is_auditor) %} projects-task-create-layout--solo{% endif %}">
+    {% if current_user.is_admin or current_user.is_auditor %}
     <aside class="card projects-cms-card projects-task-tree-panel" aria-label="Иерархия проекта">
       <h2 class="projects-task-tree-heading">Структура проекта</h2>
       <div id="task-project-tree" class="projects-task-tree"
