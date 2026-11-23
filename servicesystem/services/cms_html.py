@@ -164,8 +164,81 @@ def normalize_cms_markdown_source(text: str) -> str:
     return t
 
 
+_NOWRAP_OPEN = re.compile(r"<div\b[^>]*\bcms-table-nowrap\b[^>]*>", re.I)
+_DIV_TOKEN = re.compile(r"</?div\b[^>]*>", re.I)
+
+
+def _div_block_end(text: str, open_start: int) -> int | None:
+    """Индекс сразу после закрывающего тега div, с учётом вложенности."""
+    opened = re.match(r"<div\b[^>]*>", text[open_start:], re.I)
+    if not opened:
+        return None
+    i = open_start + opened.end()
+    depth = 1
+    while depth and i < len(text):
+        token = _DIV_TOKEN.search(text, i)
+        if not token:
+            return None
+        depth += -1 if token.group(0).lower().startswith("</") else 1
+        i = token.end()
+        if depth == 0:
+            return i
+    return None
+
+
+def _lift_nowrap_wrappers(text: str) -> str:
+    """Старая обёртка <div class=cms-table-nowrap markdown=1> ломает таблицу.
+
+    В ячейках уже есть div, и внешний блок закрывается на первом из них.
+    Таблицу вынимаем наружу и оставляем пустую метку перед ней.
+    """
+    for _ in range(12):
+        out: list[str] = []
+        i = 0
+        changed = False
+        while True:
+            match = _NOWRAP_OPEN.search(text, i)
+            if not match:
+                out.append(text[i:])
+                break
+            end = _div_block_end(text, match.start())
+            if end is None:
+                out.append(text[i:])
+                break
+            close_at = text.rfind("</div>", match.end(), end)
+            if close_at < 0:
+                out.append(text[i:])
+                break
+            inner = text[match.end():close_at]
+            if not inner.strip():
+                out.append(text[i:end])
+                i = end
+                continue
+            out.append(text[i:match.start()])
+            out.append('<div class="cms-table-nowrap"></div>\n\n')
+            out.append(inner.strip())
+            out.append("\n")
+            i = end
+            changed = True
+        text = "".join(out)
+        if not changed:
+            break
+    return text
+
+
+def _bind_nowrap_tables(html: str) -> str:
+    """Пустая метка перед таблицей → обёртка, у которой не переносятся заголовки."""
+    return re.sub(
+        r'<div class="cms-table-nowrap"></div>\s*(<table\b[^>]*>[\s\S]*?</table>)',
+        r'<div class="cms-table-nowrap">\1</div>',
+        html,
+        flags=re.I,
+    )
+
+
 def _preprocess_cms_markdown(text: str) -> str:
     t = normalize_cms_markdown_source(text)
+    t = _lift_nowrap_wrappers(t)
     t = _shield_br_tags(t)
     t = _convert_task_lists(t)
     t = re.sub(
@@ -187,6 +260,7 @@ def _collapse_br_tags(html: str) -> str:
 def _postprocess_html(html: str) -> str:
     html = _unshield_br_tags(html)
     html = _collapse_br_tags(html)
+    html = _bind_nowrap_tables(html)
 
     def img_center(match: re.Match[str]) -> str:
         tag = match.group(0)

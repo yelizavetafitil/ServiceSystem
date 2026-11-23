@@ -61,6 +61,12 @@ def _save_uploaded_video(file_storage):
         storage.save_file(f"videos/{stored}", file_storage)
     except OSError as exc:
         raise ValueError(f"Не удалось сохранить видео на диск: {exc}") from exc
+    try:
+        from servicesystem.services.video_faststart import make_faststart
+
+        make_faststart(storage.read_path(f"videos/{stored}"))
+    except Exception:
+        current_app.logger.exception("video faststart failed: %s", stored)
     stream_url = url_for("cabinet.stream_video", filename=stored, _external=False)
     return stored, stream_url
 

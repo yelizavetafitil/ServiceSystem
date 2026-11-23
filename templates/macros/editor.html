@@ -102,9 +102,13 @@ document.addEventListener('DOMContentLoaded', function() {
         cm.focus();
         return;
       }
+      cm.replaceRange('', { line: span.openLine, ch: 0 }, { line: span.start, ch: 0 });
+      cm.setCursor({ line: span.openLine, ch: 0 });
+      cm.focus();
+      return;
     }
 
-    var block = '<div class="cms-table-nowrap" markdown="1">\n\n' + tableLines.join('\n') + '\n\n</div>';
+    var block = '<div class="cms-table-nowrap"></div>\n\n' + tableLines.join('\n');
     cm.replaceRange(block, { line: span.start, ch: 0 }, { line: span.end, ch: cm.getLine(span.end).length });
     cm.setCursor({ line: span.start + 2, ch: 0 });
     cm.focus();

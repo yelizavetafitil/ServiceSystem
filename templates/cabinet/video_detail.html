@@ -17,8 +17,8 @@
       <div class="video-player-stage">
         <div class="video-player-wrap">
           {% if is_local_stream %}
-          <video controls controlsList="nodownload nofullscreen noremoteplayback" disablePictureInPicture oncontextmenu="return false" playsinline class="video-stream">
-            <source src="{{ video.video_url }}" type="video/mp4">
+          <video controls controlsList="nodownload nofullscreen noremoteplayback" disablePictureInPicture oncontextmenu="return false" playsinline preload="metadata" class="video-stream">
+            <source src="{{ video.video_url }}"{% if video_mime %} type="{{ video_mime }}"{% endif %}>
             Ваш браузер не поддерживает потоковое воспроизведение.
           </video>
           {% else %}

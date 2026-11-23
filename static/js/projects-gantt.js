@@ -1447,8 +1447,11 @@
       var tid = btn.getAttribute("data-gantt-rename");
       if (!tid) return;
       var side = btn.closest(".projects-gantt-side");
-      var label = side ? side.querySelector("[data-gantt-title]") : null;
-      var current = label ? (label.textContent || "").trim() : "";
+      var label = side ? side.querySelector(".projects-gantt-label") : null;
+      var current = "";
+      if (label) {
+        current = (label.getAttribute("title") || label.textContent || "").replace(/\s+/g, " ").trim();
+      }
       var next = null;
       if (typeof window.ssPrompt === "function") {
         next = await window.ssPrompt("Название задачи", current, {

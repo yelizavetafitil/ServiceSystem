@@ -99,7 +99,9 @@ def create_app(config_class=Config):
 
         if not current_user.is_authenticated:
             return
-        if request.endpoint and request.endpoint.startswith("static"):
+        if request.endpoint and (
+            request.endpoint.startswith("static") or request.endpoint == "cabinet.stream_video"
+        ):
             return
         now = datetime.now(timezone.utc)
         raw = session.get("_last_activity")

@@ -42,6 +42,47 @@
     );
   }
 
+  /** Строки пакета: depth 0 — равнозначные, depth > 0 — подчинённые предыдущей строке. */
+  function nestDraftRows(rows) {
+    var roots = [];
+    var stack = [];
+    (rows || []).forEach(function (row) {
+      var depth = parseInt(row.depth, 10) || 0;
+      if (depth < 0) depth = 0;
+      var node = {
+        title: row.title || "Новые задачи…",
+        children: [],
+      };
+      while (stack.length && stack[stack.length - 1].depth >= depth) stack.pop();
+      if (!stack.length) roots.push(node);
+      else stack[stack.length - 1].node.children.push(node);
+      stack.push({ depth: depth, node: node });
+    });
+    return roots;
+  }
+
+  function draftTreeHtml(nodes) {
+    var html = "";
+    (nodes || []).forEach(function (node) {
+      html +=
+        '<li class="projects-task-tree-item projects-task-tree-item--draft">' +
+        '<span class="projects-task-tree-draft">' +
+        esc(node.title || "Новые задачи…") +
+        "</span>";
+      if (node.children && node.children.length) {
+        html += '<ul class="projects-task-tree-list">' + draftTreeHtml(node.children) + "</ul>";
+      }
+      html += "</li>";
+    });
+    return html;
+  }
+
+  function draftBlockHtml(opts) {
+    var rows = opts.draftRows;
+    if (rows && rows.length) return draftTreeHtml(nestDraftRows(rows));
+    return draftNodeHtml(opts.draftLabel);
+  }
+
   function renderTaskNodes(tasks, byParent, depth, opts) {
     var html = "";
     var currentId = opts.currentId || "";
@@ -125,7 +166,10 @@
       if (kids.length || showDraftHere) {
         html += '<ul class="projects-task-tree-list">';
         html += renderTaskNodes(kids, byParent, depth + 1, opts);
-        if (showDraftHere) html += draftNodeHtml(opts.draftLabel);
+        if (showDraftHere) {
+          html += draftBlockHtml(opts);
+          opts._draftPlaced = true;
+        }
         html += "</ul>";
       }
       html += "</li>";
@@ -232,7 +276,8 @@
       html += '<ul class="projects-task-tree-list">';
       html += renderTaskNodes(rootsForStage(s.id), byParent, 1, opts);
       if (opts.mode === "create" && active && !nestDraftUnderParent) {
-        html += draftNodeHtml(opts.draftLabel);
+        html += draftBlockHtml(opts);
+        opts._draftPlaced = true;
       }
       html += "</ul></li>";
     });
@@ -252,11 +297,15 @@
       html += '<ul class="projects-task-tree-list">';
       html += renderTaskNodes(unstaged, byParent, 1, opts);
       if (opts.mode === "create" && unstagedActive && !nestDraftUnderParent) {
-        html += draftNodeHtml(opts.draftLabel);
+        html += draftBlockHtml(opts);
+        opts._draftPlaced = true;
       }
       html += "</ul></li>";
     }
 
+    if (opts.mode === "create" && nestDraftUnderParent && !opts._draftPlaced) {
+      html += draftBlockHtml(opts);
+    }
     html += "</ul></li></ul>";
     rootEl.innerHTML = html;
     bindTaskEditor(rootEl);
@@ -264,7 +313,7 @@
 
   function openTaskEditor(taskId) {
     if (!taskId) return;
-    window.location.assign("/projects/tasks/" + encodeURIComponent(taskId));
+    window.location.assign("/projects/tasks/" + encodeURIComponent(taskId) + "?edit=1");
   }
 
   function deleteTreeTask(taskId, title) {

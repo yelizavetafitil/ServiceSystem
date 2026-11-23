@@ -1362,10 +1362,19 @@ a.is-link-disabled {
 .projects-gantt-col-no { display: inline-block; min-width: 1.5em; margin-right: 6px; color: var(--muted); }
 .projects-gantt-side-top { display: flex; align-items: flex-start; gap: 10px; min-width: 0; }
 .projects-gantt-side-text { flex: 1; min-width: 0; }
-.projects-gantt-side-text.is-nested {
-  padding-left: calc(var(--gantt-depth, 1) * 14px);
-  border-left: 2px solid #c7d2fe;
-  margin-left: 2px;
+/* Ступени как в дереве: номер и название сдвигаются вместе, слева направляющая. */
+.projects-gantt-row .projects-gantt-side-top {
+  padding-left: calc(var(--gantt-depth, 0) * 16px);
+}
+.projects-gantt-row[data-depth]:not([data-depth="0"]) .projects-gantt-side-top {
+  background-image: repeating-linear-gradient(
+    to right,
+    #c5d9ea 0 1px,
+    transparent 1px 16px
+  );
+  background-size: calc(var(--gantt-depth, 0) * 16px) 100%;
+  background-repeat: no-repeat;
+  background-position: left top;
 }
 .projects-gantt-title-row {
   display: flex;
@@ -1438,6 +1447,10 @@ a.is-link-disabled {
 .projects-gantt-row.is-gantt-flash .projects-gantt-bar {
   box-shadow: 0 0 0 2px #2563eb;
 }
+/* У строк без кнопки сворачивания тот же отступ, что у родителя с «−», иначе номер подзадачи оказывается левее. */
+.projects-gantt-side-top:not(:has(.projects-gantt-fold)) .projects-gantt-row-no {
+  margin-left: 32px;
+}
 .projects-gantt-row-no {
   flex: 0 0 auto;
   min-width: 28px;
@@ -1456,7 +1469,7 @@ a.is-link-disabled {
   white-space: nowrap;
 }
 .projects-gantt-dep-hint {
-  margin: 6px 0 0 38px;
+  margin: 6px 0 0 calc(var(--gantt-depth, 0) * 16px + 38px);
   font-size: 11px;
   line-height: 1.45;
   color: #92400e;
@@ -1888,6 +1901,39 @@ button.projects-task-checklist-check:hover {
 .projects-calendar-cell.projects-load-high { background: #fee2e2; }
 .projects-calendar-grid--day { grid-template-columns: 1fr; }
 .projects-calendar-grid--week { grid-template-columns: repeat(5, minmax(0, 1fr)); }
+.projects-task-create-top {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  flex-wrap: wrap;
+  margin-bottom: 12px;
+}
+.projects-task-create-top .back-link { margin: 0; }
+.projects-task-create-views {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  padding: 3px;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.72);
+}
+.projects-task-nav-link {
+  display: inline-flex;
+  align-items: center;
+  height: 28px;
+  padding: 0 12px;
+  border-radius: 999px;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--muted);
+  text-decoration: none;
+  background: transparent;
+}
+.projects-task-nav-link:hover {
+  color: var(--primary-dark);
+  background: #fff;
+}
 /* Создание задачи: дерево слева + форма справа */
 .projects-task-create-layout {
   display: grid;

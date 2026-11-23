@@ -1028,12 +1028,18 @@ def manage_edit(pid):
         elif action == "member_add":
             uid = request.form.get("member_user_id", type=int)
             user = db.session.get(User, uid) if uid else None
-            if not user or not user.is_active or user.role != "executor":
-                flash("Выберите активного исполнителя.", "warning")
+            if not user or not user.is_active or user.role not in ("executor", "auditor"):
+                flash("Выберите активного исполнителя или ГИП.", "warning")
             elif ProjectMember.query.filter_by(project_id=proj.id, user_id=user.id).first():
                 flash(f"{user.full_name} уже в команде.", "info")
             else:
-                db.session.add(ProjectMember(project_id=proj.id, user_id=user.id, role="executor"))
+                db.session.add(
+                    ProjectMember(
+                        project_id=proj.id,
+                        user_id=user.id,
+                        role="auditor" if user.role == "auditor" else "executor",
+                    )
+                )
                 db.session.commit()
                 flash(f"{user.full_name} добавлен в команду.", "success")
         elif action == "member_remove":
@@ -1112,10 +1118,12 @@ def manage_edit(pid):
     )
     member_ids = {m.user_id for m in members}
     team_users = [
-        m.user for m in members if m.user and m.user.is_active and m.user.role == "executor"
+        m.user
+        for m in members
+        if m.user and m.user.is_active and m.user.role in ("executor", "auditor")
     ]
     team_candidates = [
-        u for u in staff if u.role == "executor" and u.id not in member_ids
+        u for u in staff if u.role in ("executor", "auditor") and u.id not in member_ids
     ]
     return render_template(
         "projects/project_edit.html",
@@ -1193,7 +1201,11 @@ def task_new():
         stages_by_project[p.id] = _project_stages_payload(p)
         tasks_by_project[p.id] = _project_task_tree_payload(p.id)
         executors_by_project[p.id] = [
-            {"id": u.id, "name": u.full_name} for u in executors_for_project(p.id)
+            {
+                "id": u.id,
+                "name": u.full_name + (" — ГИП" if u.is_auditor else ""),
+            }
+            for u in executors_for_project(p.id)
         ]
     if parent_task and parent_task.project_id not in stages_by_project:
         stages_by_project[parent_task.project_id] = (
@@ -1207,7 +1219,10 @@ def task_new():
         )
     if parent_task and parent_task.project_id not in executors_by_project:
         executors_by_project[parent_task.project_id] = [
-            {"id": u.id, "name": u.full_name}
+            {
+                "id": u.id,
+                "name": u.full_name + (" — ГИП" if u.is_auditor else ""),
+            }
             for u in executors_for_project(parent_task.project_id)
         ]
     if request.method == "POST":
@@ -1325,6 +1340,31 @@ def task_new():
                     sync_calendar_events_for_task(t)
                     created.append(t)
                     stack.append((depth, t))
+                # «Выполнить после» на форме — связь первой строки списка (задача, не её подзадачи).
+                pred_id = request.form.get("predecessor_task_id", type=int) or None
+                if pred_id and created:
+                    anchor = created[0]
+                    pred = db.session.get(ProjectTask, pred_id)
+                    if pred and pred.project_id == project_id and pred.id != anchor.id:
+                        if tasks_hierarchically_related(pred, anchor):
+                            flash(
+                                "Нельзя связать родительскую задачу с её подзадачей "
+                                "(родитель = совокупность подзадач).",
+                                "warning",
+                            )
+                        else:
+                            bound_msg = fs_link_parent_window_violation(pred, anchor)
+                            if bound_msg:
+                                flash(bound_msg, "warning")
+                            else:
+                                db.session.add(
+                                    ProjectTaskLink(
+                                        from_task_id=pred.id,
+                                        to_task_id=anchor.id,
+                                        link_type="blocks",
+                                    )
+                                )
+                                apply_fs_cascade_and_expand(anchor)
                 from servicesystem.services.inapp_notify import notify_task_assignee
 
                 for t in created:
@@ -1337,11 +1377,18 @@ def task_new():
                 flash("Не удалось создать список задач.", "danger")
                 return _back_new()
             flash(f"Создано задач: {len(created)}.", "success")
-            if arm_next and project_id:
-                return redirect(url_for("projects.arm", view=arm_next, project=project_id))
-            if created:
-                return redirect(url_for("projects.task_detail", tid=created[0].id))
-            return _back_new()
+            # Пакет остаётся в дереве структуры, а не в карточке первой созданной задачи.
+            tree_parent = parent_task.id if parent_task else None
+            if tree_parent is None and created and created[0].parent_id:
+                tree_parent = created[0].parent_id
+            tree_q = {"project": project_id}
+            if tree_parent:
+                tree_q["parent"] = tree_parent
+            if stage_id:
+                tree_q["stage"] = stage_id
+            if arm_next:
+                tree_q["arm_view"] = arm_next
+            return redirect(url_for("projects.task_new", **tree_q))
 
         # --- одна задача ---
         title = (request.form.get("title") or "").strip()
@@ -1470,16 +1517,16 @@ def task_new():
                 f"Подзадача к «{parent_task.title}» создана.",
                 "success",
             )
-        else:
-            flash("Задача создана.", "success")
-        detail_q = {"tid": task.id}
+            tree_q = {"project": project_id, "parent": parent_task.id}
+            if stage_id:
+                tree_q["stage"] = stage_id
+            if arm_next:
+                tree_q["arm_view"] = arm_next
+            return redirect(url_for("projects.task_new", **tree_q))
+        flash("Задача создана.", "success")
+        detail_q = {"tid": task.id, "offer_child": 1}
         if arm_next:
             detail_q["arm_view"] = arm_next
-        if parent_task:
-            detail_q["offer_sibling"] = 1
-        else:
-            # Предложить сразу добавить подзадачу к новой задаче
-            detail_q["offer_child"] = 1
         return redirect(url_for("projects.task_detail", **detail_q))
     proj_for_form = (
         parent_task.project

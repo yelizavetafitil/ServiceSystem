@@ -107,11 +107,11 @@
 
       <div class="card projects-cms-card" id="project-team">
         <h2 class="projects-cms-section-title">Команда</h2>
-        <p class="muted">Исполнители рабочей группы. Их можно назначить на задачи этого проекта.</p>
+        <p class="muted">Исполнители и ГИП рабочей группы. Их можно назначить на задачи этого проекта, в том числе самого себя.</p>
         <ul class="projects-cms-list">
           {% for m in members %}
           <li class="projects-team-row">
-            <span>{{ m.user.full_name }}{% if m.user.position %} <span class="muted">· {{ m.user.position }}</span>{% endif %}</span>
+            <span>{{ m.user.full_name }}{% if m.user.is_auditor %} <span class="muted">· ГИП</span>{% elif m.user.position %} <span class="muted">· {{ m.user.position }}</span>{% endif %}</span>
             <form method="post" class="inline-form"
                   data-confirm="Убрать {{ m.user.full_name }} из команды проекта?"
                   data-confirm-title="Участник команды"
@@ -137,7 +137,7 @@
               <select name="member_user_id" class="form-control" required>
                 <option value="">— выберите —</option>
                 {% for u in team_candidates %}
-                <option value="{{ u.id }}">{{ u.full_name }}{% if u.position %} — {{ u.position }}{% endif %}</option>
+                <option value="{{ u.id }}">{{ u.full_name }}{% if u.is_auditor %} — ГИП{% elif u.position %} — {{ u.position }}{% endif %}</option>
                 {% endfor %}
               </select>
             </div>
@@ -148,7 +148,7 @@
           </div>
         </form>
         {% else %}
-        <p class="muted">Все активные исполнители уже в команде.</p>
+        <p class="muted">Все активные исполнители и ГИП уже в команде.</p>
         {% endif %}
       </div>
 

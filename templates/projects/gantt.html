@@ -7,9 +7,9 @@
 
 {% block head %}
 
-<link rel="stylesheet" href="{{ url_for('static', filename='css/projects.css') }}?v=168">
+<link rel="stylesheet" href="{{ url_for('static', filename='css/projects.css') }}?v=173">
 
-<script defer src="{{ url_for('static', filename='js/projects-gantt.js') }}?v=76"></script>
+<script defer src="{{ url_for('static', filename='js/projects-gantt.js') }}?v=77"></script>
 
 {% endblock %}
 
@@ -186,7 +186,7 @@
 
         {% set t = grow.task %}
 
-        <div class="projects-gantt-row{% if gantt_can_edit %} is-reorderable{% endif %}" id="gantt-row-{{ grow.display_no }}" data-task-id="{{ t.id }}" data-parent-id="{{ t.parent_id or '' }}" data-depth="{{ grow.depth|default(0) }}" data-wbs="{{ grow.wbs|default(grow.display_no) }}">
+        <div class="projects-gantt-row{% if gantt_can_edit %} is-reorderable{% endif %}" id="gantt-row-{{ grow.display_no }}" data-task-id="{{ t.id }}" data-parent-id="{{ t.parent_id or '' }}" data-depth="{{ grow.depth|default(0) }}" data-wbs="{{ grow.wbs|default(grow.display_no) }}" style="--gantt-depth: {{ grow.depth|default(0) }}">
 
           <div class="projects-gantt-side">
 
@@ -333,7 +333,7 @@
         </div>
         {% for grow in gantt_undated %}
         {% set t = grow.task %}
-        <div class="projects-gantt-row projects-gantt-row--undated{% if gantt_can_edit %} is-reorderable{% endif %}" id="gantt-row-{{ grow.display_no }}" data-task-id="{{ t.id }}" data-parent-id="{{ t.parent_id or '' }}" data-depth="{{ grow.depth|default(0) }}" data-wbs="{{ grow.wbs|default(grow.display_no) }}">
+        <div class="projects-gantt-row projects-gantt-row--undated{% if gantt_can_edit %} is-reorderable{% endif %}" id="gantt-row-{{ grow.display_no }}" data-task-id="{{ t.id }}" data-parent-id="{{ t.parent_id or '' }}" data-depth="{{ grow.depth|default(0) }}" data-wbs="{{ grow.wbs|default(grow.display_no) }}" style="--gantt-depth: {{ grow.depth|default(0) }}">
           <div class="projects-gantt-side">
             <div class="projects-gantt-side-top" style="--gantt-depth: {{ grow.depth|default(0) }}">
               {% if gantt_can_edit %}

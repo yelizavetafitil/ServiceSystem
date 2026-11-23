@@ -1473,7 +1473,7 @@ def executors_for_project(project_id: int | None) -> list[User]:
     return (
         User.query.filter(
             User.id.in_(member_ids),
-            User.role == "executor",
+            User.role.in_(("executor", "auditor")),
             User.is_active.is_(True),
         )
         .order_by(User.full_name)

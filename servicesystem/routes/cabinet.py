@@ -399,12 +399,20 @@ def video_detail(slug):
     log_audit(current_user.id, "view", "video", v.id)
     db.session.commit()
     is_local_stream = bool(v.video_file) or (v.video_url or "").startswith("/cabinet/media/")
+    video_mime = None
+    if is_local_stream and v.video_file:
+        from servicesystem.services.video_faststart import video_content_type
+
+        stored = get_storage().read_path(f"videos/{v.video_file}")
+        if get_storage().exists(f"videos/{v.video_file}"):
+            video_mime = video_content_type(stored, v.video_file)
     return render_template(
         "cabinet/video_detail.html",
         video=v,
         chapters=chapters,
         chapters_json=chapters_json,
         is_local_stream=is_local_stream,
+        video_mime=video_mime,
     )
 
 
@@ -413,13 +421,30 @@ def video_detail(slug):
 @contract_access_required
 def stream_video(filename):
     """Stream uploaded video without download (TZ 3.2.2)."""
+    from servicesystem.services.video_faststart import make_faststart, video_content_type
+
     storage = get_storage()
     rel = f"videos/{filename}"
     if not storage.exists(rel):
         abort(404)
-    response = send_file(storage.read_path(rel), mimetype="video/mp4", as_attachment=False)
+    path = storage.read_path(rel)
+    try:
+        make_faststart(path)
+    except Exception:
+        from flask import current_app
+
+        current_app.logger.exception("video faststart failed: %s", filename)
+    mime = video_content_type(path, filename)
+    response = send_file(
+        path,
+        mimetype=mime,
+        as_attachment=False,
+        conditional=True,
+        max_age=3600,
+    )
     response.headers["Content-Disposition"] = "inline"
-    response.headers["Cache-Control"] = "no-store"
+    response.headers["Accept-Ranges"] = "bytes"
+    response.headers["Cache-Control"] = "private, max-age=3600"
     return response
 
 

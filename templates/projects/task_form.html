@@ -3,12 +3,13 @@
 {% block title %}{% if parent_task %}Подзадача{% else %}Новая задача{% endif %}{% endblock %}
 {% block body_class %}{% if request.args.get('popup') == '1' %} projects-task-popup{% endif %}{% endblock %}
 {% block head %}
-<link rel="stylesheet" href="{{ url_for('static', filename='css/projects.css') }}?v=155">
+<link rel="stylesheet" href="{{ url_for('static', filename='css/projects.css') }}?v=174">
 <script src="{{ url_for('static', filename='js/task-date-duration.js') }}?v=1"></script>
-<script src="{{ url_for('static', filename='js/task-project-tree-nav.js') }}?v=12"></script>
+<script src="{{ url_for('static', filename='js/task-project-tree-nav.js') }}?v=14"></script>
 {% endblock %}
 {% block content %}
 <div class="container cms-page projects-cms projects-task-create">
+  <div class="projects-task-create-top">
   {% if arm_back_url %}
   <a href="{{ arm_back_url }}" class="back-link">← К модулю проектов</a>
   {% elif parent_task %}
@@ -18,6 +19,14 @@
   {% else %}
   <a href="{{ url_for('projects.arm') }}" class="back-link">← К модулю проектов</a>
   {% endif %}
+  {% set nav_project = preset_project_id or (parent_task.project_id if parent_task else none) %}
+  <nav class="projects-task-create-views" aria-label="Переход к доскам проекта">
+    {% if current_user.is_admin or current_user.is_auditor %}
+    <a id="task-nav-gantt" class="projects-task-nav-link" href="{{ url_for('projects.arm', view='gantt', project=nav_project) }}">Гант</a>
+    {% endif %}
+    <a id="task-nav-kanban" class="projects-task-nav-link" href="{{ url_for('projects.arm', view='kanban', project=nav_project) }}">Канбан</a>
+  </nav>
+  </div>
 
   <div class="projects-task-create-layout{% if not (current_user.is_admin or current_user.is_auditor) %} projects-task-create-layout--solo{% endif %}">
     {% if current_user.is_admin or current_user.is_auditor %}
@@ -25,6 +34,7 @@
       <h2 class="projects-task-tree-heading">Структура проекта</h2>
       <div id="task-project-tree" class="projects-task-tree"
            data-parent-id="{{ parent_task.id if parent_task else '' }}"
+           data-parent-title="{{ parent_task.title if parent_task else '' }}"
            data-arm-view="{{ arm_view or '' }}"
            data-date-min="{{ parent_window_start.isoformat() if parent_window_start else '' }}"
            data-date-max="{{ parent_window_due.isoformat() if parent_window_due else '' }}"
@@ -78,7 +88,11 @@
             <div class="projects-task-batch-head">
               <div class="projects-task-batch-head-text">
                 <h2 class="projects-task-batch-title">Список задач</h2>
+                {% if parent_task %}
+                <p class="muted projects-cms-hint">Каждая строка — подзадача «{{ parent_task.title }}». Без стрелки строки равнозначные. → вкладывает строку в предыдущую, ← возвращает на тот же уровень.</p>
+                {% else %}
                 <p class="muted projects-cms-hint">Несколько строк сразу. Со второй строки ← / → — уровень (вложить / поднять). В строке — начало, дней и дедлайн.</p>
+                {% endif %}
               </div>
               <button type="button" class="btn btn-outline btn-sm" id="task-mode-to-single" title="Вернуться к одной задаче">← Одна задача</button>
             </div>
@@ -124,7 +138,7 @@
           <div class="form-group"><label for="task-assignee-id">Исполнитель (ответственный)</label>
             <select name="assignee_id" id="task-assignee-id" class="form-control">
               <option value="">—</option>
-              {% for u in executors %}<option value="{{ u.id }}">{{ u.full_name }}</option>{% endfor %}
+              {% for u in executors %}<option value="{{ u.id }}">{{ u.full_name }}{% if u.is_auditor %} — ГИП{% endif %}</option>{% endfor %}
             </select>
           </div>
         </div>
@@ -133,7 +147,7 @@
           <div class="projects-task-collab-add">
             <select id="task-collaborator-pick" class="form-control">
               <option value="">— выбрать —</option>
-              {% for u in executors %}<option value="{{ u.id }}">{{ u.full_name }}</option>{% endfor %}
+              {% for u in executors %}<option value="{{ u.id }}">{{ u.full_name }}{% if u.is_auditor %} — ГИП{% endif %}</option>{% endfor %}
             </select>
             <button type="button" class="btn btn-outline btn-sm" id="task-collaborator-add">Добавить</button>
           </div>
@@ -292,6 +306,7 @@
   try { if (namesEl) namesMap = JSON.parse(namesEl.textContent || "{}"); } catch (e) { namesMap = {}; }
 
   var highlightParentId = treeEl ? (treeEl.getAttribute("data-parent-id") || "") : "";
+  var highlightParentTitle = treeEl ? (treeEl.getAttribute("data-parent-title") || "") : "";
   var armView = treeEl ? (treeEl.getAttribute("data-arm-view") || "") : "";
   var dateMin = treeEl ? (treeEl.getAttribute("data-date-min") || "") : "";
   var dateMax = treeEl ? (treeEl.getAttribute("data-date-max") || "") : "";
@@ -625,6 +640,24 @@
         ? sel.options[sel.selectedIndex].text.replace(/\s*\(шаблон\)\s*$/, "")
         : "Проект");
     var pdates = (pmeta && pmeta.dates_label) || "";
+    var draftFallback = highlightParentId ? "Новая подзадача…" : "Новые задачи…";
+    var isBatch = createPanels && createPanels.getAttribute("data-create-mode") === "batch";
+    var draftRows = [];
+    if (isBatch && batchRows && batchRows.children.length) {
+      Array.prototype.forEach.call(batchRows.children, function (row) {
+        var titleEl = row.querySelector('[name="batch_title"]');
+        var title = titleEl && titleEl.value.trim();
+        draftRows.push({
+          title: title || draftFallback,
+          depth: parseInt(row.getAttribute("data-depth") || "0", 10) || 0,
+        });
+      });
+    } else {
+      draftRows.push({
+        title: (titleInput && titleInput.value.trim()) || draftFallback,
+        depth: 0,
+      });
+    }
     window.renderProjectTree(treeEl, {
       mode: "create",
       projectId: pid,
@@ -633,7 +666,8 @@
       draggable: true,
       stageId: stageSel.value || "",
       highlightParentId: highlightParentId || "",
-      draftLabel: (titleInput && titleInput.value.trim()) || "Новые задачи…",
+      draftRows: draftRows,
+      draftLabel: draftRows[0].title,
       stages: stages,
       tasks: tasks,
       projectName: pname,
@@ -663,7 +697,17 @@
     var hidden = row.querySelector('[name="batch_depth"]');
     if (hidden) hidden.value = String(depth);
     var label = row.querySelector("[data-depth-label]");
-    if (label) label.textContent = depth ? ("↳".repeat(Math.min(depth, 4)) + " " + depth) : "•";
+    if (label) {
+      if (!depth) {
+        label.textContent = "•";
+        label.title = highlightParentTitle
+          ? "Равнозначная подзадача «" + highlightParentTitle + "»"
+          : "Задача верхнего уровня";
+      } else {
+        label.textContent = "↳".repeat(Math.min(depth, 4)) + " " + depth;
+        label.title = "Подчинённая строке выше";
+      }
+    }
     var showLevel = !!row.previousElementSibling;
     row.classList.toggle("is-root-row", !showLevel);
     var indentBtn = row.querySelector("[data-batch-indent]");
@@ -688,7 +732,7 @@
       '<button type="button" class="btn btn-outline btn-icon-xs" data-batch-indent title="Уровень ниже (вправо)" aria-label="Уровень ниже">→</button>' +
       '<span class="projects-task-batch-depth" data-depth-label>•</span>' +
       '<input type="hidden" name="batch_depth" value="0">' +
-      '<input type="text" name="batch_title" class="form-control projects-task-batch-title-input" placeholder="Название задачи" value="' + esc(opts.title || "") + '">' +
+      '<input type="text" name="batch_title" class="form-control projects-task-batch-title-input" placeholder="' + (highlightParentId ? "Название подзадачи" : "Название задачи") + '" value="' + esc(opts.title || "") + '">' +
       '<input type="date" name="batch_start" class="form-control projects-task-batch-date" title="Начало" aria-label="Начало"' + minAttr + maxAttr + ' value="' + esc(startVal) + '">' +
       '<input type="number" name="batch_duration" class="form-control projects-task-batch-duration" min="1" max="9999" step="1" inputmode="numeric" placeholder="дн." title="Дней" value="' + esc(durVal) + '" aria-label="Дней">' +
       '<input type="date" name="batch_due" class="form-control projects-task-batch-date" title="Дедлайн" aria-label="Дедлайн"' + minAttr + maxAttr + ' value="' + esc(dueVal) + '">' +
@@ -710,7 +754,11 @@
       });
     }
     var titleInp = row.querySelector('[name="batch_title"]');
-    if (titleInp && !opts.title) titleInp.focus();
+    if (titleInp) {
+      titleInp.addEventListener("input", renderTree);
+      if (!opts.title) titleInp.focus();
+    }
+    renderTree();
   }
 
   function reflowBatchDepths() {
@@ -732,6 +780,7 @@
     } else if (titleInput) {
       titleInput.focus();
     }
+    renderTree();
   }
 
   if (modeToBatch) {
@@ -755,6 +804,7 @@
         }
         row.remove();
         reflowBatchDepths();
+        renderTree();
         return;
       }
       if (e.target.closest("[data-batch-indent]")) {
@@ -762,6 +812,7 @@
         var d = parseInt(row.getAttribute("data-depth") || "0", 10) || 0;
         row.setAttribute("data-depth", String(Math.min(8, d + 1)));
         syncRowDepth(row);
+        renderTree();
         return;
       }
       if (e.target.closest("[data-batch-outdent]")) {
@@ -769,6 +820,7 @@
         var d2 = parseInt(row.getAttribute("data-depth") || "0", 10) || 0;
         row.setAttribute("data-depth", String(Math.max(0, d2 - 1)));
         syncRowDepth(row);
+        renderTree();
       }
     });
     batchRows.addEventListener("keydown", function (e) {
@@ -798,11 +850,25 @@
     });
   }
 
+  function updateBoardNav() {
+    var pid = projectId();
+    var gantt = document.getElementById("task-nav-gantt");
+    var kanban = document.getElementById("task-nav-kanban");
+    function href(view) {
+      var url = "/projects/arm?view=" + encodeURIComponent(view);
+      if (pid) url += "&project=" + encodeURIComponent(pid);
+      return url;
+    }
+    if (gantt) gantt.href = href("gantt");
+    if (kanban) kanban.href = href("kanban");
+  }
+
   function fill() {
     fillStages();
     fillPredecessors();
     fillAssignees();
     renderTree();
+    updateBoardNav();
   }
 
   if (sel.tagName === "SELECT") {

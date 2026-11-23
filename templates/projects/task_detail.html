@@ -7,30 +7,35 @@
 {% block body_class %}{% endblock %}
 
 {% block head %}
+{% set can_plan_user = can_plan_task if can_plan_task is defined else (current_user.is_admin or current_user.is_auditor) %}
+{% set task_editing = can_plan_user and request.args.get('edit') == '1' %}
 <link rel="stylesheet" href="{{ url_for('static', filename='css/projects.css') }}?v=163">
 <script src="{{ url_for('static', filename='js/task-date-duration.js') }}?v=1"></script>
-{% if can_plan_task is defined and can_plan_task %}
-<script src="{{ url_for('static', filename='js/task-project-tree-nav.js') }}?v=12"></script>
-{% elif can_plan_task is not defined and (current_user.is_admin or current_user.is_auditor) %}
-<script src="{{ url_for('static', filename='js/task-project-tree-nav.js') }}?v=12"></script>
+{% if task_editing %}
+<script src="{{ url_for('static', filename='js/task-project-tree-nav.js') }}?v=13"></script>
 {% endif %}
 {% endblock %}
 
 {% block content %}
+{% set can_plan_user = can_plan_task if can_plan_task is defined else (current_user.is_admin or current_user.is_auditor) %}
+{% set task_editing = can_plan_user and request.args.get('edit') == '1' %}
 
 <div class="container container-wide cms-page">
 
-  {% set can_plan_user = can_plan_task if can_plan_task is defined else (current_user.is_admin or current_user.is_auditor) %}
-  {# Редактирование плана — на этой же странице, без всплывающего окна. #}
-  {% set can_plan = can_plan_user %}
-  {% set can_review = can_plan_user %}
+  {# Просмотр — без правки. Карандаш (?edit=1) включает поля и дерево. #}
+  {% set can_plan = task_editing %}
+  {% set can_review = task_editing %}
+  {% set show_task_tree = task_editing and task.project_id %}
 
   <div class="projects-task-topbar">
     <a href="{{ back_url or arm_back_url or url_for('projects.arm') }}" class="back-link">← Назад</a>
+    {% if can_plan_user and not task_editing %}
+    <a href="{{ url_for('projects.task_detail', tid=task.id, edit=1) }}" class="btn btn-outline btn-sm" title="Редактировать">Редактировать</a>
+    {% endif %}
   </div>
 
-  <div class="projects-task-detail-layout{% if not current_user.is_admin %} projects-task-detail-layout--solo{% endif %}">
-    {% if current_user.is_admin and task.project_id %}
+  <div class="projects-task-detail-layout{% if not show_task_tree %} projects-task-detail-layout--solo{% endif %}">
+    {% if show_task_tree %}
     <aside class="card projects-cms-card projects-task-tree-panel" aria-label="Структура проекта">
       <h2 class="projects-task-tree-heading">Структура проекта</h2>
       <div id="task-project-tree-nav" class="projects-task-tree"
@@ -57,7 +62,7 @@
       {{ csrf_field() }}
       {% if can_plan %}<input type="hidden" name="plan_form" value="1">{% endif %}
 
-      <input name="title" class="projects-task-title-input{% if task.priority >= 4 %} is-urgent{% endif %}" required value="{{ task.title }}" placeholder="Название задачи" aria-label="Название">
+      <input name="title" class="projects-task-title-input{% if task.priority >= 4 %} is-urgent{% endif %}" required value="{{ task.title }}" placeholder="Название задачи" aria-label="Название"{% if can_plan_user and not task_editing %} readonly{% endif %}>
 
       <div class="projects-task-desc">
         <label for="task-edit-description" class="projects-task-desc-label">Описание</label>
@@ -99,7 +104,7 @@
           {% if can_plan %}
           <select name="assignee_id" id="task-edit-assignee" class="form-control form-control--compact">
             <option value="">—</option>
-            {% for u in executors %}<option value="{{ u.id }}" {% if task.assignee_id == u.id %}selected{% endif %}>{{ u.full_name }}</option>{% endfor %}
+            {% for u in executors %}<option value="{{ u.id }}" {% if task.assignee_id == u.id %}selected{% endif %}>{{ u.full_name }}{% if u.is_auditor %} — ГИП{% endif %}</option>{% endfor %}
           </select>
           {% else %}
           <span class="projects-task-meta-value">{% if task.assignee %}{{ task.assignee.full_name }}{% else %}—{% endif %}</span>
@@ -213,11 +218,11 @@
 
       <div class="projects-task-desc" id="task-report">
         <label for="task-completion-report" class="projects-task-desc-label">Отчёт о выполнении задачи</label>
-        <textarea name="completion_report" id="task-completion-report" class="form-control projects-task-desc-input{% if request.args.get('highlight')=='report' %} is-invalid{% endif %}" rows="2" placeholder="Что сделано / причина отклонения…">{{ task.completion_report or '' }}</textarea>
+        <textarea name="completion_report" id="task-completion-report" class="form-control projects-task-desc-input{% if request.args.get('highlight')=='report' %} is-invalid{% endif %}" rows="2" placeholder="Что сделано / причина отклонения…"{% if can_plan_user and not task_editing %} readonly{% endif %}>{{ task.completion_report or '' }}</textarea>
       </div>
 
       {# Под отчётом: все действия в одной сетке без наложений #}
-      <div class="projects-task-actions-bar">
+      <div class="projects-task-actions-bar"{% if can_plan_user and not task_editing %} hidden{% endif %}>
         <div class="projects-task-actions-bar__primary">
           <button type="submit" class="btn btn-primary btn-sm" name="action" value="save">Сохранить</button>
 
@@ -323,7 +328,7 @@
         {% for s in subtasks %}
         <li class="projects-task-subtask-row">
           {{ project_task_link(s) }}
-          {% if can_plan_user %}
+          {% if task_editing %}
           <form method="post" action="{{ url_for('projects.task_update', tid=s.id) }}" class="projects-task-subtask-delete"
                 data-confirm="Удалить подзадачу «{{ s.title }}»?"
                 data-confirm-title="Удаление подзадачи"
