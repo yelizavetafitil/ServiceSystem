@@ -425,6 +425,32 @@ def _fs_predecessor_tasks(task: ProjectTask) -> list[ProjectTask]:
     return preds
 
 
+def fs_followers_board_state(task: ProjectTask) -> list[dict]:
+    """Последователи и их подзадачи после смены статуса: можно ли снять «В ожидании».
+
+    Канбан рисует колонку на сервере. Без этого списка карточки остаются
+    заблокированными, пока страницу не перезагрузят.
+    """
+    queue = list(_fs_successor_tasks(task))
+    seen: set[int] = set()
+    out: list[dict] = []
+    while queue:
+        cur = queue.pop(0)
+        if not cur or cur.id in seen:
+            continue
+        seen.add(cur.id)
+        if cur.kanban_status in ("todo", "in_progress"):
+            out.append(
+                {
+                    "id": cur.id,
+                    "status": cur.kanban_status,
+                    "blocked": task_is_completion_blocked(cur),
+                }
+            )
+        queue.extend(ProjectTask.query.filter_by(parent_id=cur.id).all())
+    return out
+
+
 def _fs_successor_tasks(task: ProjectTask) -> list[ProjectTask]:
     succs: list[ProjectTask] = []
     for link in ProjectTaskLink.query.filter_by(from_task_id=task.id, link_type="blocks"):

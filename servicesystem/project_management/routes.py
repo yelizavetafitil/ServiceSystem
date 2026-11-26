@@ -35,6 +35,7 @@ from servicesystem.project_management.services import (
     gantt_sort_key,
     kanban_sort_key,
     apply_kanban_move,
+    fs_followers_board_state,
     build_task_blockers_map,
     build_tasks_wbs_map,
     move_task_kanban,
@@ -1008,8 +1009,10 @@ def manage_edit(pid):
             sid = request.form.get("stage_id", type=int)
             st = db.session.get(ProjectStage, sid) if sid else None
             if st and st.project_id == proj.id:
+                already_released = bool(st.released_at)
                 st.release_notes = (request.form.get("release_notes") or "").strip() or None
-                st.released_at = datetime.now(timezone.utc)
+                if not already_released:
+                    st.released_at = datetime.now(timezone.utc)
                 for f in request.files.getlist("stage_files"):
                     if f and f.filename:
                         try:
@@ -1017,14 +1020,17 @@ def manage_edit(pid):
                             db.session.add(att)
                         except ValueError:
                             flash("Файл этапа превышает 100 Мб.", "danger")
-                if proj.customer_curator and proj.customer_curator.email:
+                if not already_released and proj.customer_curator and proj.customer_curator.email:
                     send_email(
                         proj.customer_curator.email,
                         f"Выпуск этапа: {st.title}",
                         st.release_notes or f"Этап «{st.title}» проекта {proj.name} выпущен.",
                     )
                 db.session.commit()
-                flash("Этап выпущен, материалы направлены куратору-заказчику.", "success")
+                if already_released:
+                    flash("Отчёт для заказчика обновлён.", "success")
+                else:
+                    flash("Этап выпущен, материалы направлены куратору-заказчику.", "success")
         elif action == "member_add":
             uid = request.form.get("member_user_id", type=int)
             user = db.session.get(User, uid) if uid else None
@@ -2083,8 +2089,9 @@ def api_move_task(tid):
         if code == "forbidden":
             return jsonify({"error": "forbidden"}), 403
         return jsonify({"error": "bad status"}), 400
+    followers = fs_followers_board_state(task)
     db.session.commit()
-    return jsonify({"ok": True, "status": task.kanban_status})
+    return jsonify({"ok": True, "status": task.kanban_status, "followers": followers})
 
 
 @bp.route("/archive")

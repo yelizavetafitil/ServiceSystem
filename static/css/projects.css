@@ -1890,6 +1890,25 @@ button.projects-task-checklist-check:hover {
   flex-wrap: wrap;
 }
 .projects-task-subtask-delete { margin: 0; }
+.projects-subtask-delete {
+  display: inline-flex;
+  align-items: center;
+  height: 22px;
+  padding: 0 6px;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--muted);
+  font-family: inherit;
+  font-size: 12px;
+  font-weight: 600;
+  line-height: 1;
+  cursor: pointer;
+}
+.projects-subtask-delete:hover {
+  color: #b91c1c;
+  background: #fef2f2;
+}
 .projects-task-tabs { display: flex; flex-wrap: wrap; gap: 6px; margin: 12px 0; }
 .projects-file-list { list-style: none; margin: 8px 0 0; padding: 0; }
 .projects-file-list > li.projects-file-item { list-style: none; }
@@ -3076,6 +3095,13 @@ body.projects-task-editor-open {
   margin-bottom: 12px;
 }
 .projects-task-topbar .back-link { margin-bottom: 0; }
+.projects-task-topbar-nav {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  flex-wrap: wrap;
+  min-width: 0;
+}
 .projects-task-topbar-new { white-space: nowrap; }
 .projects-cms .back-link { display: inline-block; margin-bottom: 16px; }
 .projects-cms-card { margin-bottom: 20px; }

@@ -553,7 +553,9 @@ def task_update(tid):
     try_push_task_to_caldav(task)
     flash("Сохранено.", "success")
     if plan_form:
-        return redirect(url_for("projects.task_detail", tid=tid, edit=1))
+        from servicesystem.project_management.routes import task_return_url
+
+        return redirect(task_return_url(task))
     return redirect(url_for("projects.task_detail", tid=tid))
 
 

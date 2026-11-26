@@ -175,7 +175,6 @@
               </form>
             </div>
           </div>
-          {% if s.release_notes %}<p class="projects-stage-notes">{{ s.release_notes }}</p>{% endif %}
           {% if s.attachments.count() %}
           <ul class="projects-stage-files">
             {% for a in s.attachments %}
@@ -232,24 +231,26 @@
             </div>
             <p class="muted projects-stage-save-status" data-stage-save-status hidden></p>
           </form>
-          {% if not s.released_at %}
           <form method="post" enctype="multipart/form-data" class="projects-stage-release">
             {{ csrf_field() }}
             <input type="hidden" name="action" value="stage_release">
             <input type="hidden" name="stage_id" value="{{ s.id }}">
             <div class="form-group">
               <label>Отчётная информация для заказчика</label>
-              <textarea name="release_notes" class="form-control" rows="3" placeholder="Акты, накладные, комментарии…"></textarea>
+              <textarea name="release_notes" class="form-control" rows="3" placeholder="Акты, накладные, комментарии…">{{ s.release_notes or '' }}</textarea>
             </div>
             <div class="form-group projects-stage-file-row">
               <label>Файлы (до 100 Мб)</label>
               <input type="file" name="stage_files" class="form-control" multiple>
             </div>
             <div class="form-actions">
+              {% if s.released_at %}
+              <button type="submit" class="btn btn-outline btn-sm">Сохранить отчёт</button>
+              {% else %}
               <button type="submit" class="btn btn-outline btn-sm">Выпустить этап</button>
+              {% endif %}
             </div>
           </form>
-          {% endif %}
         </div>
         {% else %}
         <p class="muted">Этапов пока нет — добавьте ниже.</p>

@@ -62,7 +62,34 @@
     return Promise.resolve(window.confirm(message));
   }
 
-  root.querySelectorAll("[data-task-id][draggable='true']").forEach((card) => {
+  function canDragInColumn(card, col) {
+    const own = isOwnCard(card);
+    if (col === "waiting") return false;
+    if (role === "admin") return true;
+    if (role === "auditor") {
+      if (own) return col !== "rejected" && col !== "archived";
+      return col === "review" || col === "done" || col === "rejected" || col === "archived";
+    }
+    return col !== "done" && col !== "rejected" && col !== "archived";
+  }
+
+  function placeFollower(card, item) {
+    const col = item.blocked ? "waiting" : item.status;
+    const zone = root.querySelector('.projects-kanban-drop[data-kanban-status="' + col + '"]');
+    if (!zone || !card) return;
+    zone.prepend(card);
+    card.dataset.boardColumn = col;
+    if (item.status) card.dataset.kanbanStatus = item.status;
+    const drag = canDragInColumn(card, col);
+    card.classList.toggle("projects-kanban-card--locked", !drag);
+    if (drag) card.setAttribute("draggable", "true");
+    else card.removeAttribute("draggable");
+    if (!item.blocked) {
+      card.querySelectorAll(".projects-kanban-blocker-tag").forEach((tag) => tag.remove());
+    }
+  }
+
+  root.querySelectorAll("[data-task-id]").forEach((card) => {
     card.addEventListener("dragstart", (e) => {
       if (e.target.closest && e.target.closest(".projects-kanban-edit")) {
         e.preventDefault();
@@ -256,6 +283,10 @@
         const nextStatus = data.status || status;
         card.dataset.kanbanStatus = nextStatus;
         card.dataset.boardColumn = nextStatus;
+        (data.followers || []).forEach((item) => {
+          const follower = root.querySelector('.projects-kanban-card[data-task-id="' + item.id + '"]');
+          if (follower && follower !== card) placeFollower(follower, item);
+        });
       } catch (_) {
         restoreCard();
         await uiAlert("Ошибка сети при перемещении.");

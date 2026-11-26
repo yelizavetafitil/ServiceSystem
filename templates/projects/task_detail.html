@@ -9,7 +9,7 @@
 {% block head %}
 {% set can_plan_user = can_plan_task if can_plan_task is defined else (current_user.is_admin or current_user.is_auditor) %}
 {% set task_editing = can_plan_user and request.args.get('edit') == '1' %}
-<link rel="stylesheet" href="{{ url_for('static', filename='css/projects.css') }}?v=163">
+<link rel="stylesheet" href="{{ url_for('static', filename='css/projects.css') }}?v=176">
 <script src="{{ url_for('static', filename='js/task-date-duration.js') }}?v=1"></script>
 {% if task_editing %}
 <script src="{{ url_for('static', filename='js/task-project-tree-nav.js') }}?v=13"></script>
@@ -28,7 +28,17 @@
   {% set show_task_tree = task_editing and task.project_id %}
 
   <div class="projects-task-topbar">
-    <a href="{{ back_url or arm_back_url or url_for('projects.arm') }}" class="back-link">← Назад</a>
+    <div class="projects-task-topbar-nav">
+      <a href="{{ back_url or arm_back_url or url_for('projects.arm') }}" class="back-link">← Назад</a>
+      {% if task_editing and task.project_id %}
+      <nav class="projects-task-create-views" aria-label="Переход к доскам проекта">
+        {% if current_user.is_admin or current_user.is_auditor %}
+        <a class="projects-task-nav-link" href="{{ url_for('projects.arm', view='gantt', project=task.project_id) }}">Гант</a>
+        {% endif %}
+        <a class="projects-task-nav-link" href="{{ url_for('projects.arm', view='kanban', project=task.project_id) }}">Канбан</a>
+      </nav>
+      {% endif %}
+    </div>
     {% if can_plan_user and not task_editing %}
     <a href="{{ url_for('projects.task_detail', tid=task.id, edit=1) }}" class="btn btn-outline btn-sm" title="Редактировать">Редактировать</a>
     {% endif %}
@@ -224,14 +234,16 @@
       {# Под отчётом: все действия в одной сетке без наложений #}
       <div class="projects-task-actions-bar"{% if can_plan_user and not task_editing %} hidden{% endif %}>
         <div class="projects-task-actions-bar__primary">
-          <button type="submit" class="btn btn-primary btn-sm" name="action" value="save">Сохранить</button>
+          <button type="submit" class="btn btn-primary btn-sm" name="action" value="save">{% if can_plan %}Сохранить и выйти{% else %}Сохранить{% endif %}</button>
 
+          {% if not can_plan %}
           {% if task.kanban_status == 'review' %}
           <button type="submit" class="btn btn-outline btn-sm" name="action" value="uncomplete" formnovalidate title="Вернуть в работу">В работу</button>
           {% elif task.kanban_status not in ('done', 'rejected', 'archived') %}
           <button type="submit" class="btn btn-outline btn-sm" name="action" value="complete" formnovalidate {% if blocked %}disabled{% endif %}
                   data-require-report="1"
                   title="{% if blocked %}Сначала завершите блокирующие задачи{% else %}Отправить на верификацию{% endif %}">Выполнить</button>
+          {% endif %}
           {% endif %}
 
           {% if can_review %}
@@ -244,12 +256,6 @@
             {% if task.kanban_status not in ('rejected', 'archived') %}
             <button type="submit" class="btn btn-outline btn-sm btn-danger-text" name="action" value="reject" data-require-report="1">Отклонить задачу</button>
             {% endif %}
-          {% endif %}
-          {% if can_plan %}
-            {% if task.parent_id %}
-            <a href="{{ url_for('projects.task_new', parent=task.parent_id, project=task.project_id) }}" class="btn btn-outline btn-sm">Ещё к родителю</a>
-            {% endif %}
-            <a href="{{ url_for('projects.task_new', parent=task.id) }}" class="btn btn-outline btn-sm">Подзадача ↓</a>
           {% endif %}
         </div>
       </div>
@@ -295,10 +301,6 @@
 
     {% if can_plan %}
     <div class="projects-task-actions-bar projects-task-actions-bar--secondary">
-      <form method="post" action="{{ url_for('projects.task_duplicate', tid=task.id) }}" class="projects-task-actions-bar__form">
-        {{ csrf_field() }}<input type="hidden" name="copy_subtasks" value="1">
-        <button type="submit" class="btn btn-outline btn-sm">Дублировать</button>
-      </form>
       <form method="post" action="{{ url_for('projects.task_update', tid=task.id) }}" class="projects-task-actions-bar__form"
             data-confirm="Удалить задачу «{{ task.title }}»? Подзадачи останутся в проекте отдельными задачами."
             data-confirm-title="Удаление задачи"
@@ -337,7 +339,7 @@
             {{ csrf_field() }}
             <input type="hidden" name="action" value="delete">
             <input type="hidden" name="next" value="{{ url_for('projects.task_detail', tid=task.id) }}">
-            <button type="submit" class="btn btn-outline btn-xs btn-danger-text">Удалить</button>
+            <button type="submit" class="projects-subtask-delete">Удалить</button>
           </form>
           {% endif %}
         </li>
